@@ -299,6 +299,10 @@ function HitCapture.readAttackStats(attackData, elementHitzones, finalDamage)
         stats.useAdd = useAdd == true
     end
     local specialKind = SPECIAL_KINDS[stats.specialType]
+    if type(stats.specialType) == "number" and stats.specialType > 0 then
+        Log.debug("special type " .. tostring(stats.specialType) .. " kind=" .. tostring(specialKind) .. " dmg=" .. tostring(finalDamage),
+            "special:" .. tostring(stats.specialType))
+    end
     if specialKind and (tonumber(finalDamage) or 0) > 0 then add(specialKind, finalDamage) end
     if stats.useAdd then
         local okArray, entries = pcall(function()
@@ -337,7 +341,12 @@ end
 local function mergedExtras(hit, physical, stats)
     local extras = {}
     for _, extra in ipairs(hit.skillExtras) do
-        if extra.damage < physical then extras[#extras + 1] = extra end
+        if extra.damage < physical then
+            extras[#extras + 1] = extra
+        else
+            Log.debug("skill extra dropped " .. tostring(extra.kind) .. " value=" .. tostring(extra.damage) .. " physical=" .. tostring(physical),
+                "extra:dropped:" .. tostring(extra.kind))
+        end
     end
     for _, extra in ipairs(stats.extras) do extras[#extras + 1] = extra end
     return extras
