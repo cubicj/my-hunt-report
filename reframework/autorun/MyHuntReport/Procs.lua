@@ -9,6 +9,7 @@ local HUNTER_CATEGORIES = { [0] = true, [5] = true }
 
 local brackets = {}
 local installed = false
+local extendedInstalled = false
 
 function Procs.reset()
     brackets = {}
@@ -151,6 +152,13 @@ function Procs.install()
     Game.hook("app.cEnemyBadConditionBlast", "onActivate", function(args)
         enterBracket("blast", args)
     end, leaveBracket)
+    Game.hook("app.cEnemyStockDamage.cBadConditionDamageInfo",
+        "setParam(System.Single, app.TARGET_ACCESS_KEY, System.Boolean)", onSetParam)
+end
+
+function Procs.installExtended()
+    if extendedInstalled then return end
+    extendedInstalled = true
     Game.hook("app.cEnemyBadConditionPoison", "onUpdateActive", function(args)
         enterBracket("poison", args)
     end, leaveBracket)
@@ -160,8 +168,6 @@ function Procs.install()
     Game.hook("app.cEnemyBadConditionSkillRyuki", "onActivate", function(args)
         enterBracket("elementConvert", args)
     end, leaveBracket)
-    Game.hook("app.cEnemyStockDamage.cBadConditionDamageInfo",
-        "setParam(System.Single, app.TARGET_ACCESS_KEY, System.Boolean)", onSetParam)
     Game.hook("app.cEnemyStockDamage",
         "stockExternalDamage(System.Single, System.Boolean, System.Nullable`1<app.TARGET_ACCESS_KEY>, System.Boolean, System.Boolean)",
         onExternalDamage)

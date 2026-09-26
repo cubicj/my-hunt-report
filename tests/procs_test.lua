@@ -55,6 +55,7 @@ local function withProcs(callback)
         end
         local procs = assert(loadfile("reframework/autorun/MyHuntReport/Procs.lua"))()
         procs.install()
+        procs.installExtended()
         local context = { procs = procs, hooks = hooks, recorded = recorded, master = master, other = other, callStaticCalls = c_callStaticCalls }
         function context.enter(kind, key)
             hooks[BRACKETS[kind]].pre({ [2] = { _Invoker = key } })
@@ -507,6 +508,24 @@ function T.invokerIsReadOnlyWhenDamageNeedsAttribution()
         c.leave("poison")
         assert(reads == 1 and #c.callStaticCalls == 1 and #c.recorded == 1)
     end)
+end
+
+function T.installRegistersOnlyBlastHooksUntilExtended()
+    local hook = Game.hook
+    local names = {}
+    local ok, err = pcall(function()
+        Game.hook = function(typeName, signature) names[#names + 1] = typeName .. "." .. signature end
+        local procs = assert(loadfile("reframework/autorun/MyHuntReport/Procs.lua"))()
+        procs.install()
+        procs.install()
+        assert(#names == 2, table.concat(names, ","))
+        assert(names[1] == BRACKETS.blast and names[2] == SET_PARAM)
+        procs.installExtended()
+        procs.installExtended()
+        assert(#names == 8, table.concat(names, ","))
+    end)
+    Game.hook = hook
+    if not ok then error(err, 0) end
 end
 
 return T
