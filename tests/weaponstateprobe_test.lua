@@ -60,6 +60,16 @@ function T.serializeInvokesGettersThroughCallNotLuaFunctions()
     assert(WeaponStateProbe.serialize(handling, { "get_AuraLevel" }) == "AuraLevel=4")
 end
 
+function T.serializeWalksDottedPathsThroughNestedObjects()
+    local snipe = handlingOf("app.Wp12Def.cSnipeAmmo", { get_CurrentAmmo = function() return 3 end, _ChargeTimer = 1.25 })
+    local handling = handlingOf("app.cHunterWp12Handling", {
+        get_SnipeAmmo = function() return snipe end,
+        get_EnergyBulletInfo = function() return nil end,
+    })
+    local line = WeaponStateProbe.serialize(handling, { "get_SnipeAmmo.get_CurrentAmmo", "get_SnipeAmmo._ChargeTimer", "get_EnergyBulletInfo.get_CharageLevel", "get_Missing.get_Value" })
+    assert(line == "SnipeAmmo.CurrentAmmo=3 SnipeAmmo._ChargeTimer=1.2 EnergyBulletInfo.CharageLevel=nil Missing.Value=err", line)
+end
+
 function T.gettersCoverTheSpecWeapons()
     for _, weaponType in ipairs({ 2, 3, 8, 9, 10, 12 }) do
         assert(type(WeaponStateProbe.GETTERS[weaponType]) == "table" and #WeaponStateProbe.GETTERS[weaponType] > 0, tostring(weaponType))

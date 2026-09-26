@@ -10,7 +10,8 @@ WeaponStateProbe.GETTERS = {
     [9] = { "get_Mode", "get_IsSwordEnhanced", "get_SwordEnhancedTimer", "get_IsShieldEnhanced", "get_ShieldEnhancedTimer",
         "get_IsAxeEnhanced", "get_AxeEnhancedTimer", "get_SwordBinNum", "get_SwordEnergyState" },
     [10] = { "get_IsRed", "get_IsWhite", "get_IsOrange", "get_IsTrippleUp" },
-    [12] = { "get_IsEnergyMode", "get_SnipeAmmo", "_EnergyPartsState", "_PrevEnergyPartsState", "get_EnergyParts" },
+    [12] = { "get_IsEnergyMode", "_EnergyPartsState", "get_EnergyBulletInfo.get_CharageLevel", "get_EnergyBulletInfo.get_CurrentEnergy",
+        "get_EnergyBulletInfo.get_UsingEnergy", "get_SnipeAmmo.get_CurrentAmmo", "get_SnipeAmmo.get_MaxAmmo", "get_SnipeAmmo._ChargeTimer" },
 }
 
 local lastWeaponType = nil
@@ -36,10 +37,19 @@ function WeaponStateProbe.formatValue(value)
     return typeNameOf(value)
 end
 
-local function readMember(handling, name)
+local function readStep(object, name)
+    if name:sub(1, 4) == "get_" then return object:call(name) end
+    return object[name]
+end
+
+local function readMember(handling, path)
     local ok, value = pcall(function()
-        if name:sub(1, 4) == "get_" then return handling:call(name) end
-        return handling[name]
+        local current = handling
+        for name in path:gmatch("[^.]+") do
+            if current == nil then return nil end
+            current = readStep(current, name)
+        end
+        return current
     end)
     if not ok then return "err" end
     return WeaponStateProbe.formatValue(value)
@@ -48,7 +58,7 @@ end
 function WeaponStateProbe.serialize(handling, names)
     local parts = {}
     for index, name in ipairs(names) do
-        local label = name:gsub("^get_", "")
+        local label = name:gsub("get_", "")
         parts[index] = label .. "=" .. readMember(handling, name)
     end
     return table.concat(parts, " ")
