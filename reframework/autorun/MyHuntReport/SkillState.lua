@@ -13,6 +13,33 @@ local MELODY_BASE = 2000
 local HIBIKI_BASE = 3000
 local MELODY_SLOTS = { 11, 12, 13, 14, 42, 43 }
 local HIBIKI_ATTACK_TYPE = 4
+local WEAPON_BASE = 4000
+local WEAPON_STATES = {
+    [2] = {
+        { code = 1, read = function(handling) return handling:call("get_IsMikiriBuff") == true end },
+    },
+    [3] = {
+        { code = 1, read = function(handling) return handling:call("get_AuraLevel") == 4 end },
+    },
+    [8] = {
+        { code = 1, read = function(handling) return handling:call("get_IsSwordAwaken") == true end,
+            eligible = function(handling) return handling:call("get_Mode") == 1 end },
+        { code = 2, read = function(handling) return handling:call("get_IsAxeEnhanced") == true end,
+            eligible = function(handling) return handling:call("get_Mode") == 0 end },
+    },
+    [9] = {
+        { code = 1, read = function(handling) return handling:call("get_IsSwordEnhanced") == true end,
+            eligible = function(handling) return handling:call("get_Mode") == 0 end },
+        { code = 2, read = function(handling) return handling:call("get_IsShieldEnhanced") == true end,
+            eligible = function(handling, hit) return handling:call("get_Mode") == 1 or hit.shell == true end },
+        { code = 3, read = function(handling) return handling:call("get_IsAxeEnhanced") == true end,
+            eligible = function(handling) return handling:call("get_Mode") == 1 end },
+    },
+    [10] = {
+        { code = 1, read = function(handling) return handling:call("get_IsTrippleUp") == true end,
+            eligible = function(_, hit) return hit.kinsect ~= true end },
+    },
+}
 
 local fieldNames = nil
 local names = {}
@@ -335,7 +362,50 @@ local function melodySet()
     return set
 end
 
+function SkillState.weaponStateId(weaponType, code)
+    return WEAPON_BASE + weaponType * 10 + code
+end
+
+function SkillState.weaponStateType(id)
+    if type(id) ~= "number" or id < WEAPON_BASE or id >= WEAPON_BASE + 1000 then return nil end
+    local weaponType = (id - WEAPON_BASE) // 10
+    local code = (id - WEAPON_BASE) % 10
+    for _, entry in ipairs(WEAPON_STATES[weaponType] or {}) do
+        if entry.code == code then return weaponType, code end
+    end
+    return nil
+end
+
+local function weaponStateSets(context)
+    local active, eligible = {}, {}
+    local hunter = Game.masterHunter()
+    if not hunter then return active, eligible end
+    local ok, weaponType, handling = pcall(function()
+        return hunter:get_WeaponType(), hunter:get_WeaponHandling()
+    end)
+    if not ok then
+        Log.debug("weapon handling read failed: " .. tostring(weaponType), "skill:weapon-state:handling")
+        return active, eligible
+    end
+    if handling == nil then return active, eligible end
+    for _, entry in ipairs(WEAPON_STATES[weaponType] or {}) do
+        local id = SkillState.weaponStateId(weaponType, entry.code)
+        local okEntry, isEligible, isActive = pcall(function()
+            if entry.eligible and entry.eligible(handling, context) ~= true then return false, false end
+            return true, entry.read(handling) == true
+        end)
+        if not okEntry then
+            Log.debug("weapon state read failed for " .. tostring(id) .. ": " .. tostring(isEligible), "skill:weapon-state:" .. tostring(id))
+        else
+            if isEligible and entry.eligible then eligible[id] = true end
+            if isEligible and isActive then active[id] = true end
+        end
+    end
+    return active, eligible
+end
+
 function SkillState.activeSet(context)
+    context = context or {}
     local set = {}
     local info = paramInfo()
     if info then
@@ -355,9 +425,11 @@ function SkillState.activeSet(context)
     end
     for id in pairs(SkillState.conditionSet(context, equippedIds)) do set[id] = true end
     for id in pairs(melodySet()) do set[id] = true end
+    local weaponActive, eligible = weaponStateSets(context)
+    for id in pairs(weaponActive) do set[id] = true end
     local shown = {}
     for id in pairs(set) do shown[SkillState.displayId(id)] = true end
-    return shown
+    return shown, eligible
 end
 
 function SkillState.skillName(skillId)
@@ -372,6 +444,10 @@ function SkillState.skillName(skillId)
         local guid = Game.callStatic("app.Wp05Def", "SkillName(app.Wp05Def.WP05_HIBIKI_SKILL_TYPE)", HIBIKI_ATTACK_TYPE)
         text = validName(Game.messageText(guid))
         text = text and (Locale.text("bubble_prefix") .. text) or Locale.text("melody_hibiki_attack")
+    elseif SkillState.weaponStateType(skillId) then
+        local weaponType, code = SkillState.weaponStateType(skillId)
+        local suffix = weaponType .. "_" .. code
+        text = Locale.text("weapon_state_" .. suffix) .. Locale.text("weapon_state_scope_" .. suffix)
     elseif skillId > MELODY_BASE and skillId < HIBIKI_BASE then
         local melodyType = skillId - MELODY_BASE
         local guid = Game.callStatic("app.Wp05Def", "MusicSkillName(app.Wp05Def.WP05_MUSIC_SKILL_TYPE, app.Wp05Def.WP05_MUSIC_SKILL_HIGH_FREQ_TYPE)", melodyType, 0)

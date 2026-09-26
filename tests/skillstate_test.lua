@@ -2,6 +2,7 @@ local stubs = require("stubs")
 local Game = require("MyHuntReport.Game")
 local SkillState = require("MyHuntReport.SkillState")
 local Locale = require("MyHuntReport.Locale")
+local Log = require("MyHuntReport.Log")
 
 local T = {}
 
@@ -173,7 +174,7 @@ function T.conditionWoundNamesAndEquippedRows()
                 local rows = SkillState.equippedTracked()
                 assert(#rows == 2 and rows[1].id == 63 and rows[2].id == "wex:wound")
                 assert(rows[1].name == base and rows[2].name == wound)
-                assert(next(SkillState.activeSet()) == nil)
+                assert(next((SkillState.activeSet())) == nil)
             end
         end)
         withHunter(fakeInfo({}), {}, function()
@@ -234,7 +235,7 @@ function T.activeSetGatesAllNewSkillsByEquipment()
     info._IsActiveKonshin = true
     info._IsAdrenalineRush = true
     withHunter(info, {}, function()
-        assert(next(SkillState.activeSet({ rawHitzone = 30, wounded = true, hien = true })) == nil)
+        assert(next((SkillState.activeSet({ rawHitzone = 30, wounded = true, hien = true }))) == nil)
     end, { _IsActive = true, _State = 2 })
     withHunter(info, ALL, function()
         local active = SkillState.activeSet({ rawHitzone = 30, wounded = true, hien = true })
@@ -475,16 +476,16 @@ end
 
 function T.activeSetIgnoresUntrackedMelodies()
     withHunter(fakeInfo({}), {}, function()
-        assert(next(SkillState.activeSet()) == nil)
+        assert(next((SkillState.activeSet())) == nil)
     end, nil, { call = function(_, _, slot) return slot == 1 or slot == 39 end })
 end
 
 function T.activeSetHandlesMissingOrFailingMusic()
     withHunter(fakeInfo({}), {}, function()
-        assert(next(SkillState.activeSet()) == nil)
+        assert(next((SkillState.activeSet())) == nil)
     end)
     withHunter(fakeInfo({}), {}, function()
-        assert(next(SkillState.activeSet()) == nil)
+        assert(next((SkillState.activeSet())) == nil)
     end, nil, { call = function() error("unreadable music") end })
 end
 
@@ -514,7 +515,7 @@ function T.activeSetHandlesUnavailableHunterSkillAndMusicField()
         for _, hunter in ipairs(hunters) do
             Game.masterHunter = function() return hunter or nil end
             SkillState.reset()
-            assert(next(SkillState.activeSet()) == nil)
+            assert(next((SkillState.activeSet())) == nil)
         end
     end)
     Game.masterHunter = original
@@ -595,6 +596,158 @@ function T.bubbleNameUsesGameTextWithPrefixAndLocaleFallback()
     Locale.resolve("auto")
     SkillState.reset()
     if not ok then error(err, 0) end
+end
+
+local function weaponHandling(members)
+    return { call = function(_, name, ...)
+        local member = members[name]
+        if member == nil then error("no method " .. name) end
+        if type(member) == "function" then return member(...) end
+        return member
+    end }
+end
+
+local function withWeaponHunter(weaponType, handling, callback)
+    local original = Game.masterHunter
+    Game.masterHunter = function()
+        return {
+            get_HunterSkill = function() return { _HunterSkillParamInfo = fakeInfo({}), checkSkillActive = function() return false end } end,
+            get_HunterStatus = function() return { _BadConditions = {} } end,
+            get_WeaponType = function() return weaponType end,
+            get_WeaponHandling = type(handling) == "function" and handling or function() return handling end,
+        }
+    end
+    SkillState.reset()
+    Log.resetCounts()
+    local ok, err = pcall(callback)
+    Game.masterHunter = original
+    SkillState.reset()
+    if not ok then error(err, 0) end
+end
+
+function T.weaponStateIdsRoundTrip()
+    assert(SkillState.weaponStateId(9, 2) == 4092)
+    local weaponType, code = SkillState.weaponStateType(4092)
+    assert(weaponType == 9 and code == 2)
+    assert(SkillState.weaponStateType(4099) == nil)
+    assert(SkillState.weaponStateType(2012) == nil)
+    assert(SkillState.weaponStateType("burst:stage1") == nil)
+end
+
+function T.dualBladesAndLongSwordCreditWithoutEligibility()
+    withWeaponHunter(2, weaponHandling({ get_IsMikiriBuff = true }), function()
+        local active, eligible = SkillState.activeSet({})
+        assert(stubs.encode(active) == stubs.encode({ [4021] = true }), stubs.encode(active))
+        assert(stubs.encode(eligible) == "{}")
+    end)
+    withWeaponHunter(3, weaponHandling({ get_AuraLevel = 4 }), function()
+        local active = SkillState.activeSet({})
+        assert(stubs.encode(active) == stubs.encode({ [4031] = true }))
+    end)
+    withWeaponHunter(3, weaponHandling({ get_AuraLevel = 3 }), function()
+        assert(stubs.encode(SkillState.activeSet({})) == "{}")
+    end)
+end
+
+function T.switchAxeRowsAreEligibleByMode()
+    local handling = weaponHandling({ get_Mode = 1, get_IsSwordAwaken = true, get_IsAxeEnhanced = true })
+    withWeaponHunter(8, handling, function()
+        local active, eligible = SkillState.activeSet({})
+        assert(stubs.encode(active) == stubs.encode({ [4081] = true }), stubs.encode(active))
+        assert(stubs.encode(eligible) == stubs.encode({ [4081] = true }), stubs.encode(eligible))
+    end)
+    withWeaponHunter(8, weaponHandling({ get_Mode = 0, get_IsSwordAwaken = true, get_IsAxeEnhanced = false }), function()
+        local active, eligible = SkillState.activeSet({})
+        assert(stubs.encode(active) == "{}")
+        assert(stubs.encode(eligible) == stubs.encode({ [4082] = true }))
+    end)
+end
+
+function T.chargeBladeShieldRowCountsShellHitsInSwordMode()
+    local handling = weaponHandling({ get_Mode = 0, get_IsSwordEnhanced = false, get_IsShieldEnhanced = true, get_IsAxeEnhanced = true })
+    withWeaponHunter(9, handling, function()
+        local active, eligible = SkillState.activeSet({ shell = false })
+        assert(stubs.encode(active) == "{}")
+        assert(stubs.encode(eligible) == stubs.encode({ [4091] = true }), stubs.encode(eligible))
+        active, eligible = SkillState.activeSet({ shell = true })
+        assert(stubs.encode(active) == stubs.encode({ [4092] = true }), stubs.encode(active))
+        assert(stubs.encode(eligible) == stubs.encode({ [4091] = true, [4092] = true }), stubs.encode(eligible))
+    end)
+    withWeaponHunter(9, weaponHandling({ get_Mode = 1, get_IsSwordEnhanced = true, get_IsShieldEnhanced = true, get_IsAxeEnhanced = true }), function()
+        local active, eligible = SkillState.activeSet({ shell = false })
+        assert(stubs.encode(active) == stubs.encode({ [4092] = true, [4093] = true }))
+        assert(stubs.encode(eligible) == stubs.encode({ [4092] = true, [4093] = true }))
+    end)
+end
+
+function T.insectGlaiveTripleUpSkipsKinsectHits()
+    withWeaponHunter(10, weaponHandling({ get_IsTrippleUp = true }), function()
+        local active, eligible = SkillState.activeSet({ kinsect = false })
+        assert(stubs.encode(active) == stubs.encode({ [4101] = true }))
+        assert(stubs.encode(eligible) == stubs.encode({ [4101] = true }))
+        active, eligible = SkillState.activeSet({ kinsect = true })
+        assert(stubs.encode(active) == "{}")
+        assert(stubs.encode(eligible) == "{}")
+    end)
+end
+
+function T.weaponStateReadFailuresCreditNothingAndLogOnce()
+    withWeaponHunter(8, weaponHandling({ get_Mode = 1 }), function()
+        Log.setDeveloperMode(true)
+        local active, eligible = SkillState.activeSet({})
+        assert(stubs.encode(active) == "{}")
+        assert(stubs.encode(eligible) == "{}")
+        SkillState.activeSet({})
+        local failures = 0
+        local first = nil
+        for _, line in ipairs(stubs.logLines) do
+            if line:find("weapon state read failed", 1, true) then
+                failures = failures + 1
+                first = first or line
+            end
+        end
+        assert(failures == 2, "got " .. failures)
+        assert(first and first:find("4081", 1, true), tostring(first))
+        Log.setDeveloperMode(false)
+    end)
+    withWeaponHunter(12, weaponHandling({}), function()
+        local active, eligible = SkillState.activeSet({})
+        assert(stubs.encode(active) == "{}" and stubs.encode(eligible) == "{}")
+    end)
+    withWeaponHunter(8, nil, function()
+        local active, eligible = SkillState.activeSet({})
+        assert(stubs.encode(active) == "{}" and stubs.encode(eligible) == "{}")
+    end)
+end
+
+function T.weaponHandlingReadFailureCreditsNothingAndLogs()
+    withWeaponHunter(8, function() error("boom") end, function()
+        local developerMode = Log.isDeveloperMode()
+        Log.setDeveloperMode(true)
+        local active, eligible = SkillState.activeSet({})
+        Log.setDeveloperMode(developerMode)
+        assert(stubs.encode(active) == "{}")
+        assert(stubs.encode(eligible) == "{}")
+        local failures = 0
+        for _, line in ipairs(stubs.logLines) do
+            if line:find("weapon handling read failed", 1, true) then
+                failures = failures + 1
+                assert(line:find("boom", 1, true), line)
+            end
+        end
+        assert(failures == 1, "got " .. failures)
+        assert(Log.count("skill:weapon-state:handling") == 1)
+    end)
+end
+
+function T.weaponStateNamesComeFromLocaleWithScope()
+    Locale.init({})
+    Locale.resolve("ko")
+    assert(SkillState.skillName(4021) == "귀인 회피", SkillState.skillName(4021))
+    assert(SkillState.skillName(4092) == "방패 강화 · 도끼 모드+병", SkillState.skillName(4092))
+    Locale.resolve("en")
+    assert(SkillState.skillName(4101) == "Triple Up · hunter hits", SkillState.skillName(4101))
+    assert(SkillState.skillName(4031) == "Red Spirit Gauge", SkillState.skillName(4031))
 end
 
 return T

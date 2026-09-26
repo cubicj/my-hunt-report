@@ -137,4 +137,15 @@ function T.slingerAndRidingLabelsMatchInBothLocales()
     assert(sameKeys(Locale.keys("en"), Locale.keys("ko")))
 end
 
+function T.weaponStateKeysExistInBothLanguages()
+    for _, id in ipairs({ "2_1", "3_1", "8_1", "8_2", "9_1", "9_2", "9_3", "10_1" }) do
+        for _, code in ipairs({ "en", "ko" }) do
+            Locale.init({})
+            Locale.resolve(code)
+            assert(Locale.text("weapon_state_" .. id) ~= "weapon_state_" .. id, code .. " " .. id)
+            assert(type(Locale.text("weapon_state_scope_" .. id)) == "string")
+        end
+    end
+end
+
 return T
