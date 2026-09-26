@@ -17,8 +17,17 @@ local function withHunter(hunter, callback)
 end
 
 local function handlingOf(typeName, members)
-    local handling = { get_type_definition = function() return { get_name = function() return typeName end } end }
-    for key, value in pairs(members) do handling[key] = value end
+    local handling = {
+        get_type_definition = function() return { get_name = function() return typeName end } end,
+        call = function(self, name, ...)
+            local member = members[name]
+            if member == nil then error("no method " .. name) end
+            return member(self, ...)
+        end,
+    }
+    for key, value in pairs(members) do
+        if type(value) ~= "function" then handling[key] = value end
+    end
     return handling
 end
 
@@ -42,7 +51,13 @@ function T.serializeStripsGetPrefixAndMarksErrors()
         _EnergyPartsState = 2,
     })
     local line = WeaponStateProbe.serialize(handling, { "get_IsKijinOn", "get_IsKijinEnhancement", "get_KijinGauge", "get_KijinComboLv", "_EnergyPartsState", "get_Missing" })
-    assert(line == "IsKijinOn=true IsKijinEnhancement=false KijinGauge=87.5 KijinComboLv=err _EnergyPartsState=2 Missing=nil", line)
+    assert(line == "IsKijinOn=true IsKijinEnhancement=false KijinGauge=87.5 KijinComboLv=err _EnergyPartsState=2 Missing=err", line)
+end
+
+function T.serializeInvokesGettersThroughCallNotLuaFunctions()
+    local handling = handlingOf("app.cHunterWp03Handling", { get_AuraLevel = function() return 4 end })
+    assert(rawget(handling, "get_AuraLevel") == nil)
+    assert(WeaponStateProbe.serialize(handling, { "get_AuraLevel" }) == "AuraLevel=4")
 end
 
 function T.gettersCoverTheSpecWeapons()

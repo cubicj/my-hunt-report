@@ -38,9 +38,8 @@ end
 
 local function readMember(handling, name)
     local ok, value = pcall(function()
-        local member = handling[name]
-        if type(member) == "function" then return member(handling) end
-        return member
+        if name:sub(1, 4) == "get_" then return handling:call(name) end
+        return handling[name]
     end)
     if not ok then return "err" end
     return WeaponStateProbe.formatValue(value)
