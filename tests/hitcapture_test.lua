@@ -1444,4 +1444,26 @@ function T.ridingReadFailuresKeepCompletedHit()
     end
 end
 
+function T.hitPassesWeaponContextAndEligibleSkills()
+    local activeSet = SkillState.activeSet
+    local seen = nil
+    SkillState.activeSet = function(context)
+        seen = context
+        return { [4082] = true }, { [4082] = true }
+    end
+    local ok, err = pcall(function()
+        withCapture(function(hits)
+            local info = hitInfo(101, 1, { _WeaponType = 8 })
+            HitCapture.handleStockDamageDetail(info)
+            complete(info)
+            assert(#hits == 1)
+            assert(seen.shell == false and seen.kinsect == false and seen.weaponType == 8, stubs.encode(seen))
+            assert(stubs.encode(hits[1].activeSkills) == stubs.encode({ [4082] = true }))
+            assert(stubs.encode(hits[1].eligibleSkills) == stubs.encode({ [4082] = true }))
+        end)
+    end)
+    SkillState.activeSet = activeSet
+    if not ok then error(err, 0) end
+end
+
 return T

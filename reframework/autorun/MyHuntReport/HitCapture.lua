@@ -397,7 +397,14 @@ function HitCapture.handlePlayHitMarkEffect(calc, hitInfo)
     if fallback then Session.noteWeightFallback() end
     local stats = HitCapture.readAttackStats(okData and attackData or nil, hit.elementHitzones, finalDamage)
     local extras = mergedExtras(hit, physical, stats)
-    local activeSkills = SkillState.activeSet({ rawHitzone = hit.baseHitzone, wounded = hit.wounded, hien = hit.hien })
+    local activeSkills, eligibleSkills = SkillState.activeSet({
+        rawHitzone = hit.baseHitzone,
+        wounded = hit.wounded,
+        hien = hit.hien,
+        shell = type(hit.path) == "string" and hit.path:sub(1, 6) == "shell:",
+        kinsect = hit.path == "kinsect",
+        weaponType = hit.weaponType,
+    })
     traceHit(hit, finalDamage, physical, element)
     Session.addHit({
         attribution = hit.path,
@@ -412,6 +419,7 @@ function HitCapture.handlePlayHitMarkEffect(calc, hitInfo)
         motionKey = hit.motionKey,
         motionLabel = hit.motionLabel,
         activeSkills = activeSkills,
+        eligibleSkills = eligibleSkills,
         time = Game.uptime(),
         fixed = hit.fixed,
         canCrit = stats.canCrit,
