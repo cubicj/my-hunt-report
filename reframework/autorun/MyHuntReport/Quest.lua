@@ -21,6 +21,7 @@ local phase = "idle"
 local trainingSession = false
 local trainingEndTime = nil
 local questLevel = nil
+local endedElapsed = nil
 local saved = false
 local pendingSnapshot = nil
 local finalSnapshot = nil
@@ -125,15 +126,30 @@ function Quest.handleQuestStart(now)
     phase = "playing"
     trainingSession = false
     trainingEndTime = nil
+    endedElapsed = nil
     saved = false
     Log.debug("quest start at " .. tostring(now))
     ReportWindow.onSessionStart(Quest.currentSnapshot(now))
+end
+
+local function playingElapsed(now)
+    if endedElapsed then return endedElapsed end
+    local clock = Quest.questElapsedSeconds()
+    if clock then return clock end
+    return math.max(0, (tonumber(now) or 0) - Session.startTime())
+end
+
+function Quest.handleQuestEnd(now)
+    if phase ~= "playing" or endedElapsed then return end
+    endedElapsed = math.floor(playingElapsed(now) + 0.5)
+    Log.debug("quest end at " .. tostring(now) .. ", elapsed=" .. tostring(endedElapsed))
 end
 
 function Quest.handleResultStart()
     pendingSnapshot = Session.snapshot({
         questLevel = questLevel,
         result = "unknown",
+        elapsedSeconds = endedElapsed,
         endedAt = os.time(),
         weapon = Quest.weaponInfo(HitCapture.lastWeaponType()),
         weapons = usedWeapons(),
@@ -185,10 +201,12 @@ function Quest.currentSnapshot(now)
     if phase == "training" or (phase == "idle" and trainingSession) then result = "training" end
     local endTime = tonumber(now) or 0
     if phase == "idle" and trainingEndTime then endTime = trainingEndTime end
+    local elapsed = math.max(0, endTime - Session.startTime())
+    if phase == "playing" then elapsed = playingElapsed(now) end
     return Session.snapshot({
         questLevel = questLevel,
         result = result,
-        elapsedSeconds = math.max(0, endTime - Session.startTime()),
+        elapsedSeconds = elapsed,
         endedAt = os.time(),
         weapon = Quest.weaponInfo(HitCapture.lastWeaponType()),
         weapons = usedWeapons(),
@@ -266,6 +284,12 @@ function Quest.install()
     Game.hook("app.cQuestPlaying", "enter()", function()
         Quest.handleQuestStart(Game.uptime())
     end)
+    Game.hook("app.cQuestClear", "enter()", function()
+        Quest.handleQuestEnd(Game.uptime())
+    end)
+    Game.hook("app.cQuestFailed", "enter()", function()
+        Quest.handleQuestEnd(Game.uptime())
+    end)
     Game.hook("app.cQuestResult", "enter()", function()
         Quest.handleResultStart()
     end)
@@ -303,6 +327,7 @@ function Quest.resetForTests()
     questLevel = nil
     trainingSession = false
     trainingEndTime = nil
+    endedElapsed = nil
     saved = false
     pendingSnapshot = nil
     Session.reset(0)

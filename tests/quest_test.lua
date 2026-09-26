@@ -186,6 +186,47 @@ function T.currentSnapshotReportsRunningWhilePlaying()
     assert(final.quest.elapsedSeconds == 1)
 end
 
+function T.questEndFreezesElapsedUntilResultInfo()
+    playQuestWithOneHit()
+    Quest.handleQuestEnd(140)
+    local frozen = Quest.currentSnapshot(150)
+    assert(frozen.quest.result == "running" and frozen.quest.elapsedSeconds == 40, tostring(frozen.quest.elapsedSeconds))
+    assert(Quest.currentSnapshot(200).quest.elapsedSeconds == 40)
+    Quest.handleResultStart()
+    assert(Quest.currentSnapshot(210).quest.elapsedSeconds == 40)
+    Quest.handleResultInfo({ endType = 2, clearTimeMs = 41000, mainWeaponType = 7, joinMemberNum = 1 }, 220)
+    assert(Quest.currentSnapshot(230).quest.elapsedSeconds == 41)
+    Quest.handleQuestStart(300)
+    assert(Quest.currentSnapshot(310).quest.elapsedSeconds == 10)
+end
+
+function T.questEndUsesQuestClockAndRoundsLikeClearTime()
+    withQuestDirector(function(director)
+        local clock = 37.6
+        director.get_QuestElapsedTime = function() return clock end
+        playQuestWithOneHit()
+        assert(Quest.currentSnapshot(150).quest.elapsedSeconds == 37.6)
+        clock = 37.9
+        assert(Quest.currentSnapshot(160).quest.elapsedSeconds == 37.9)
+        Quest.handleQuestEnd(160)
+        clock = 55
+        assert(Quest.currentSnapshot(170).quest.elapsedSeconds == 38)
+        Quest.handleResultStart()
+        assert(Quest.currentSnapshot(180).quest.elapsedSeconds == 38)
+    end)
+end
+
+function T.questEndOutsidePlayingIsIgnored()
+    Quest.resetForTests()
+    Settings.load()
+    Quest.handleQuestEnd(50)
+    assert(Quest.phase() == "idle")
+    Quest.handleTrainingEnter(200)
+    Quest.handleQuestEnd(230)
+    assert(Quest.currentSnapshot(240).quest.result == "training")
+    assert(Quest.currentSnapshot(240).quest.elapsedSeconds == 40)
+end
+
 function T.currentSnapshotDuringResultKeepsFinalSnapshot()
     playQuestWithOneHit()
     Settings.set("autoPopup", false)
@@ -311,7 +352,7 @@ function T.adoptCurrentStateEntersTrainingOrQuestAtLoad()
         assert(Quest.adoptCurrentState(900) == true)
         assert(Quest.phase() == "playing")
         local s = Quest.currentSnapshot(910)
-        assert(s.quest.result == "running" and s.quest.elapsedSeconds == 52, tostring(s.quest.elapsedSeconds))
+        assert(s.quest.result == "running" and s.quest.elapsedSeconds == 42, tostring(s.quest.elapsedSeconds))
         Quest.resetForTests()
         elapsed = nil
         assert(Quest.adoptCurrentState(1000) == true)
