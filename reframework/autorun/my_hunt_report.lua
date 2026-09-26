@@ -24,6 +24,7 @@ local Quest = tryRequire("MyHuntReport.Quest")
 local SkillState = tryRequire("MyHuntReport.SkillState")
 local Session = tryRequire("MyHuntReport.Session")
 local Names = tryRequire("MyHuntReport.Names")
+local WeaponStateProbe = tryRequire("MyHuntReport.WeaponStateProbe")
 
 if #loadErrors > 0 then
     for _, err in ipairs(loadErrors) do
@@ -70,6 +71,7 @@ SettingsPanel.register({ quest = Quest })
 
 re.on_frame(function()
     ShellTracker.update()
+    WeaponStateProbe.update()
     Pulse.tick()
     local event = Hotkey.update(function(code)
         local ok, down = pcall(reframework.is_key_down, reframework, code)
