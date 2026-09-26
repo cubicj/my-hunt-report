@@ -67,15 +67,18 @@ local function withCapture(callback)
     Session.reset(0)
     SkillExtras.reset()
     local masterAddress, enemyContext, addHit = Game.masterAddress, Game.enemyContext, Session.addHit
+    local enemyIsDead = Game.enemyIsDead
     local hits = {}
     Game.masterAddress = function() return 1 end
     Game.enemyContext = function(go) return go.em end
+    Game.enemyIsDead = function(go) return go.dead == true end
     Session.addHit = function(hit)
         hits[#hits + 1] = hit
         return addHit(hit)
     end
     local ok, err = pcall(callback, hits)
     Game.masterAddress, Game.enemyContext, Session.addHit = masterAddress, enemyContext, addHit
+    Game.enemyIsDead = enemyIsDead
     HitCapture.reset()
     SkillExtras.reset()
     if not ok then error(err, 0) end
@@ -103,6 +106,20 @@ function T.mismatchedHitInfoDropsPending()
         complete(hitInfoC, { FinalDamage = 999, Physical = 999, Element = 0 })
         assert(#hits == 0 and Session.hitCount() == 0)
         assert(Session.snapshot().diagnostics.droppedPending == 1)
+    end)
+end
+
+function T.hitOnDeadEnemyIsIgnored()
+    withCapture(function(hits)
+        local info = hitInfo(101, 1)
+        local owner = info.get_DamageOwner()
+        owner.dead = true
+        info.get_DamageOwner = function() return owner end
+        HitCapture.handleStockDamageDetail(info)
+        assert(HitCapture.pendingCount() == 0)
+        complete(info, { FinalDamage = 50, Physical = 50, Element = 0 })
+        assert(#hits == 0 and Session.hitCount() == 0)
+        assert(Session.snapshot().diagnostics.droppedPending == 0)
     end)
 end
 

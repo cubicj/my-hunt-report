@@ -168,6 +168,15 @@ function Game.enemyContext(gameObject)
     return nil
 end
 
+function Game.enemyIsDead(gameObject)
+    local enemy = Game.componentOf(gameObject, "app.EnemyCharacter")
+    if not enemy then return false end
+    local ok, dead = pcall(function()
+        return enemy:get_HealthMgr():get_IsDead()
+    end)
+    return ok and dead == true
+end
+
 function Game.uptime()
     local value = Game.callStatic("via.Application", "get_UpTimeSecond")
     if type(value) == "number" then return value end

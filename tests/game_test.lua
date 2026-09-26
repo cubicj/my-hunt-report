@@ -81,4 +81,23 @@ function T.languageCodePreservesTheRawLanguage()
     if not ok then error(err, 0) end
 end
 
+function T.enemyIsDeadReadsTheHealthManager()
+    local componentOf = Game.componentOf
+    local ok, err = pcall(function()
+        local dead = false
+        Game.componentOf = function(object, typeName)
+            if object == nil or typeName ~= "app.EnemyCharacter" then return nil end
+            return { get_HealthMgr = function() return { get_IsDead = function() return dead end } end }
+        end
+        assert(Game.enemyIsDead({}) == false)
+        dead = true
+        assert(Game.enemyIsDead({}) == true)
+        assert(Game.enemyIsDead(nil) == false)
+        Game.componentOf = function() return { get_HealthMgr = function() error("boom") end } end
+        assert(Game.enemyIsDead({}) == false)
+    end)
+    Game.componentOf = componentOf
+    if not ok then error(err, 0) end
+end
+
 return T

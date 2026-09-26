@@ -164,6 +164,10 @@ function HitCapture.handleStockDamageDetail(hitInfo)
     if not em then return end
     local okBoss, isBoss = pcall(function() return em:get_IsBoss() end)
     if not okBoss or isBoss ~= true then return end
+    if Game.enemyIsDead(target) then
+        Log.debug("hit on dead enemy dropped", "hit:dead")
+        return
+    end
     local okFields, motionValue, actionType, weaponType, uniqueIndex, hitAddress, useAdd, emId, hien = pcall(function()
         return attackData._OriginalAttackAdjust, attackData._ActionType, attackData._WeaponType,
             em:get_UniqueIndex(), hitInfo:get_address(), attackData._UseSkillAdditionalDamage == true, em:get_EmID(), attackData._IsSkillHien == true
