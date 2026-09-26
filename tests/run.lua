@@ -17,6 +17,7 @@ local SUITES = {
     "session_test",
     "skillstate_test",
     "skillextras_test",
+    "weaponstateprobe_test",
     "procs_test",
     "shelltracker_test",
     "hitcapture_test",
