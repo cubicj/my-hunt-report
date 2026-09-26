@@ -836,9 +836,11 @@ function T.attributionFooterShowsCountersAndLegacyZerosOnlyInDeveloperMode()
             for index, event in ipairs(ui.events) do
                 if event.kind == "text" and event.value:find("attribution:", 1, true) then
                     count = count + 1
-                    assert(event.value == "attribution: action=1 shell=2 kinsect=3 slinger=9 weapon-1=4 lastAttack=5 nonattack=6 · names: sibling=7 unmapped=8", event.value)
+                    assert(event.value == "attribution: action=1 shell=2 kinsect=3 slinger=9", event.value)
                     assert(event.textColor == Theme.colors.textMuted)
                     assert(ui.events[index - 1].value:find("weightFallbacks=", 1, true))
+                    assert(ui.events[index + 1].value == "weapon-1=4 lastAttack=5 nonattack=6", ui.events[index + 1].value)
+                    assert(ui.events[index + 2].value == "names: sibling=7 unmapped=8", ui.events[index + 2].value)
                 end
             end
             assert(count == (enabled and 1 or 0))
@@ -848,7 +850,7 @@ function T.attributionFooterShowsCountersAndLegacyZerosOnlyInDeveloperMode()
         local found = false
         for _, event in ipairs(ui.events) do
             if event.kind == "text" and event.value:find("attribution:", 1, true) then
-                assert(event.value == "attribution: action=0 shell=0 kinsect=0 slinger=0 weapon-1=0 lastAttack=0 nonattack=0 · names: sibling=0 unmapped=0")
+                assert(event.value == "attribution: action=0 shell=0 kinsect=0 slinger=0")
                 found = true
             end
         end

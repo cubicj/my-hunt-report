@@ -580,9 +580,11 @@ local function drawFooter(snapshot, ctx)
             L("diagnostics"), d.weightFallbacks or 0, d.droppedPending or 0,
             tostring(d.fightingFallback == true)), Theme.colors.textMuted)
         local a, n = d.attribution or {}, d.names or {}
-        textIn(ctx.fonts.small, string.format("attribution: action=%d shell=%d kinsect=%d slinger=%d weapon-1=%d lastAttack=%d nonattack=%d · names: sibling=%d unmapped=%d",
-            a.action or 0, a.shell or 0, a.kinsect or 0, a.slinger or 0, a.weaponMinus1 or 0,
-            a.lastAttack or 0, a.nonattack or 0, n.sibling or 0, n.unmapped or 0), Theme.colors.textMuted)
+        textIn(ctx.fonts.small, string.format("attribution: action=%d shell=%d kinsect=%d slinger=%d",
+            a.action or 0, a.shell or 0, a.kinsect or 0, a.slinger or 0), Theme.colors.textMuted)
+        textIn(ctx.fonts.small, string.format("weapon-1=%d lastAttack=%d nonattack=%d",
+            a.weaponMinus1 or 0, a.lastAttack or 0, a.nonattack or 0), Theme.colors.textMuted)
+        textIn(ctx.fonts.small, string.format("names: sibling=%d unmapped=%d", n.sibling or 0, n.unmapped or 0), Theme.colors.textMuted)
     end
 end
 
