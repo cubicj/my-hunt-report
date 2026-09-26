@@ -315,6 +315,10 @@ function HitCapture.readAttackStats(attackData, elementHitzones, finalDamage)
             for _, entry in ipairs(entries) do
                 local kind = ADDITIONAL_KINDS[entry.skill]
                 local damage = tonumber(entry.damage) or 0
+                if kind == nil and (tonumber(entry.skill) or 0) > 0 and damage > 0 then
+                    Log.debug("unmapped skill additional damage sid=" .. tostring(entry.skill) .. " dmg=" .. tostring(entry.damage)
+                        .. " attr=" .. tostring(entry.attr), "extra:unmapped:" .. tostring(entry.skill))
+                end
                 if kind and damage > 0 then
                     local hitzone = HitCapture.elementHitzoneValue(elementHitzones, entry.attr)
                     if type(hitzone) == "number" then damage = damage * hitzone / 100 end

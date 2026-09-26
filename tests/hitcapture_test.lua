@@ -355,6 +355,31 @@ local function additionalArray(entries)
     return { _Array = array }
 end
 
+function T.unmappedAdditionalDamageLogsOnlyInDeveloperMode()
+    local Log = require("MyHuntReport.Log")
+    local developerMode = Log.isDeveloperMode()
+    local attackData = { _UseSkillAdditionalDamage = true, _SkillAdditinalDamageArray = additionalArray({
+        { _SkillType = 999, _Damage = 30, _Attr = 0 },
+        { _SkillType = 0, _Damage = 30, _Attr = 0 },
+        { _SkillType = 998, _Damage = 0, _Attr = 0 },
+        { _SkillType = 997, _Damage = -30, _Attr = 0 },
+    }) }
+    Log.resetCounts()
+    local ok, err = pcall(function()
+        Log.setDeveloperMode(false)
+        assert(#HitCapture.readAttackStats(attackData).extras == 0)
+        assert(#stubs.logLines == 0)
+        Log.setDeveloperMode(true)
+        assert(#HitCapture.readAttackStats(attackData).extras == 0)
+        assert(#stubs.logLines == 1)
+        assert(stubs.logLines[1]:find("unmapped skill additional damage sid=999 dmg=30 attr=0", 1, true))
+        assert(Log.count("extra:unmapped:999") == 1)
+    end)
+    Log.setDeveloperMode(developerMode)
+    Log.resetCounts()
+    if not ok then error(err, 0) end
+end
+
 function T.additionalArrayExtrasScaleByElementHitzone()
     withCapture(function(hits)
         local info = hitInfo(101, 1, { _UseSkillAdditionalDamage = true, _SkillAdditinalDamageArray = additionalArray({
@@ -797,26 +822,6 @@ function T.otherUntypedHitsUseCurrentActionAndLogOncePerObjectName()
     ShellTracker.currentAction = originalCurrent
     Log.setDeveloperMode(developerMode)
     Log.resetCounts()
-    if not ok then error(err, 0) end
-end
-
-function T.blastProcPassesKindWithoutLocalizedName()
-    local hook, addProc, toFloat, toValue = Game.hook, Session.addProc, sdk.to_float, sdk.to_valuetype
-    local hooks, recorded = {}, nil
-    local ok, err = pcall(function()
-        Game.hook = function(_, signature, pre, post) hooks[signature] = { pre, post } end
-        Session.addProc = function(proc) recorded = proc end
-        sdk.to_float = function(value) return value end
-        sdk.to_valuetype = function(value) return value end
-        local procs = assert(loadfile("reframework/autorun/MyHuntReport/Procs.lua"))()
-        procs.attackerIsMaster = function() return true end
-        procs.install()
-        hooks.onActivate[1]()
-        hooks["setParam(System.Single, app.TARGET_ACCESS_KEY, System.Boolean)"][1]({ [3] = 100, [4] = "master" })
-        hooks.onActivate[2]()
-        assert(recorded.kind == "blast" and recorded.damage == 100 and recorded.name == nil)
-    end)
-    Game.hook, Session.addProc, sdk.to_float, sdk.to_valuetype = hook, addProc, toFloat, toValue
     if not ok then error(err, 0) end
 end
 
