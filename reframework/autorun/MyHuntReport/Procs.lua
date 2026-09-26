@@ -33,11 +33,30 @@ local function decodeKey(pointer)
     return nil
 end
 
+local function invokerIsMaster(bracket)
+    if bracket.invokerIsMaster == nil then
+        bracket.invokerIsMaster = Procs.attackerIsMaster(bracket.invoker)
+    end
+    return bracket.invokerIsMaster
+end
+
+local function attributedToMaster(bracket)
+    if (bracket.kind == "flayer" or bracket.kind == "elementConvert") and bracket.getterIsMaster ~= nil then
+        return bracket.getterIsMaster == true
+    end
+    return invokerIsMaster(bracket)
+end
+
 local function onSetParam(args)
     local bracket = brackets[#brackets]
     if not bracket or (bracket.kind ~= "blast" and bracket.kind ~= "elementConvert") then return end
     local ok, value = pcall(sdk.to_float, args[3])
-    local isMaster = Procs.attackerIsMaster(decodeKey(args[4]))
+    local isMaster
+    if bracket.kind == "blast" then
+        isMaster = Procs.attackerIsMaster(decodeKey(args[4]))
+    else
+        isMaster = attributedToMaster(bracket)
+    end
     Log.debug("proc " .. bracket.kind .. " setParam value=" .. (ok and tostring(value) or "?")
         .. " master=" .. tostring(isMaster), "proc:" .. bracket.kind .. ":setParam")
     if not ok or type(value) ~= "number" or value <= 0 or bracket.recorded or not isMaster then return end
@@ -49,13 +68,6 @@ local function diagnosticValue(read)
     local ok, value = pcall(read)
     if ok and value ~= nil then return tostring(value) end
     return "?"
-end
-
-local function invokerIsMaster(bracket)
-    if bracket.invokerIsMaster == nil then
-        bracket.invokerIsMaster = Procs.attackerIsMaster(bracket.invoker)
-    end
-    return bracket.invokerIsMaster
 end
 
 local function enterBracket(kind, args)
@@ -96,14 +108,16 @@ local function onExternalDamage(args)
             .. " _HasValue=" .. hasValue, "proc:" .. bracket.kind .. ":external")
     end
     if bracket.kind ~= "poison" and bracket.kind ~= "flayer" and bracket.kind ~= "elementConvert" then return end
-    if not ok or type(value) ~= "number" or value <= 0 or bracket.recorded or not invokerIsMaster(bracket) then return end
+    if not ok or type(value) ~= "number" or value <= 0 or bracket.recorded or not attributedToMaster(bracket) then return end
     bracket.recorded = true
     Session.addProc({ kind = bracket.kind, damage = value, time = Game.uptime() })
 end
 
-local function logGetter(method, args)
-    if not Log.isDeveloperMode() then return end
-    local isMaster = diagnosticValue(function()
+local function onGetter(kind, args)
+    local bracket = brackets[#brackets]
+    local matching = bracket and bracket.kind == kind
+    if not matching and not Log.isDeveloperMode() then return end
+    local ok, isMaster = pcall(function()
         local this = sdk.to_managed_object(args[2])
         local masterSkill = Game.masterHunter():get_HunterSkill()
         local address = this:get_address()
@@ -111,7 +125,11 @@ local function logGetter(method, args)
         if address == nil or masterAddress == nil then return nil end
         return address == masterAddress
     end)
-    Log.debug("proc getter " .. method .. " master=" .. isMaster .. " kind=" .. tostring(Procs.activeKind()),
+    if matching then bracket.getterIsMaster = ok and isMaster == true end
+    if not Log.isDeveloperMode() then return end
+    local method = kind == "flayer" and "stabbing" or "ryuki"
+    local identity = ok and isMaster ~= nil and tostring(isMaster) or "?"
+    Log.debug("proc getter " .. method .. " master=" .. identity .. " kind=" .. tostring(Procs.activeKind()),
         "proc:getter:" .. method)
 end
 
@@ -136,10 +154,10 @@ function Procs.install()
         "stockExternalDamage(System.Single, System.Boolean, System.Nullable`1<app.TARGET_ACCESS_KEY>, System.Boolean, System.Boolean)",
         onExternalDamage)
     Game.hook("app.cHunterSkill", "getSkillStabbingAddDamage(app.cEnemyContextHolder)", function(args)
-        logGetter("stabbing", args)
+        onGetter("flayer", args)
     end)
     Game.hook("app.cHunterSkill", "getSkillRyukiAddDamage(app.cEnemyContextHolder, System.Single, System.Single)", function(args)
-        logGetter("ryuki", args)
+        onGetter("elementConvert", args)
     end)
 end
 

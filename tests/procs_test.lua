@@ -200,15 +200,125 @@ function T.nestedBracketsKeepKindAndRecordedStateSeparate()
     end)
 end
 
-function T.setParamRequiresMasterCallKeyForBothKinds()
+function T.blastSetParamRequiresMasterCallKey()
     withProcs(function(c)
-        for _, kind in ipairs({ "blast", "elementConvert" }) do
-            c.enter(kind, c.master)
-            c.setParam(100, c.other)
-            c.setParam(100, nil)
-            c.leave(kind)
-        end
+        c.enter("blast", c.master)
+        c.setParam(100, c.other)
+        c.setParam(100, nil)
+        c.leave("blast")
         assert(#c.recorded == 0)
+    end)
+end
+
+local function checkGetterAttribution(kind, path)
+    withProcs(function(c)
+        local getter = kind == "flayer" and GETTERS.stabbing or GETTERS.ryuki
+        local function damage(key)
+            if path == "setParam" then c.setParam(160, key) else c.external(160, { _HasValue = false }) end
+        end
+        c.enter(kind, c.other)
+        c.hooks[getter].pre({ [2] = { get_address = function() return 123 end } })
+        damage(c.other)
+        c.leave(kind)
+        assert(#c.recorded == 1 and c.recorded[1].kind == kind and c.recorded[1].damage == 160)
+        c.enter(kind, c.master)
+        c.hooks[getter].pre({ [2] = { get_address = function() return 456 end } })
+        damage(c.master)
+        c.leave(kind)
+        assert(#c.recorded == 1)
+        c.enter(kind, c.master)
+        damage(c.other)
+        c.leave(kind)
+        assert(#c.recorded == 2 and c.recorded[2].kind == kind)
+        c.enter(kind, c.other)
+        damage(c.master)
+        c.leave(kind)
+        assert(#c.recorded == 2)
+        assert(Log.isDeveloperMode() == false and #stubs.logLines == 0)
+    end)
+end
+
+function T.flayerExternalPrefersGetterIdentityWithInvokerFallback()
+    checkGetterAttribution("flayer", "external")
+end
+
+function T.elementConvertSetParamPrefersGetterIdentityWithInvokerFallback()
+    checkGetterAttribution("elementConvert", "setParam")
+end
+
+function T.elementConvertExternalPrefersGetterIdentityWithInvokerFallback()
+    checkGetterAttribution("elementConvert", "external")
+end
+
+function T.gettersOutsideMatchingBracketDoNotAffectAttribution()
+    withProcs(function(c)
+        local masterArgs = { [2] = { get_address = function() return 123 end } }
+        local otherArgs = { [2] = { get_address = function() return 456 end } }
+        for _, getter in pairs(GETTERS) do c.hooks[getter].pre(masterArgs) end
+        c.enter("flayer", c.other)
+        c.external(160)
+        c.leave("flayer")
+        c.enter("elementConvert", c.other)
+        c.setParam(160, c.master)
+        c.leave("elementConvert")
+        assert(#c.recorded == 0)
+        c.enter("flayer", c.other)
+        c.enter("poison", c.other)
+        for _, getter in pairs(GETTERS) do c.hooks[getter].pre(masterArgs) end
+        c.external(15)
+        c.leave("poison")
+        c.external(160)
+        c.leave("flayer")
+        assert(#c.recorded == 0)
+        c.enter("poison", c.master)
+        for _, getter in pairs(GETTERS) do c.hooks[getter].pre(otherArgs) end
+        c.external(15)
+        c.leave("poison")
+        assert(#c.recorded == 1 and c.recorded[1].kind == "poison")
+        c.enter("flayer", c.master)
+        c.hooks[GETTERS.ryuki].pre(otherArgs)
+        c.external(160)
+        c.leave("flayer")
+        c.enter("elementConvert", c.master)
+        c.hooks[GETTERS.stabbing].pre(otherArgs)
+        c.setParam(160, c.other)
+        c.leave("elementConvert")
+        assert(#c.recorded == 3)
+    end)
+end
+
+function T.failedGetterIdentityRejectsMasterInvoker()
+    withProcs(function(c)
+        for _, kind in ipairs({ "flayer", "elementConvert" }) do
+            local getter = kind == "flayer" and GETTERS.stabbing or GETTERS.ryuki
+            for _, readAddress in ipairs({
+                function() error("address unavailable") end,
+                function() return nil end,
+            }) do
+                c.enter(kind, c.master)
+                c.hooks[getter].pre({ [2] = { get_address = readAddress } })
+                c.setParam(160, c.master)
+                c.external(160)
+                c.leave(kind)
+            end
+        end
+        assert(#c.recorded == 0 and #stubs.logLines == 0)
+    end)
+end
+
+function T.nestedGetterAttributionStaysWithInnermostBracket()
+    withProcs(function(c)
+        c.enter("flayer", c.other)
+        c.hooks[GETTERS.stabbing].pre({ [2] = { get_address = function() return 123 end } })
+        c.enter("flayer", c.master)
+        c.hooks[GETTERS.stabbing].pre({ [2] = { get_address = function() return 456 end } })
+        c.external(160)
+        c.leave("flayer")
+        assert(#c.recorded == 0)
+        c.external(160)
+        c.external(160)
+        c.leave("flayer")
+        assert(#c.recorded == 1 and c.recorded[1].kind == "flayer")
     end)
 end
 

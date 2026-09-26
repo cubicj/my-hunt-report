@@ -14,7 +14,7 @@ local KINSECT_KEY = "kinsect"
 local HIDE_FIXED_THRESHOLD = 1.1
 local ELEMENT_FIELDS = { [1] = "_Fire", [2] = "_Water", [3] = "_Thunder", [4] = "_Ice", [5] = "_Dragon" }
 local SPECIAL_KINDS = { [11] = "darkWave", [12] = "mirrorBlade" }
-local ADDITIONAL_KINDS = { [157] = "flare", [214] = "fury" }
+local ADDITIONAL_KINDS = { [155] = "violent", [157] = "flare", [214] = "fury" }
 local CRIMSON_GUIDE_IDS = { [-1997082496] = 1927826048, [1472591744] = 850992256, [-1065507968] = -1171603968 }
 
 local pending = {}
@@ -299,7 +299,7 @@ function HitCapture.readAttackStats(attackData, elementHitzones, finalDamage)
         stats.useAdd = useAdd == true
     end
     local specialKind = SPECIAL_KINDS[stats.specialType]
-    if type(stats.specialType) == "number" and stats.specialType > 0 then
+    if type(stats.specialType) == "number" and stats.specialType > 0 and specialKind == nil and stats.specialType ~= 6 then
         Log.debug("special type " .. tostring(stats.specialType) .. " kind=" .. tostring(specialKind) .. " dmg=" .. tostring(finalDamage),
             "special:" .. tostring(stats.specialType))
     end

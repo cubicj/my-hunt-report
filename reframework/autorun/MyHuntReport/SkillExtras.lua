@@ -57,11 +57,6 @@ local function onCalcAdditionalDone()
     SkillExtras.leave()
 end
 
-local function onViolent(retval)
-    local ok, value = pcall(sdk.to_float, retval)
-    if ok then SkillExtras.record("violent", value) end
-end
-
 local function onRyukiExplosion(retval)
     local ok, tuple = pcall(sdk.to_valuetype, retval, TUPLE_TYPE)
     if not ok or not tuple then return end
@@ -75,7 +70,6 @@ function SkillExtras.install()
     Game.hook("app.cHunterSkill",
         "calcSkillAdditionalDamage(app.cEnemyContextHolder, app.HitInfo, app.HunterCharacter)",
         onCalcAdditional, onCalcAdditionalDone)
-    Game.hook("app.cHunterSkill", "getSkillViolentAddDamage(System.Boolean)", nil, onViolent)
     Game.hook("app.cHunterSkill", "getSkillRyukiExplosionAddDamage(System.Boolean)", nil, onRyukiExplosion)
 end
 
