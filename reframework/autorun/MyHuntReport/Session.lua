@@ -40,6 +40,7 @@ function Session.reset(startTime)
         monsters = {},
         monsterOrder = {},
         skills = {},
+        skillEligible = {},
         motions = {},
         motionOrder = {},
         procs = {},
@@ -122,6 +123,9 @@ local function addRows(hit, damage)
     state.totalWeight = state.totalWeight + weight
     for skillId in pairs(hit.activeSkills or {}) do
         state.skills[skillId] = (state.skills[skillId] or 0) + weight
+    end
+    for skillId in pairs(hit.eligibleSkills or {}) do
+        state.skillEligible[skillId] = (state.skillEligible[skillId] or 0) + weight
     end
     local motion = state.motions[hit.motionKey]
     if not motion then
@@ -219,8 +223,9 @@ local function skillRows(equipped)
         if seen[id] then return end
         seen[id] = true
         local weight = state.skills[id] or 0
-        if weight <= 0 or state.totalWeight <= 0 then return end
-        local share = weight / state.totalWeight
+        local denominator = state.skillEligible[id] or state.totalWeight
+        if weight <= 0 or denominator <= 0 then return end
+        local share = weight / denominator
         rows[#rows + 1] = { id = id, label = { kind = "skill", id = id }, share = share, weight = weight }
     end
     for _, entry in ipairs(equipped or {}) do add(entry.id) end

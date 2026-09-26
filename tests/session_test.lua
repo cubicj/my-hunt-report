@@ -78,6 +78,23 @@ function T.skillSharesUseWeightOverTotalWeight()
     assert(s.skills[1].weight == 10)
 end
 
+function T.skillSharesUseEligibleWeightWhenPresent()
+    Session.reset(0)
+    Session.addHit(hit({ weight = 10, activeSkills = { [4082] = true, [29] = true }, eligibleSkills = { [4082] = true } }))
+    Session.addHit(hit({ weight = 30, activeSkills = {}, eligibleSkills = { [4082] = true } }))
+    Session.addHit(hit({ weight = 60, activeSkills = {}, eligibleSkills = {} }))
+    local rows = {}
+    for _, row in ipairs(Session.snapshot({ equippedSkills = { { id = 29 } }, resolveName = function(label) return tostring(label.id) end }).skills) do
+        rows[row.id] = row
+    end
+    assert(rows[4082] and math.abs(rows[4082].share - 0.25) < 1e-9, tostring(rows[4082] and rows[4082].share))
+    assert(rows[29] and math.abs(rows[29].share - 0.1) < 1e-9, tostring(rows[29] and rows[29].share))
+    Session.reset(0)
+    Session.addHit(hit({ weight = 10, activeSkills = { [4082] = true }, eligibleSkills = {} }))
+    local s = Session.snapshot({ resolveName = function(label) return tostring(label.id) end })
+    assert(#s.skills == 1 and math.abs(s.skills[1].share - 1) < 1e-9)
+end
+
 function T.placeholderSkillNamesAreHidden()
     Session.reset(0)
     Session.addHit(hit({ weight = 10, activeSkills = { [243] = true, [59] = true } }))
