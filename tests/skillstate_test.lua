@@ -634,18 +634,21 @@ function T.weaponStateIdsRoundTrip()
     assert(SkillState.weaponStateType("burst:stage1") == nil)
 end
 
-function T.dualBladesAndLongSwordCreditWithoutEligibility()
+function T.dualBladesAndLongSwordAreEligibleOnEveryOwnHit()
     withWeaponHunter(2, weaponHandling({ get_IsMikiriBuff = true }), function()
         local active, eligible = SkillState.activeSet({})
         assert(stubs.encode(active) == stubs.encode({ [4021] = true }), stubs.encode(active))
-        assert(stubs.encode(eligible) == "{}")
+        assert(stubs.encode(eligible) == stubs.encode({ [4021] = true }))
     end)
     withWeaponHunter(3, weaponHandling({ get_AuraLevel = 4 }), function()
-        local active = SkillState.activeSet({})
+        local active, eligible = SkillState.activeSet({})
         assert(stubs.encode(active) == stubs.encode({ [4031] = true }))
+        assert(stubs.encode(eligible) == stubs.encode({ [4031] = true }))
     end)
     withWeaponHunter(3, weaponHandling({ get_AuraLevel = 3 }), function()
-        assert(stubs.encode(SkillState.activeSet({})) == "{}")
+        local active, eligible = SkillState.activeSet({})
+        assert(stubs.encode(active) == "{}")
+        assert(stubs.encode(eligible) == stubs.encode({ [4031] = true }))
     end)
 end
 
@@ -696,7 +699,7 @@ function T.weaponStateReadFailuresCreditNothingAndLogOnce()
         Log.setDeveloperMode(true)
         local active, eligible = SkillState.activeSet({})
         assert(stubs.encode(active) == "{}")
-        assert(stubs.encode(eligible) == "{}")
+        assert(stubs.encode(eligible) == stubs.encode({ [4081] = true }))
         SkillState.activeSet({})
         local failures = 0
         local first = nil
@@ -717,6 +720,30 @@ function T.weaponStateReadFailuresCreditNothingAndLogOnce()
     withWeaponHunter(8, nil, function()
         local active, eligible = SkillState.activeSet({})
         assert(stubs.encode(active) == "{}" and stubs.encode(eligible) == "{}")
+    end)
+end
+
+function T.eligibilityFailureSkipsTheEntry()
+    local handling = { call = function(_, name)
+        if name == "get_Mode" then error("boom") end
+        return true
+    end }
+    withWeaponHunter(8, handling, function()
+        local developerMode = Log.isDeveloperMode()
+        Log.setDeveloperMode(true)
+        local active, eligible = SkillState.activeSet({})
+        Log.setDeveloperMode(developerMode)
+        assert(stubs.encode(active) == "{}")
+        assert(stubs.encode(eligible) == "{}")
+        for _, id in ipairs({ 4081, 4082 }) do
+            local failures = 0
+            for _, line in ipairs(stubs.logLines) do
+                if line:find("weapon state read failed for " .. id, 1, true) then
+                    failures = failures + 1
+                end
+            end
+            assert(failures == 1, id .. ": got " .. failures)
+        end
     end)
 end
 

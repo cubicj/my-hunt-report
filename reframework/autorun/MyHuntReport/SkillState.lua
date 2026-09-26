@@ -390,15 +390,19 @@ local function weaponStateSets(context)
     if handling == nil then return active, eligible end
     for _, entry in ipairs(WEAPON_STATES[weaponType] or {}) do
         local id = SkillState.weaponStateId(weaponType, entry.code)
-        local okEntry, isEligible, isActive = pcall(function()
-            if entry.eligible and entry.eligible(handling, context) ~= true then return false, false end
-            return true, entry.read(handling) == true
+        local okEntry, isEligible = pcall(function()
+            return not entry.eligible or entry.eligible(handling, context) == true
         end)
         if not okEntry then
             Log.debug("weapon state read failed for " .. tostring(id) .. ": " .. tostring(isEligible), "skill:weapon-state:" .. tostring(id))
-        else
-            if isEligible and entry.eligible then eligible[id] = true end
-            if isEligible and isActive then active[id] = true end
+        elseif isEligible then
+            eligible[id] = true
+            local okRead, isActive = pcall(function() return entry.read(handling) end)
+            if not okRead then
+                Log.debug("weapon state read failed for " .. tostring(id) .. ": " .. tostring(isActive), "skill:weapon-state:" .. tostring(id))
+            elseif isActive == true then
+                active[id] = true
+            end
         end
     end
     return active, eligible
