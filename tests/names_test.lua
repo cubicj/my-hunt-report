@@ -366,4 +366,15 @@ function T.weaponMissingTextReturnsNil()
     end)
 end
 
+function T.weaponStateRowsArePrefixedWithTheWeaponName()
+    withNames(function(Names)
+        SkillState.skillName = function(id) return "state:" .. tostring(id) end
+        assert(Names.resolve({ kind = "skill", id = 4092 }) == "via:1:app.WeaponUtil:9: state:4092", Names.resolve({ kind = "skill", id = 4092 }))
+        assert(Names.resolve({ kind = "skill", id = 63 }) == "state:63")
+        Game.messageText = function() return nil end
+        Names.reset()
+        assert(Names.resolve({ kind = "skill", id = 4021 }) == "state:4021", Names.resolve({ kind = "skill", id = 4021 }))
+    end)
+end
+
 return T
