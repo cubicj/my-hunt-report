@@ -977,9 +977,9 @@ function T.sectionRulesMeasureWithSmallFontAndSpanTheRemainingWidth()
             for index, width in ipairs({ 680, 324, 324 }) do
                 local ruleWidth = width - 40 - 12
                 assert(reservations[index].pos.x == 18 + 40 + 12)
-                assert(reservations[index].size[1] == ruleWidth and reservations[index].size[2] == 14)
+                assert(reservations[index].size[1] == ruleWidth and reservations[index].size[2] == 18)
                 assert(lines[index][1][1] == 100 and lines[index][2][1] == 100 + ruleWidth)
-                assert(lines[index][1][2] == 207 and lines[index][2][2] == 207)
+                assert(lines[index][1][2] == 209 and lines[index][2][2] == 209)
             end
         end)
     end)

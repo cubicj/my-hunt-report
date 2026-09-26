@@ -10,8 +10,8 @@ local FILES = {
 local ROLES = {
     header = { file = "semibold", ratio = 26 / 18 },
     body = { file = "regular", ratio = 1 },
-    meta = { file = "regular", ratio = 16 / 18 },
-    small = { file = "regular", ratio = 14 / 18 },
+    meta = { file = "regular", ratio = 1 },
+    small = { file = "regular", ratio = 1 },
 }
 
 local ROLE_ORDER = { "header", "body", "meta", "small" }
