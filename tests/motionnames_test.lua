@@ -37,6 +37,7 @@ local function withGuides(texts, callback)
             _ActionGuideName_Common = fakeList({ { _Action = -754623232, _ActionName = "guid-common" } }),
             _ActionGuideName_Wp00 = fakeList({ { _Action = 9328, _ActionName = "guid-9328" } }),
             _ActionGuideName_Wp05 = fakeList({ { _Action = 1763677568, _ActionName = "guid-jump" } }),
+            _ActionGuideName_Wp07 = fakeList({ { _Action = 1497865856, _ActionName = "guid-wyrmstake" } }),
             _ActionGuideName_Wp10 = fakeList({ { _Action = -448700960, _ActionName = "guid-neg" } }),
             _ActionGuideName_Wp13 = fakeList({ { _Action = 4001, _ActionName = "guid-4001" }, { _Action = 4002, _ActionName = "guid-4002" } }),
         } } }
@@ -256,6 +257,21 @@ function T.landingGuideAliasesToItsSwing()
         assert(name == "점프 내려치기" and source == "guide", tostring(name))
         name, source = MotionNames.nameFor("cWpFlyOn", 1763677568)
         assert(name == "점프 내려치기" and source == "guide")
+    end)
+end
+
+function T.wyrmstakeStabAliasesToWyrmstakeCannon()
+    local texts = { ["en:guid-wyrmstake"] = "Wyrmstake Cannon", ["ko:guid-wyrmstake"] = "용항포" }
+    withGuides(texts, function()
+        Locale.init({})
+        Locale.resolve("ko")
+        local name, source = MotionNames.nameFor("cPileStab", 1088001664)
+        assert(name == "용항포" and source == "guide", tostring(name))
+        name, source = MotionNames.nameFor("cPileShoot", 1497865856)
+        assert(name == "용항포" and source == "guide")
+        Locale.resolve("en")
+        name = MotionNames.nameFor("cPileStab", 1088001664)
+        assert(name == "Wyrmstake Cannon", tostring(name))
     end)
 end
 
