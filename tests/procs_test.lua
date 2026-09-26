@@ -24,6 +24,7 @@ local function withProcs(callback)
     local toManaged, toFloat, toValue = sdk.to_managed_object, sdk.to_float, sdk.to_valuetype
     local developerMode = Log.isDeveloperMode()
     local hooks, recorded = {}, {}
+    local c_callStaticCalls = {}
     local master = { Category = 0, UniqueIndex = 7 }
     local other = { Category = 0, UniqueIndex = 8 }
     local masterObject = { get_Name = function() return "MasterPlayer" end }
@@ -38,7 +39,8 @@ local function withProcs(callback)
         Game.uptime = function() return 12.5 end
         Game.callStatic = function(typeName, signature, key)
             assert(typeName == "app.TargetAccessKeyUtil")
-            assert(signature == "getCharacter(app.TARGET_ACCESS_KEY)")
+            assert(signature == "getHunterCharacter(app.TARGET_ACCESS_KEY)")
+            c_callStaticCalls[#c_callStaticCalls + 1] = key
             if key == master then return { get_GameObject = function() return masterObject end } end
             if key == other then return { get_GameObject = function() return otherObject end } end
         end
@@ -53,9 +55,9 @@ local function withProcs(callback)
         end
         local procs = assert(loadfile("reframework/autorun/MyHuntReport/Procs.lua"))()
         procs.install()
-        local context = { procs = procs, hooks = hooks, recorded = recorded, master = master, other = other }
+        local context = { procs = procs, hooks = hooks, recorded = recorded, master = master, other = other, callStaticCalls = c_callStaticCalls }
         function context.enter(kind, key)
-            hooks[BRACKETS[kind]].pre({ [2] = { get_Invoker = function() return key end } })
+            hooks[BRACKETS[kind]].pre({ [2] = { _Invoker = key } })
         end
         function context.leave(kind) hooks[BRACKETS[kind]].post() end
         function context.setParam(value, key) hooks[SET_PARAM].pre({ [3] = value, [4] = key }) end
@@ -157,7 +159,7 @@ end
 function T.failedInvokerReadUnwindsWithoutAttribution()
     withProcs(function(c)
         c.enter("poison", c.master)
-        c.hooks[BRACKETS.flayer].pre({ [2] = { get_Invoker = function() error("unavailable") end } })
+        c.hooks[BRACKETS.flayer].pre({ [2] = setmetatable({}, { __index = function() error("unavailable") end }) })
         assert(c.procs.activeKind() == "flayer")
         c.external(160)
         c.leave("flayer")
@@ -424,7 +426,7 @@ function T.hookArgumentsUseExactSdkDecoders()
         local objectPointer, keyPointer, floatPointer, nullablePointer = {}, {}, {}, {}
         sdk.to_managed_object = function(pointer)
             assert(pointer == objectPointer)
-            return { get_Invoker = function() return c.master end }
+            return { _Invoker = c.master }
         end
         sdk.to_float = function(pointer)
             assert(pointer == floatPointer)
@@ -464,6 +466,46 @@ function T.failedSdkDecodesDoNotCorruptStackOrRecord()
         c.setParam(100, c.master)
         c.leave("blast")
         assert(c.procs.activeKind() == nil and #c.recorded == 0)
+    end)
+end
+
+function T.nonHunterInvokerNeverResolvesCharacter()
+    withProcs(function(c)
+        local otomo = { Category = 2, UniqueIndex = 0 }
+        local gimmick = { Category = 4, UniqueIndex = 1 }
+        local invalid = { Category = 4294967295, UniqueIndex = 4294967295 }
+        for _, key in ipairs({ otomo, gimmick, invalid, {} }) do
+            c.enter("poison", key)
+            c.external(15)
+            c.leave("poison")
+            c.enter("blast", c.master)
+            c.setParam(100, key)
+            c.leave("blast")
+        end
+        assert(#c.recorded == 0)
+        assert(#c.callStaticCalls == 0, "non-hunter keys must not reach the character resolver")
+        assert(c.procs.attackerIsMaster(otomo) == false and #c.callStaticCalls == 0)
+        assert(c.procs.attackerIsMaster(c.master) == true and #c.callStaticCalls == 1)
+    end)
+end
+
+function T.invokerIsReadOnlyWhenDamageNeedsAttribution()
+    withProcs(function(c)
+        local reads = 0
+        local this = setmetatable({}, { __index = function(_, field)
+            if field == "_Invoker" then
+                reads = reads + 1
+                return c.master
+            end
+        end })
+        c.hooks[BRACKETS.poison].pre({ [2] = this })
+        c.leave("poison")
+        assert(reads == 0 and #c.callStaticCalls == 0)
+        c.hooks[BRACKETS.poison].pre({ [2] = this })
+        c.external(15)
+        c.external(15)
+        c.leave("poison")
+        assert(reads == 1 and #c.callStaticCalls == 1 and #c.recorded == 1)
     end)
 end
 

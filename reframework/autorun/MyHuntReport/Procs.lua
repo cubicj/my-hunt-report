@@ -5,6 +5,7 @@ local Session = require("MyHuntReport.Session")
 local Procs = {}
 
 local KEY_TYPE = "app.TARGET_ACCESS_KEY"
+local HUNTER_CATEGORIES = { [0] = true, [5] = true }
 
 local brackets = {}
 local installed = false
@@ -18,9 +19,15 @@ function Procs.activeKind()
     return bracket and bracket.kind or nil
 end
 
-function Procs.attackerIsMaster(key)
+local function isHunterKey(key)
     if key == nil then return false end
-    local character = Game.callStatic("app.TargetAccessKeyUtil", "getCharacter(app.TARGET_ACCESS_KEY)", key)
+    local ok, category = pcall(function() return key.Category end)
+    return ok and HUNTER_CATEGORIES[category] == true
+end
+
+function Procs.attackerIsMaster(key)
+    if not isHunterKey(key) then return false end
+    local character = Game.callStatic("app.TargetAccessKeyUtil", "getHunterCharacter(app.TARGET_ACCESS_KEY)", key)
     if not character then return false end
     local ok, gameObject = pcall(function() return character:get_GameObject() end)
     if not ok then return false end
@@ -33,9 +40,17 @@ local function decodeKey(pointer)
     return nil
 end
 
+local function readInvoker(bracket)
+    if bracket.invokerRead then return bracket.invoker end
+    bracket.invokerRead = true
+    local ok, invoker = pcall(function() return bracket.this._Invoker end)
+    if ok then bracket.invoker = invoker end
+    return bracket.invoker
+end
+
 local function invokerIsMaster(bracket)
     if bracket.invokerIsMaster == nil then
-        bracket.invokerIsMaster = Procs.attackerIsMaster(bracket.invoker)
+        bracket.invokerIsMaster = Procs.attackerIsMaster(readInvoker(bracket))
     end
     return bracket.invokerIsMaster
 end
@@ -71,20 +86,17 @@ local function diagnosticValue(read)
 end
 
 local function enterBracket(kind, args)
-    local bracket = { kind = kind, invoker = nil, invokerIsMaster = nil, recorded = false }
+    local bracket = { kind = kind, this = nil, invoker = nil, invokerRead = false, invokerIsMaster = nil, recorded = false }
     brackets[#brackets + 1] = bracket
-    local ok, invoker = pcall(function()
-        local this = sdk.to_managed_object(args[2])
-        return this:get_Invoker()
-    end)
-    if not ok then invoker = nil end
-    bracket.invoker = invoker
+    local ok, this = pcall(sdk.to_managed_object, args[2])
+    if ok then bracket.this = this end
     if not Log.isDeveloperMode() then return end
+    local invoker = readInvoker(bracket)
     local category = diagnosticValue(function() return invoker.Category end)
     local uniqueIndex = diagnosticValue(function() return invoker.UniqueIndex end)
     local name = diagnosticValue(function()
-        if invoker == nil then return nil end
-        local character = Game.callStatic("app.TargetAccessKeyUtil", "getCharacter(app.TARGET_ACCESS_KEY)", invoker)
+        if not isHunterKey(invoker) then return nil end
+        local character = Game.callStatic("app.TargetAccessKeyUtil", "getHunterCharacter(app.TARGET_ACCESS_KEY)", invoker)
         return character:get_GameObject():get_Name()
     end)
     Log.debug("proc " .. kind .. " invoker Category=" .. category .. " UniqueIndex=" .. uniqueIndex
