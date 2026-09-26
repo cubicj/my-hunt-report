@@ -451,7 +451,7 @@ function SkillState.skillName(skillId)
     elseif SkillState.weaponStateType(skillId) then
         local weaponType, code = SkillState.weaponStateType(skillId)
         local suffix = weaponType .. "_" .. code
-        text = Locale.text("weapon_state_" .. suffix) .. Locale.text("weapon_state_scope_" .. suffix)
+        text = Locale.text("weapon_state_" .. suffix)
     elseif skillId > MELODY_BASE and skillId < HIBIKI_BASE then
         local melodyType = skillId - MELODY_BASE
         local guid = Game.callStatic("app.Wp05Def", "MusicSkillName(app.Wp05Def.WP05_MUSIC_SKILL_TYPE, app.Wp05Def.WP05_MUSIC_SKILL_HIGH_FREQ_TYPE)", melodyType, 0)

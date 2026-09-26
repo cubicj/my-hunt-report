@@ -143,7 +143,6 @@ function T.weaponStateKeysExistInBothLanguages()
             Locale.init({})
             Locale.resolve(code)
             assert(Locale.text("weapon_state_" .. id) ~= "weapon_state_" .. id, code .. " " .. id)
-            assert(type(Locale.text("weapon_state_scope_" .. id)) == "string")
         end
     end
 end

@@ -767,13 +767,13 @@ function T.weaponHandlingReadFailureCreditsNothingAndLogs()
     end)
 end
 
-function T.weaponStateNamesComeFromLocaleWithScope()
+function T.weaponStateNamesComeFromLocale()
     Locale.init({})
     Locale.resolve("ko")
     assert(SkillState.skillName(4021) == "귀인 회피", SkillState.skillName(4021))
-    assert(SkillState.skillName(4092) == "방패 강화 · 도끼 모드+병", SkillState.skillName(4092))
+    assert(SkillState.skillName(4092) == "방패 강화", SkillState.skillName(4092))
     Locale.resolve("en")
-    assert(SkillState.skillName(4101) == "Triple Up · hunter hits", SkillState.skillName(4101))
+    assert(SkillState.skillName(4101) == "Triple Up", SkillState.skillName(4101))
     assert(SkillState.skillName(4031) == "Red Spirit Gauge", SkillState.skillName(4031))
 end
 
