@@ -224,6 +224,96 @@ function T.skillDamageRowsSortedAndFiltered()
     assert(rows[2].kind == "flare" and rows[2].damage == 25)
 end
 
+local function assertSkillProcDamage(kind)
+    Session.reset(0)
+    Session.addHit(hit())
+    assert(Session.addProc({ kind = kind, damage = 160 }) == true)
+    local s = Session.snapshot()
+    assert(s.damage.total == 260 and s.damage.fixed == 160 and s.damage.status == 0)
+    assert(s.damage.physical == 80 and s.damage.element == 20 and s.damage.hits == 1)
+    assert(#s.procs == 0 and #s.motions == 1)
+    for _, row in ipairs(s.motions) do assert(row.key:sub(1, 5) ~= "proc:") end
+    assert(s.motions[1].damage == 100 and s.motions[1].share == 100 / 260)
+    assert(stubs.encode(s.skillDamage) == stubs.encode({ { kind = kind, damage = 160, share = 160 / 260 } }))
+end
+
+function T.flayerProcAddsFixedSkillDamageWithoutMotionRow()
+    assertSkillProcDamage("flayer")
+end
+
+function T.elementConvertProcAddsFixedSkillDamageWithoutMotionRow()
+    assertSkillProcDamage("elementConvert")
+end
+
+function T.blastAndPoisonKeepStatusAndProcRows()
+    for _, kind in ipairs({ "blast", "poison" }) do
+        Session.reset(0)
+        Session.addHit(hit())
+        assert(Session.addProc({ kind = kind, damage = 160 }) == true)
+        local s = Session.snapshot()
+        assert(s.damage.total == 260 and s.damage.fixed == 0 and s.damage.status == 160)
+        assert(#s.skillDamage == 0 and #s.procs == 1 and #s.motions == 2)
+        assert(s.procs[1].kind == kind and s.procs[1].damage == 160 and s.procs[1].count == 1)
+        assert(s.motions[1].key == "proc:" .. kind and s.motions[1].damage == 160)
+        assert(s.motions[1].share == 160 / 260 and s.motions[1].hits == 1)
+    end
+end
+
+function T.skillProcOnlySessionHasDataUntilReset()
+    for _, kind in ipairs({ "flayer", "elementConvert" }) do
+        Session.reset(0)
+        assert(Session.hasData() == false)
+        Session.addProc({ kind = kind, damage = 160 })
+        assert(Session.hasData() == true and Session.hitCount() == 0)
+        local s = Session.snapshot()
+        assert(Session.snapshotHasData(s) == true)
+        assert(s.damage.total == 160 and s.damage.fixed == 160 and s.damage.status == 0)
+        assert(#s.procs == 0 and #s.motions == 0)
+        assert(stubs.encode(s.skillDamage) == stubs.encode({ { kind = kind, damage = 160, share = 160 / 160 } }))
+        Session.reset(0)
+        assert(Session.hasData() == false)
+        s = Session.snapshot()
+        assert(s.damage.total == 0 and s.damage.fixed == 0 and #s.skillDamage == 0)
+    end
+end
+
+function T.skillProcRowsSortByShareWithHitSkillDamage()
+    Session.reset(0)
+    Session.addHit(hit({ skillExtras = { { kind = "violent", damage = 30 } } }))
+    Session.addProc({ kind = "flayer", damage = 20 })
+    local rows = Session.snapshot().skillDamage
+    assert(stubs.encode(rows) == stubs.encode({
+        { kind = "violent", damage = 30, share = 30 / 120 },
+        { kind = "flayer", damage = 20, share = 20 / 120 },
+    }))
+    Session.addProc({ kind = "flayer", damage = 140 })
+    rows = Session.snapshot().skillDamage
+    assert(stubs.encode(rows) == stubs.encode({
+        { kind = "flayer", damage = 160, share = 160 / 260 },
+        { kind = "violent", damage = 30, share = 30 / 260 },
+    }))
+end
+
+function T.skillAndStatusProcsAccumulateWithoutDoubleCounting()
+    Session.reset(0)
+    Session.addHit(hit())
+    for _, kind in ipairs({ "flayer", "elementConvert" }) do
+        assert(Session.addProc({ kind = kind, damage = 0 }) == false)
+        assert(Session.addProc({ kind = kind, damage = -10 }) == false)
+        Session.addProc({ kind = kind, damage = 40 })
+        Session.addProc({ kind = kind, damage = 60 })
+    end
+    Session.addProc({ kind = "blast", damage = 50 })
+    local s = Session.snapshot()
+    assert(s.damage.total == 350 and s.damage.fixed == 200 and s.damage.status == 50)
+    assert(s.damage.physical + s.damage.element + s.damage.fixed + s.damage.status == s.damage.total)
+    assert(#s.procs == 1 and s.procs[1].kind == "blast" and #s.motions == 2)
+    assert(stubs.encode(s.skillDamage) == stubs.encode({
+        { kind = "elementConvert", damage = 100, share = 100 / 350 },
+        { kind = "flayer", damage = 100, share = 100 / 350 },
+    }))
+end
+
 function T.combatDpsUsesFightingTime()
     Session.reset(0)
     Session.addHit(hit({ finalDamage = 100 }))
