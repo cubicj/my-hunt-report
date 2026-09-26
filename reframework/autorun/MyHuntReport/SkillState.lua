@@ -30,8 +30,7 @@ local WEAPON_STATES = {
     [9] = {
         { code = 1, read = function(handling) return handling:call("get_IsSwordEnhanced") == true end,
             eligible = function(handling) return handling:call("get_Mode") == 0 end },
-        { code = 2, read = function(handling) return handling:call("get_IsShieldEnhanced") == true end,
-            eligible = function(handling, hit) return handling:call("get_Mode") == 1 or hit.shell == true end },
+        { code = 2, read = function(handling) return handling:call("get_IsShieldEnhanced") == true end },
         { code = 3, read = function(handling) return handling:call("get_IsAxeEnhanced") == true end,
             eligible = function(handling) return handling:call("get_Mode") == 1 end },
     },
