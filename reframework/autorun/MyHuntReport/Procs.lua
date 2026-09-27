@@ -6,6 +6,7 @@ local Procs = {}
 
 local KEY_TYPE = "app.TARGET_ACCESS_KEY"
 local HUNTER_CATEGORIES = { [0] = true, [5] = true }
+local PACKET_TTL_SECONDS = 1.0
 
 local brackets = {}
 local installed = false
@@ -23,7 +24,16 @@ function Procs.activeKind()
 end
 
 function Procs.pendingPacketDamage(kind)
-    return packetDamage[kind]
+    local pending = packetDamage[kind]
+    return pending and pending.damage or nil
+end
+
+local function takePacketDamage(kind)
+    local pending = packetDamage[kind]
+    packetDamage[kind] = nil
+    if not pending then return nil end
+    if Game.uptime() - pending.time > PACKET_TTL_SECONDS then return nil end
+    return pending.damage
 end
 
 local function isHunterKey(key)
@@ -97,8 +107,7 @@ local function enterBracket(kind, args)
     brackets[#brackets + 1] = bracket
     local ok, this = pcall(sdk.to_managed_object, args[2])
     if ok then bracket.this = this end
-    local pending = packetDamage[kind]
-    packetDamage[kind] = nil
+    local pending = takePacketDamage(kind)
     if pending and attributedToMaster(bracket) then
         bracket.recorded = true
         Session.addProc({ kind = kind, damage = pending, time = Game.uptime() })
@@ -113,7 +122,8 @@ local function enterBracket(kind, args)
         return character:get_GameObject():get_Name()
     end)
     Log.debug("proc " .. kind .. " invoker Category=" .. category .. " UniqueIndex=" .. uniqueIndex
-        .. " GameObject=" .. name, "proc:" .. kind .. ":invoker")
+        .. " GameObject=" .. name .. " pending=" .. tostring(pending) .. " recorded=" .. tostring(bracket.recorded),
+        "proc:" .. kind .. ":invoker")
 end
 
 local function leaveBracket()
@@ -142,17 +152,11 @@ local function onActivatePacket(kind)
     return function(args)
         local ok, value = pcall(function() return sdk.to_managed_object(args[3]).Damage end)
         if ok and type(value) == "number" and value > 0 then
-            packetDamage[kind] = value
+            packetDamage[kind] = { damage = value, time = Game.uptime() }
         else
             packetDamage[kind] = nil
         end
         Log.debug("proc " .. kind .. " packet damage=" .. (ok and tostring(value) or "?"), "proc:" .. kind .. ":packet")
-    end
-end
-
-local function onActivatePacketDone(kind)
-    return function()
-        packetDamage[kind] = nil
     end
 end
 
@@ -195,10 +199,10 @@ function Procs.install()
         onExternalDamage)
     Game.hook("app.cEnemyBadConditionSkillStabbing",
         "receiveActivatePacket(app.net_packet.cEmSkillActivateStabbing)",
-        onActivatePacket("flayer"), onActivatePacketDone("flayer"))
+        onActivatePacket("flayer"))
     Game.hook("app.cEnemyBadConditionSkillRyuki",
         "receiveActivatePacket(app.net_packet.cEmSkillActivateRyuki)",
-        onActivatePacket("elementConvert"), onActivatePacketDone("elementConvert"))
+        onActivatePacket("elementConvert"))
 end
 
 function Procs.installExtended()

@@ -69,7 +69,7 @@ local function withProcs(callback)
         function context.setParam(value, key) hooks[SET_PARAM].pre({ [3] = value, [4] = key }) end
         function context.external(value, key) hooks[EXTERNAL].pre({ [3] = value, [5] = key }) end
         function context.packet(kind, damage) hooks[PACKETS[kind]].pre({ [3] = { Damage = damage } }) end
-        function context.packetDone(kind) hooks[PACKETS[kind]].post() end
+        function context.advanceUptime(seconds) local now = Game.uptime() Game.uptime = function() return now + seconds end end
         callback(context)
     end)
     Game.hook, Session.addProc, Game.uptime = hook, addProc, uptime
@@ -555,7 +555,18 @@ function T.packetDamageRecordsOnMasterActivation()
         c.external(160.0, { _HasValue = false })
         assert(#c.recorded == 1, #c.recorded)
         c.leave("flayer")
-        c.packetDone("flayer")
+        assert(c.procs.pendingPacketDamage("flayer") == nil)
+    end)
+end
+
+function T.packetDamageSurvivesUntilTheActivationWithinTtl()
+    withProcs(function(c)
+        c.packet("flayer", 220.0)
+        c.advanceUptime(0.9)
+        assert(c.procs.pendingPacketDamage("flayer") == 220.0)
+        c.enter("flayer", c.master)
+        c.leave("flayer")
+        assert(#c.recorded == 1 and c.recorded[1].damage == 220.0, #c.recorded)
         assert(c.procs.pendingPacketDamage("flayer") == nil)
     end)
 end
@@ -569,19 +580,29 @@ function T.packetDamageIsConsumedByNonMasterActivation()
         assert(c.procs.pendingPacketDamage("flayer") == nil)
         c.enter("flayer", c.master)
         c.leave("flayer")
-        c.packetDone("flayer")
         assert(#c.recorded == 0)
     end)
 end
 
-function T.packetWithoutActivationIsDiscarded()
+function T.stalePacketExpiresBeforeALateActivation()
     withProcs(function(c)
         c.packet("flayer", 160.0)
-        c.packetDone("flayer")
-        assert(c.procs.pendingPacketDamage("flayer") == nil)
+        c.advanceUptime(1.5)
         c.enter("flayer", c.master)
         c.leave("flayer")
         assert(#c.recorded == 0)
+        assert(c.procs.pendingPacketDamage("flayer") == nil)
+    end)
+end
+
+function T.newerPacketReplacesAStaleOne()
+    withProcs(function(c)
+        c.packet("flayer", 160.0)
+        c.advanceUptime(5.0)
+        c.packet("flayer", 140.0)
+        c.enter("flayer", c.master)
+        c.leave("flayer")
+        assert(#c.recorded == 1 and c.recorded[1].damage == 140.0, #c.recorded)
     end)
 end
 
@@ -614,7 +635,6 @@ function T.elementConvertPacketUsesTheSamePath()
         c.external(95.5, { _HasValue = false })
         assert(#c.recorded == 1, #c.recorded)
         c.leave("elementConvert")
-        c.packetDone("elementConvert")
         assert(c.procs.pendingPacketDamage("elementConvert") == nil)
         assert(c.procs.pendingPacketDamage("flayer") == nil)
     end)
@@ -631,7 +651,6 @@ function T.packetOfOneKindDoesNotFeedTheOtherKind()
         c.leave("blast")
         assert(#c.recorded == 0)
         assert(c.procs.pendingPacketDamage("flayer") == 160.0)
-        c.packetDone("flayer")
     end)
 end
 
@@ -650,11 +669,9 @@ function T.packetDiagnosticsAreGatedAndKeyed()
     withProcs(function(c)
         stubs.logLines = {}
         c.packet("flayer", 160.0)
-        c.packetDone("flayer")
         assert(#stubs.logLines == 0, stubs.encode(stubs.logLines))
         Log.setDeveloperMode(true)
         c.packet("flayer", 160.0)
-        c.packetDone("flayer")
         assert(stubs.logLines[1] == "[MyHuntReport] proc flayer packet damage=160.0", stubs.logLines[1])
         sdk.to_managed_object = function() error("decode failed") end
         c.packet("elementConvert", 1.0)
