@@ -35,6 +35,7 @@ end
 local function withProbe(callback)
     local hook, singleton, masterHunter, callStatic = Game.hook, Game.singleton, Game.masterHunter, Game.callStatic
     local toManaged, toValue, toFloat = sdk.to_managed_object, sdk.to_valuetype, sdk.to_float
+    local originalThread = thread
     local hooks = {}
     local ok, err = pcall(function()
         Log.setDeveloperMode(false)
@@ -50,12 +51,15 @@ local function withProbe(callback)
         sdk.to_managed_object = function(value) return value end
         sdk.to_valuetype = function(value) return value end
         sdk.to_float = function(value) return value end
+        hooks.storage = {}
+        thread = { get_hook_storage = function() return hooks.storage end }
         local probe = assert(loadfile("reframework/autorun/MyHuntReport/ProcPacketProbe.lua"))()
         probe.install()
         callback({ probe = probe, hooks = hooks })
     end)
     Game.hook, Game.singleton, Game.masterHunter, Game.callStatic = hook, singleton, masterHunter, callStatic
     sdk.to_managed_object, sdk.to_valuetype, sdk.to_float = toManaged, toValue, toFloat
+    thread = originalThread
     Log.setDeveloperMode(false)
     if not ok then error(err, 0) end
 end
@@ -303,6 +307,45 @@ function T.questStartClearsOpenBrackets()
         assert(c.probe.activeBracket() == "toggle")
         c.hooks[FLOW.playing].pre({})
         assert(c.probe.activeBracket() == nil)
+        c.hooks[PROC.toggle].post(nil)
+        assert(c.probe.activeBracket() == nil)
+        assert(c.hooks.storage.pushed == nil)
+    end)
+end
+
+function T.nestedReceivesRestoreTheOuterBracket()
+    withProcProbe(function(c)
+        c.hooks[PROC.packetFlayer].pre({ [3] = {} })
+        local outerStorage = c.hooks.storage
+        c.hooks.storage = {}
+        c.hooks[PROC.toggle].pre({ [3] = {} })
+        assert(c.probe.activeBracket() == "toggle")
+        c.hooks[PROC.toggle].post(nil)
+        assert(c.hooks.storage.pushed == nil)
+        assert(c.probe.activeBracket() == "packet:flayer")
+        c.hooks.storage = outerStorage
+        c.hooks[PROC.packetFlayer].post(nil)
+        assert(c.probe.activeBracket() == nil)
+        assert(c.hooks.storage.pushed == nil)
+    end)
+    withProcProbe(function(c)
+        c.hooks[PROC.packetFlayer].pre({ [3] = {} })
+        local outerStorage = c.hooks.storage
+        c.hooks.storage = {}
+        Log.setDeveloperMode(false)
+        c.hooks[PROC.toggle].pre(raising())
+        assert(c.hooks.storage.pushed == nil)
+        c.hooks[PROC.toggle].post(nil)
+        assert(c.probe.activeBracket() == "packet:flayer")
+        Log.setDeveloperMode(true)
+        c.hooks.storage = outerStorage
+        c.hooks[PROC.blast].pre({ [2] = { _Invoker = { Category = 0, UniqueIndex = 0 } } })
+        local lines = ppLines()
+        assert(lines[2]:find("in=packet:flayer", 1, true), lines[2])
+        assert(c.probe.counters().activateInsidePacket == 1)
+        c.hooks[PROC.packetFlayer].post(nil)
+        assert(c.probe.activeBracket() == nil)
+        assert(c.hooks.storage.pushed == nil)
     end)
 end
 

@@ -132,6 +132,7 @@ local function onPacketPre(kind, counter)
     return function(args)
         if not Log.isDeveloperMode() then return end
         pushBracket("packet:" .. kind)
+        pcall(function() thread.get_hook_storage().pushed = true end)
         bump(counter)
         local packet = managedArg(args, 3)
         if not packet then return unreadable("packet " .. kind, "packet") end
@@ -147,6 +148,7 @@ end
 local function onTogglePre(args)
     if not Log.isDeveloperMode() then return end
     pushBracket("toggle")
+    pcall(function() thread.get_hook_storage().pushed = true end)
     bump("toggle")
     local packet = managedArg(args, 3)
     if not packet then return unreadable("toggle", "packet") end
@@ -157,7 +159,9 @@ local function onTogglePre(args)
 end
 
 local function onReceivePost()
-    popBracket()
+    local ok, pushed = pcall(function() return thread.get_hook_storage().pushed end)
+    if not ok or pushed == true then popBracket() end
+    pcall(function() thread.get_hook_storage().pushed = nil end)
 end
 
 local function invokerTexts(this)
