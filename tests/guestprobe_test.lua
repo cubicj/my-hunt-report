@@ -97,6 +97,7 @@ function T.summaryLineListsCountersInFixedOrder()
         local line = c.probe.summaryLine(counters)
         assert(line:sub(1, 12) == "summary own=", line)
         assert(line:find("own=3", 1, true), line)
+        assert(line:find("deadOwn=0 deadReadFail=0 woundReadFail=0", 1, true), line)
         local first = c.probe.COUNTER_ORDER[1]
         local last = c.probe.COUNTER_ORDER[#c.probe.COUNTER_ORDER]
         assert(line:find(first .. "=", 1, true) < line:find(last .. "=", 1, true), line)
@@ -115,6 +116,8 @@ function T.installsFlowHooksAndStaysSilentWhenDeveloperModeOff()
         c.probe.update()
         assert(#gpLines() == 0)
         for _, name in ipairs(c.probe.COUNTER_ORDER) do assert(c.probe.counters()[name] == 0, name) end
+        assert(c.probe.netDepth() == 0)
+        assert(c.probe.activeProcKind() == nil)
     end)
 end
 
@@ -284,7 +287,10 @@ local function hitFixture(c)
     Game.masterHunter = function() return { get_GameObject = function() return masterObject end } end
     Game.isMasterGameObject = function(object) return object == masterObject end
     Game.enemyContext = function(object) if object == enemyObject then return em end end
-    Game.enemyIsDead = function() return false end
+    local enemy = { get_HealthMgr = function() return { get_IsDead = function() return false end } end }
+    Game.componentOf = function(object, typeName)
+        if object == enemyObject and typeName == "app.EnemyCharacter" then return enemy end
+    end
     local function hitInfo(owner, address)
         return {
             getActualAttackOwner = function() return owner end,
@@ -298,11 +304,11 @@ local function hitFixture(c)
     }
     local stock = { get_Context = function() return { get_Em = function() return em end } end }
     local packet = { UniqueIndex = 3, AttackerIndex = 1, Attack = 120.5, FixAttack = 0.0, AttackAttr = 1, AttrValue = 30.0, ActionType = 1, PartsIndex = 2, ScarIndex = 0, AttackCond = 3, CondValue = 10.0, SkillAdditionalDamage = 0.0 }
-    return { master = masterObject, replica = replicaObject, hitInfo = hitInfo, preCalc = preCalc, stock = stock, packet = packet }
+    return { master = masterObject, replica = replicaObject, hitInfo = hitInfo, preCalc = preCalc, stock = stock, packet = packet, enemy = enemy }
 end
 
 local function withHitProbe(callback)
-    local isMaster, enemyContext, enemyIsDead = Game.isMasterGameObject, Game.enemyContext, Game.enemyIsDead
+    local isMaster, enemyContext, componentOf = Game.isMasterGameObject, Game.enemyContext, Game.componentOf
     local toValue, toFloat = sdk.to_valuetype, sdk.to_float
     withProbe(function(c)
         local ok, err = pcall(function()
@@ -311,7 +317,7 @@ local function withHitProbe(callback)
             Log.setDeveloperMode(true)
             callback(c, hitFixture(c))
         end)
-        Game.isMasterGameObject, Game.enemyContext, Game.enemyIsDead = isMaster, enemyContext, enemyIsDead
+        Game.isMasterGameObject, Game.enemyContext, Game.componentOf = isMaster, enemyContext, componentOf
         sdk.to_valuetype, sdk.to_float = toValue, toFloat
         if not ok then error(err, 0) end
     end)
@@ -397,9 +403,10 @@ end
 
 function T.deadAndWoundFailuresCount()
     withHitProbe(function(c, f)
-        Game.enemyIsDead = function() return true end
+        f.enemy.get_HealthMgr = function() return { get_IsDead = function() return true end } end
         c.hooks[HIT.detail].pre({ [3] = f.hitInfo(f.master, 558) })
         assert(c.probe.counters().deadOwn == 1)
+        assert(c.probe.counters().deadReadFail == 0)
         local broken = { Attack = 1.0, Common = { Attacker = { Category = 0, UniqueIndex = 1 }, ScarIndex = 0, PartsIndex = 2, MeatIndex = { _Value = 9 } } }
         local stock = { get_Context = function() return { get_Em = function() return { get_UniqueIndex = function() return 3 end, Parts = { _ParamParts = { _MeatArray = { _DataArray = {} } } }, Scar = { _ScarParts = { Get = function() error("no scar") end } } } end } end }
         c.hooks[HIT.calc].pre({ [2] = stock, [4] = broken, [5] = {} })
@@ -606,9 +613,7 @@ function T.activationBracketLogsInvokerAndExternalReportsBracket()
         assert(gpLines()[#gpLines()] == "[MyHuntReport] gp proc flayer invoker=? obj=?")
         Log.setDeveloperMode(false)
         c.hooks[PROC.flayer].post(nil)
-        assert(c.probe.activeProcKind() == "flayer")
         Log.setDeveloperMode(true)
-        c.hooks[PROC.flayer].post(nil)
         assert(c.probe.activeProcKind() == nil)
     end)
 end
@@ -715,6 +720,149 @@ function T.receiveCondCountsAndLogsFirstTwenty()
         c.hooks[PROC.receiveCond].pre({ [3] = { AttackerIndex = 2, AttackCond = 3, CondValue = 1.0 } })
         assert(#gpLines() == before + 1)
         assert(c.probe.counters().receiveCond == 1)
+    end)
+end
+
+function T.deathStateReadFailuresCountSeparatelyFromLivingEnemies()
+    withHitProbe(function(c, f)
+        f.enemy.get_HealthMgr = function() error("health failed") end
+        c.hooks[HIT.detail].pre({ [3] = f.hitInfo(f.master, 600) })
+        assert(c.probe.counters().deadReadFail == 1)
+        assert(c.probe.counters().deadOwn == 0)
+        Game.componentOf = function() return nil end
+        c.hooks[HIT.detail].pre({ [3] = f.hitInfo(f.master, 601) })
+        assert(c.probe.counters().deadReadFail == 2)
+        assert(c.probe.counters().deadOwn == 0)
+        Game.componentOf = function() return f.enemy end
+        f.enemy.get_HealthMgr = function() return { get_IsDead = function() return false end } end
+        c.hooks[HIT.detail].pre({ [3] = f.hitInfo(f.master, 602) })
+        assert(c.probe.counters().deadReadFail == 2)
+        assert(c.probe.counters().deadOwn == 0)
+        assert(c.probe.summaryLine(c.probe.counters()):find("deadOwn=0 deadReadFail=2", 1, true))
+    end)
+end
+
+function T.unreadableCalcFieldsKeepPendingLikeProduction()
+    withHitProbe(function(c, f)
+        local preCalc = setmetatable({ Common = f.preCalc.Common }, { __index = raising() })
+        c.hooks[HIT.detail].pre({ [3] = f.hitInfo(f.master, 602) })
+        c.hooks[HIT.calc].pre({ [2] = f.stock, [4] = preCalc })
+        c.hooks[HIT.net].pre({ [3] = f.packet })
+        c.hooks[HIT.calc].pre({ [2] = f.stock, [4] = f.preCalc })
+        assert(c.probe.counters().calcInsideNetWithOwnPending == 1)
+        assert(gpLines()[#gpLines()]:find("net=true ownPending=true", 1, true))
+        c.hooks[HIT.net].post(nil)
+    end)
+end
+
+function T.nonpositiveCalcClearsPendingBeforeNetCalc()
+    for _, values in ipairs({
+        { Attack = 0, FixAttack = 0, AttrValue = 0 },
+        { Attack = -1, FixAttack = 0, AttrValue = -2 },
+    }) do
+        withHitProbe(function(c, f)
+            local preCalc = setmetatable({ Common = f.preCalc.Common }, { __index = values })
+            c.hooks[HIT.detail].pre({ [3] = f.hitInfo(f.master, 603) })
+            c.hooks[HIT.calc].pre({ [2] = f.stock, [4] = preCalc })
+            assert(gpLines()[#gpLines()]:find("net=false ownPending=true", 1, true))
+            c.hooks[HIT.net].pre({ [3] = f.packet })
+            c.hooks[HIT.calc].pre({ [2] = f.stock, [4] = f.preCalc })
+            assert(c.probe.counters().calcInsideNetWithOwnPending == 0)
+            assert(gpLines()[#gpLines()]:find("net=true ownPending=false", 1, true))
+            c.hooks[HIT.net].post(nil)
+        end)
+    end
+end
+
+function T.positiveCalcFieldPreservesPendingDespiteOtherUnreadableFields()
+    for _, field in ipairs({ "Attack", "FixAttack", "AttrValue" }) do
+        withHitProbe(function(c, f)
+            local preCalc = raising()
+            preCalc.Common = f.preCalc.Common
+            preCalc[field] = 1
+            c.hooks[HIT.detail].pre({ [3] = f.hitInfo(f.master, 604) })
+            c.hooks[HIT.calc].pre({ [2] = f.stock, [4] = preCalc })
+            c.hooks[HIT.net].pre({ [3] = f.packet })
+            c.hooks[HIT.calc].pre({ [2] = f.stock, [4] = f.preCalc })
+            assert(c.probe.counters().calcInsideNetWithOwnPending == 1)
+            c.hooks[HIT.net].post(nil)
+        end)
+    end
+end
+
+function T.mismatchedMarkClearsPendingBeforeMatchingAddressMark()
+    withHitProbe(function(c, f)
+        c.hooks[HIT.detail].pre({ [3] = f.hitInfo(f.master, 605) })
+        c.hooks[HIT.mark].pre({ [3] = { FinalDamage = 1.0 }, [4] = f.hitInfo(f.master, 606) })
+        assert(c.probe.counters().markAddrMismatch == 1)
+        c.hooks[HIT.mark].pre({ [3] = { FinalDamage = 1.0 }, [4] = f.hitInfo(f.master, 605) })
+        assert(gpLines()[#gpLines()]:find("addrMatch=false", 1, true))
+        assert(c.probe.counters().markAddrMismatch == 1)
+    end)
+end
+
+function T.nestedNetBracketsCountEveryCalcAndReturnToZero()
+    withHitProbe(function(c, f)
+        c.hooks[HIT.detail].pre({ [3] = f.hitInfo(f.master, 607) })
+        f.preCalc.Attack, f.preCalc.FixAttack, f.preCalc.AttrValue = 0, 0, 0
+        c.hooks[HIT.net].pre({ [3] = f.packet })
+        c.hooks[HIT.calc].pre({ [2] = f.stock, [4] = f.preCalc })
+        c.hooks[HIT.net].pre({ [3] = f.packet })
+        assert(c.probe.netDepth() == 2)
+        c.hooks[HIT.calc].pre({ [2] = f.stock, [4] = f.preCalc })
+        c.hooks[HIT.net].post(nil)
+        assert(c.probe.netDepth() == 1)
+        c.hooks[HIT.calc].pre({ [2] = f.stock, [4] = f.preCalc })
+        c.hooks[HIT.net].post(nil)
+        assert(c.probe.netDepth() == 0)
+        assert(c.probe.counters().calcNet == 3)
+        assert(c.probe.counters().calcInsideNetWithOwnPending == 3)
+        c.hooks[HIT.calc].pre({ [2] = f.stock, [4] = f.preCalc })
+        assert(c.probe.counters().calcNet == 3)
+    end)
+end
+
+function T.netPostClosesBracketAfterDeveloperModeTurnsOff()
+    withHitProbe(function(c, f)
+        c.hooks[HIT.net].pre({ [3] = f.packet })
+        assert(c.probe.netDepth() == 1)
+        local before = #gpLines()
+        Log.setDeveloperMode(false)
+        c.hooks[HIT.net].post(raising())
+        Log.setDeveloperMode(true)
+        assert(c.probe.netDepth() == 0)
+        assert(#gpLines() == before)
+    end)
+end
+
+function T.poisonInvokerFailureCanRecoverAtSameAddress()
+    for _, invokerRead in ipairs({
+        function() error("invoker failed") end,
+        function() return nil end,
+    }) do
+        withProcProbe(function(c)
+            local this = setmetatable({ get_address = function() return 4242 end }, { __index = invokerRead })
+            c.hooks[PROC.poison].pre({ [2] = this })
+            c.hooks[PROC.poison].post(nil)
+            assert(gpLines()[1] == "[MyHuntReport] gp proc poison invoker unreadable")
+            this._Invoker = { Category = 0, UniqueIndex = 1 }
+            c.hooks[PROC.poison].pre({ [2] = this })
+            c.hooks[PROC.poison].post(nil)
+            assert(gpLines()[2] == "[MyHuntReport] gp proc poison invoker=0/1 obj=MasterPlayer")
+            c.hooks[PROC.poison].pre({ [2] = this })
+            c.hooks[PROC.poison].post(nil)
+            assert(#gpLines() == 2)
+        end)
+    end
+end
+
+function T.extCondDistinguishesAbsentObjectFromDecodeFailure()
+    withProcProbe(function(c)
+        c.hooks[PROC.extCond].pre({ [3] = 9, [4] = 100.0 })
+        assert(gpLines()[1] == "[MyHuntReport] gp ext cond=BLAST(9) value=100.0 obj=nil net=false")
+        sdk.to_managed_object = function() error("decode failed") end
+        c.hooks[PROC.extCond].pre({ [3] = 9, [4] = 100.0 })
+        assert(gpLines()[2] == "[MyHuntReport] gp ext cond=BLAST(9) value=100.0 obj=? net=false")
     end)
 end
 

@@ -5,7 +5,7 @@ local GuestProbe = {}
 
 GuestProbe.COUNTER_ORDER = {
     "own", "replica", "other", "toPacket", "netDamage", "calcNet", "calcInsideNetWithOwnPending",
-    "markNet", "markAddrMismatch", "deadOwn", "woundReadFail", "meatReadFail",
+    "markNet", "markAddrMismatch", "deadOwn", "deadReadFail", "woundReadFail", "meatReadFail",
     "receiveDamage", "receiveCond", "netCond", "extCond", "external", "setParam",
 }
 
@@ -150,8 +150,14 @@ local function onDetail(args)
     local index = enemyIndexOf(target)
     if index == nil then return unreadable("detail", "index") end
     bump(kind)
-    local okDead, isDead = pcall(Game.enemyIsDead, target)
-    if okDead and isDead then bump("deadOwn") end
+    local okDead, isDead = pcall(function()
+        return Game.componentOf(target, "app.EnemyCharacter"):get_HealthMgr():get_IsDead()
+    end)
+    if not okDead or isDead == nil then
+        bump("deadReadFail")
+    elseif isDead == true then
+        bump("deadOwn")
+    end
     local address
     local addressText = readValue(function()
         address = hitInfo:get_address()
@@ -179,7 +185,6 @@ local function onNetPre(args)
 end
 
 local function onNetPost()
-    if not Log.isDeveloperMode() then return end
     if netDepth > 0 then netDepth = netDepth - 1 end
 end
 
@@ -222,6 +227,14 @@ local function onCalc(args)
         .. " attr=" .. readValue(function() return preCalc.AttackAttr end) .. "/" .. readValue(function() return preCalc.AttrValue end)
         .. " scar=" .. readValue(function() return preCalc.Common.ScarIndex end)
         .. " parts=" .. readValue(function() return preCalc.Common.PartsIndex end))
+    if hasOwn and not inNet then
+        local nonpositive = true
+        for _, field in ipairs({ "Attack", "FixAttack", "AttrValue" }) do
+            local ok, value = pcall(function() return preCalc[field] end)
+            if not ok or (tonumber(value) or 0) > 0 then nonpositive = false end
+        end
+        if nonpositive then ownPending[index] = nil end
+    end
 end
 
 local function onMark(args)
@@ -242,7 +255,7 @@ local function onMark(args)
         return match
     end)
     if pending and not match then bump("markAddrMismatch") end
-    if match then ownPending[index] = nil end
+    if pending then ownPending[index] = nil end
     trace("mark em=" .. tostring(index) .. " net=" .. tostring(inNet) .. " addrMatch=" .. matchText
         .. " final=" .. readValue(function() return sdk.to_managed_object(args[3]).FinalDamage end))
 end
@@ -328,7 +341,12 @@ local function onProcEnter(kind)
         procStack[#procStack + 1] = kind
         local okThis, this = pcall(function() return sdk.to_managed_object(args[2]) end)
         if not okThis or not this then return unreadable("proc " .. kind, "this") end
+        local okInvoker, invoker = pcall(function() return this._Invoker end)
         if kind == "poison" then
+            if not okInvoker or invoker == nil then
+                Log.debug("gp proc poison invoker unreadable", "gp:proc:poison:invoker")
+                return
+            end
             local okAddress, address = pcall(function() return this:get_address() end)
             if okAddress and address ~= nil then
                 local key = tostring(address)
@@ -336,7 +354,6 @@ local function onProcEnter(kind)
                 poisonLogged[key] = true
             end
         end
-        local okInvoker, invoker = pcall(function() return this._Invoker end)
         local invokerText = okInvoker and invoker and keyText(invoker) or "?"
         local objectText = okInvoker and (invoker and keyObjectName(invoker) or "nil") or "?"
         trace("proc " .. kind .. " invoker=" .. invokerText .. " obj=" .. objectText)
@@ -344,8 +361,7 @@ local function onProcEnter(kind)
 end
 
 local function onProcLeave()
-    if not Log.isDeveloperMode() then return end
-    procStack[#procStack] = nil
+    if #procStack > 0 then procStack[#procStack] = nil end
 end
 
 local function onNetCond(args)
@@ -364,7 +380,11 @@ local function onExtCond(args)
     bump("extCond")
     local okCond, condition = pcall(function() return sdk.to_int64(args[3]) end)
     local value = readValue(function() return sdk.to_float(args[4]) end)
-    local objectName = readValue(function() return sdk.to_managed_object(args[7]):get_Name() end)
+    local okObject, object = pcall(function() return sdk.to_managed_object(args[7]) end)
+    local objectName = "?"
+    if okObject then
+        objectName = object and readValue(function() return object:get_Name() end) or "nil"
+    end
     trace("ext cond=" .. GuestProbe.conditionName(okCond and condition or nil)
         .. " value=" .. value
         .. " obj=" .. objectName .. " net=" .. tostring(netDepth > 0))
