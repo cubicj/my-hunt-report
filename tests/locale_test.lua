@@ -147,4 +147,42 @@ function T.weaponStateKeysExistInBothLanguages()
     end
 end
 
+function T.bundledFontCoversForcedLanguages()
+    Locale.init({ gameLanguage = function() return "en", 11 end })
+    Locale.resolve("en")
+    assert(Locale.bundledFontCovers() == true)
+    Locale.resolve("ko")
+    assert(Locale.bundledFontCovers() == true)
+end
+
+function T.bundledFontCoversAutoOnlyForEnglishAndKorean()
+    local cases = {
+        { code = "en", raw = 1, covered = true },
+        { code = "ko", raw = 9, covered = true },
+        { code = "en", raw = 0, covered = false },
+        { code = "en", raw = 10, covered = false },
+        { code = "en", raw = 11, covered = false },
+        { code = "en", raw = 2, covered = false },
+        { code = nil, raw = nil, covered = true },
+    }
+    for _, case in ipairs(cases) do
+        Locale.init({ gameLanguage = function() return case.code, case.raw end })
+        Locale.resolve("auto")
+        assert(Locale.bundledFontCovers() == case.covered, "raw " .. tostring(case.raw))
+    end
+end
+
+function T.bundledFontCoversWhenDetectorFails()
+    Locale.init({ gameLanguage = function() error("no api") end })
+    Locale.resolve("auto")
+    assert(Locale.bundledFontCovers() == true)
+end
+
+function T.reportFontLabelExistsInBothLanguages()
+    Locale.resolve("en")
+    assert(Locale.text("settings_report_font") == "Report font")
+    Locale.resolve("ko")
+    assert(Locale.text("settings_report_font") == "리포트 글꼴")
+end
+
 return T

@@ -84,6 +84,7 @@ local STRINGS = {
         settings_developer_mode = "Developer Mode",
         settings_open_report = "Open report",
         settings_font_status = "Font",
+        settings_report_font = "Report font",
         settings_history_mode = "History write mode",
         settings_draw_list = "Draw list",
         settings_force_fallback = "Force button fallback",
@@ -169,6 +170,7 @@ local STRINGS = {
         settings_developer_mode = "개발자 모드",
         settings_open_report = "리포트 열기",
         settings_font_status = "글꼴",
+        settings_report_font = "리포트 글꼴",
         settings_history_mode = "기록 저장 방식",
         settings_draw_list = "드로우 리스트",
         settings_force_fallback = "버튼 fallback 강제",
@@ -209,6 +211,14 @@ end
 function Locale.refresh()
     if setting == "auto" then return Locale.resolve("auto") end
     return active
+end
+
+local COVERED_TEXT_LANGUAGES = { [1] = true, [9] = true }
+
+function Locale.bundledFontCovers()
+    if setting == "en" or setting == "ko" then return true end
+    if detectedRaw == nil then return true end
+    return COVERED_TEXT_LANGUAGES[detectedRaw] == true
 end
 
 function Locale.viaLanguage()
