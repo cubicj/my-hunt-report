@@ -786,6 +786,7 @@ function ReportWindow.draw()
     local settings = Settings.get()
     ReportWindow.refreshLive(Game.uptime())
     local size = settings.fontSize or 18
+    Fonts.setMode(Locale.bundledFontCovers())
     local fonts = { header = Fonts.header(size), body = Fonts.body(size), meta = Fonts.meta(size), small = Fonts.small(size) }
     local sizes = { header = Fonts.size("header", size), body = size, meta = Fonts.size("meta", size), small = Fonts.size("small", size) }
     pcall(function()

@@ -415,7 +415,7 @@ function T.topBarDrawsOnlyButtonsAndCentersHistoryWithTheBodyFont()
                     assert(dimensions[1] == (label == "##history" and 72 or 28) and dimensions[2] == 28)
                     cursor = { x = 999, y = 999 }
                 end
-                ReportWindow.drawTopBar({ width = 680, fonts = { body = "body" }, sizes = { body = size } })
+                ReportWindow.drawTopBar({ width = 680, fonts = { body = { handle = "body", size = size } }, sizes = { body = size } })
                 assertNavigation(ui, "##history|##close")
                 assert(#ui.events == 2 and #fonts == 0)
                 assert(cursor.x == 24 and cursor.y == 60)
@@ -461,7 +461,7 @@ function T.historyDrawListLabelNavigatesAndFallsBackAfterFailure()
             error("label failed")
         end
         ui.events, ui.buttons, ui.positions = {}, {}, {}
-        ReportWindow.drawTopBar({ width = 680, fonts = { body = "body" }, sizes = { body = 18 } })
+        ReportWindow.drawTopBar({ width = 680, fonts = { body = { handle = "body", size = 18 } }, sizes = { body = 18 } })
         assert(#fonts == 0)
         assert(Draw.statusText() == "failed")
         assertNavigation(ui, "##history|X##close")
@@ -947,7 +947,7 @@ function T.sectionRulesMeasureWithSmallFontAndSpanTheRemainingWidth()
     local Fonts = require("MyHuntReport.Fonts")
     local small = Fonts.small
     local ok, err = pcall(function()
-        Fonts.small = function() return "small-font" end
+        Fonts.small = function() return { handle = "small-font", size = 18 } end
         withNavigation(function(ui)
             local fontStack, measurements, reservations = {}, {}, {}
             local list = stubs.drawList()
@@ -1744,6 +1744,36 @@ function T.reportDrawsTwoElementTilesInSnapshotOrder()
         assert(drawn:find("22.3\n15.8", 1, true), drawn)
         assert(not drawn:find("99.0", 1, true))
     end)
+end
+
+function T.draw_usesDefaultFontSizePushesWhenBundledFontDoesNotCover()
+    local Fonts = require("MyHuntReport.Fonts")
+    local covers = Locale.bundledFontCovers
+    local ok, err = pcall(function()
+        withNavigation(function(ui)
+            local fontPushes, sizePushes = 0, 0
+            imgui.push_font = function() fontPushes = fontPushes + 1 end
+            imgui.pop_font = function() end
+            imgui.push_font_size = function(size)
+                assert(type(size) == "number" and size >= 18)
+                sizePushes = sizePushes + 1
+            end
+            imgui.pop_font_size = function() sizePushes = sizePushes - 1 end
+            Locale.bundledFontCovers = function() return false end
+            ReportWindow.show(snapshot("clear"))
+            ui.draw()
+            assert(ReportWindow.isOpen())
+            assert(Fonts.mode() == "default")
+            assert(fontPushes == 0, "default mode must not push Pretendard handles")
+            assert(sizePushes == 0, "every push_font_size must be popped")
+            Locale.bundledFontCovers = function() return true end
+            ui.draw()
+            assert(Fonts.mode() == "bundled")
+        end)
+    end)
+    Locale.bundledFontCovers = covers
+    Fonts.setMode(true)
+    if not ok then error(err, 0) end
 end
 
 return T
