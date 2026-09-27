@@ -13,6 +13,7 @@ function T.defaultsWhenFileMissing()
     assert(s.windowX == -1 and s.windowY == -1)
     assert(s.language == "auto")
     assert(s.developerMode == false)
+    assert(s.skillProcCapture == true)
 end
 
 function T.clampsAndCoercesLoadedValues()
@@ -23,6 +24,7 @@ function T.clampsAndCoercesLoadedValues()
         visibleRows = 12, windowX = 640.5, windowY = -3,
         language = "jp",
         developerMode = true,
+        skillProcCapture = "off",
     }
     local s = Settings.load()
     assert(s.autoPopup == true, "wrong type falls back to default")
@@ -32,6 +34,7 @@ function T.clampsAndCoercesLoadedValues()
     assert(s.windowX == 640.5 and s.windowY == -3, "window position accepts any number")
     assert(s.language == "auto")
     assert(s.developerMode == true)
+    assert(s.skillProcCapture == true, "non-boolean falls back to default")
 end
 
 function T.corruptFileIsBackedUpAndReplaced()
@@ -62,6 +65,17 @@ function T.setDeveloperModeFlowsToLog()
     assert(Log.isDeveloperMode() == true)
     Settings.set("developerMode", false)
     assert(Log.isDeveloperMode() == false)
+end
+
+function T.skillProcCaptureLoadsAndSavesFalse()
+    stubs.jsonFiles[Settings.FILE] = { skillProcCapture = false }
+    local s = Settings.load()
+    assert(s.skillProcCapture == false)
+    assert(Settings.set("skillProcCapture", true) == true)
+    assert(Settings.get().skillProcCapture == true)
+    assert(stubs.jsonFiles[Settings.FILE].skillProcCapture == true)
+    assert(Settings.set("skillProcCapture", false) == true)
+    assert(stubs.jsonFiles[Settings.FILE].skillProcCapture == false)
 end
 
 function T.scalarFileBackupPreservesRawText()

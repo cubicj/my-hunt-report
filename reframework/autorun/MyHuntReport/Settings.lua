@@ -13,6 +13,7 @@ local DEFAULTS = {
     windowY = -1,
     language = "auto",
     developerMode = false,
+    skillProcCapture = true,
 }
 
 local RANGES = {
