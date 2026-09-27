@@ -7,6 +7,7 @@ local ReportWindow = require("MyHuntReport.ReportWindow")
 local Hotkey = require("MyHuntReport.Hotkey")
 local Theme = require("MyHuntReport.Theme")
 local Draw = require("MyHuntReport.Draw")
+local Procs = require("MyHuntReport.Procs")
 
 local SettingsPanel = {}
 
@@ -79,6 +80,16 @@ local function drawHotkey(s, L)
     end
 end
 
+local function drawSkillProcCapture(s, L)
+    local changed, value = imgui.checkbox(L("settings_skill_proc_capture"), s.skillProcCapture)
+    if changed then Settings.set("skillProcCapture", value) end
+    if Settings.get().skillProcCapture == Procs.skillProcsInstalled() then return end
+    local pushed = pcall(imgui.push_style_color, 0, Theme.colors.textMuted)
+    local ok, err = pcall(imgui.text, L("settings_restart_required"))
+    if pushed then pcall(imgui.pop_style_color, 1) end
+    if not ok then Log.error("restart hint text failed: " .. tostring(err), "panel:restart") end
+end
+
 local function drawFontAndLanguage(s, L)
     local changed, value = imgui.slider_int(L("settings_font_size"), s.fontSize, 14, 36)
     if changed then
@@ -131,6 +142,8 @@ local function drawTree()
     drawHotkey(s, L)
     drawFontAndLanguage(s, L)
     drawClearHistory()
+
+    drawSkillProcCapture(s, L)
 
     changed, value = imgui.checkbox(L("settings_developer_mode"), s.developerMode)
     if changed then

@@ -187,19 +187,71 @@ local function withClearPanel(callback)
     if not ok then error(err, 0) end
 end
 
-function T.settingsPanelClearButtonPrecedesDeveloperMode()
+function T.settingsPanelClearButtonPrecedesSkillProcAndDeveloperMode()
     withClearPanel(function(ui)
         local Settings = require("MyHuntReport.Settings")
+        local Procs = require("MyHuntReport.Procs")
+        local installed = Procs.skillProcsInstalled
+        Procs.skillProcsInstalled = function() return true end
         for _, enabled in ipairs({ false, true }) do
             Settings.set("developerMode", enabled)
             ui.draw()
             local _, font = ui.find("Font size (px)")
             local _, language = ui.find("Language")
             local button, clear = ui.find("Delete all history")
+            local skillProc, skill = ui.find("Record Flayer and Element Convert damage")
             local _, developer = ui.find("Developer Mode")
-            assert(button.kind == "button" and font < language and language + 1 == clear and clear + 1 == developer)
+            assert(button.kind == "button" and skillProc.kind == "checkbox")
+            assert(font < language and language + 1 == clear and clear + 1 == skill and skill + 1 == developer)
+            assert(ui.find("Takes effect after Reset Scripts or a game restart") == nil)
         end
         Settings.set("developerMode", false)
+        Procs.skillProcsInstalled = installed
+    end)
+end
+
+function T.settingsPanelSkillProcCheckboxSavesAndShowsRestartLineWhenStateDiffers()
+    withClearPanel(function(ui)
+        local Settings = require("MyHuntReport.Settings")
+        local Procs = require("MyHuntReport.Procs")
+        local Theme = require("MyHuntReport.Theme")
+        local installed = Procs.skillProcsInstalled
+        Procs.skillProcsInstalled = function() return true end
+        ui.draw()
+        assert(Settings.get().skillProcCapture == true)
+        assert(ui.find("Takes effect after Reset Scripts or a game restart") == nil)
+        Settings.set("skillProcCapture", false)
+        ui.draw()
+        local hint, hintIndex = ui.find("Takes effect after Reset Scripts or a game restart")
+        local _, skill = ui.find("Record Flayer and Element Convert damage")
+        local _, developer = ui.find("Developer Mode")
+        assert(hint and hint.kind == "text" and hint.colors[0] == Theme.colors.textMuted)
+        assert(skill + 1 == hintIndex and hintIndex + 1 == developer)
+        Procs.skillProcsInstalled = function() return false end
+        ui.draw()
+        assert(ui.find("Takes effect after Reset Scripts or a game restart") == nil)
+        Settings.set("skillProcCapture", true)
+        Procs.skillProcsInstalled = installed
+    end)
+end
+
+function T.settingsPanelSkillProcCheckboxChangeIsSaved()
+    withClearPanel(function(ui)
+        local Settings = require("MyHuntReport.Settings")
+        local Procs = require("MyHuntReport.Procs")
+        local installed = Procs.skillProcsInstalled
+        Procs.skillProcsInstalled = function() return true end
+        local checkbox = imgui.checkbox
+        imgui.checkbox = function(label, value)
+            if label == "Record Flayer and Element Convert damage" then return true, false end
+            return checkbox(label, value)
+        end
+        ui.draw()
+        imgui.checkbox = checkbox
+        assert(Settings.get().skillProcCapture == false)
+        assert(stubs.jsonFiles[Settings.FILE].skillProcCapture == false)
+        Settings.set("skillProcCapture", true)
+        Procs.skillProcsInstalled = installed
     end)
 end
 
