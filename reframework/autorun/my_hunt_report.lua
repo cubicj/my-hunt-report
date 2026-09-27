@@ -24,6 +24,7 @@ local Quest = tryRequire("MyHuntReport.Quest")
 local SkillState = tryRequire("MyHuntReport.SkillState")
 local Session = tryRequire("MyHuntReport.Session")
 local Names = tryRequire("MyHuntReport.Names")
+local ProcPacketProbe = tryRequire("MyHuntReport.ProcPacketProbe")
 
 if #loadErrors > 0 then
     for _, err in ipairs(loadErrors) do
@@ -57,6 +58,7 @@ HitCapture.install()
 Procs.install()
 SkillExtras.install()
 Quest.install()
+ProcPacketProbe.install()
 SkillState.install()
 Quest.adoptCurrentState(Game.uptime())
 ReportWindow.setRelabeler(function(snapshot)
