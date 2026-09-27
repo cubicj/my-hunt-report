@@ -110,8 +110,10 @@ local function drawDeveloperBlock(L)
 end
 
 local function drawTree()
-    local before = Locale.current()
-    if Locale.refresh() ~= before then ReportWindow.onLanguageChanged() end
+    local before = Locale.textKey()
+    Locale.refresh()
+    if Locale.textKey() ~= before then ReportWindow.onLanguageChanged() end
+    Fonts.setMode(Locale.bundledFontCovers())
     local s = Settings.get()
     local L = Locale.text
 

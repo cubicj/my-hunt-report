@@ -1602,7 +1602,7 @@ function T.languageChangeRelabelsSelectedHistoryAndRetainedLiveWithoutSaving()
         ReportWindow.draw()
         assert(ReportWindow.debugState().fromHistory == true)
         local selected = ReportWindow.debugState().snapshot
-        assert(selected.monsters[1].name == "saved ko")
+        assert(selected.monsters[1].name == "en")
         ReportWindow.onLanguageChanged()
         assert(selected.monsters[1].name == "en")
         assert(live.monsters[1].name == "en")
@@ -1746,17 +1746,71 @@ function T.reportDrawsTwoElementTilesInSnapshotOrder()
     end)
 end
 
+function T.draw_refreshesTextLanguageAndRelabelsWhenTheRawValueChanges()
+    local Fonts = require("MyHuntReport.Fonts")
+    local ok, err = pcall(function()
+        withNavigation(function(ui)
+            local code, raw, calls = "en", 11, 0
+            Locale.init({ gameLanguage = function() return code, raw end })
+            Locale.resolve("auto")
+            ReportWindow.setRelabeler(function() calls = calls + 1 end)
+            ReportWindow.show(snapshot("clear"))
+            ui.draw()
+            assert(Fonts.mode() == "default")
+            assert(calls == 0, tostring(calls))
+            code, raw = "ko", 9
+            ui.draw()
+            assert(calls == 1, tostring(calls))
+            assert(Fonts.mode() == "bundled")
+            ui.draw()
+            assert(calls == 1, tostring(calls))
+        end)
+    end)
+    ReportWindow.setRelabeler(nil)
+    Fonts.setMode(true)
+    Locale.init({ gameLanguage = function() return nil end })
+    Locale.resolve("en")
+    if not ok then error(err, 0) end
+end
+
+function T.historyEntriesAreRelabeledOnLoadAndOnLanguageChange()
+    local ok, err = pcall(function()
+        withNavigation(function(ui)
+            ui.entries = { snapshot("clear"), snapshot("clear") }
+            local retained = snapshot("clear")
+            ReportWindow.show(retained)
+            local calls, counts = 0, {}
+            ReportWindow.setRelabeler(function(value)
+                calls = calls + 1
+                counts[value] = (counts[value] or 0) + 1
+            end)
+            ReportWindow.showHistory()
+            ui.draw()
+            assert(calls == 2, tostring(calls))
+            assert(counts[ui.entries[1]] == 1 and counts[ui.entries[2]] == 1)
+            ReportWindow.onLanguageChanged()
+            assert(calls == 6, tostring(calls))
+            assert(counts[ui.entries[1]] == 2 and counts[ui.entries[2]] == 2)
+            assert(counts[retained] == 2, tostring(counts[retained]))
+        end)
+    end)
+    ReportWindow.setRelabeler(nil)
+    if not ok then error(err, 0) end
+end
+
 function T.draw_usesDefaultFontSizePushesWhenBundledFontDoesNotCover()
     local Fonts = require("MyHuntReport.Fonts")
     local covers = Locale.bundledFontCovers
     local ok, err = pcall(function()
         withNavigation(function(ui)
             local fontPushes, sizePushes = 0, 0
+            local sizePushTotal = 0
             imgui.push_font = function() fontPushes = fontPushes + 1 end
             imgui.pop_font = function() end
             imgui.push_font_size = function(size)
                 assert(type(size) == "number" and size >= 18)
                 sizePushes = sizePushes + 1
+                sizePushTotal = sizePushTotal + 1
             end
             imgui.pop_font_size = function() sizePushes = sizePushes - 1 end
             Locale.bundledFontCovers = function() return false end
@@ -1766,6 +1820,7 @@ function T.draw_usesDefaultFontSizePushesWhenBundledFontDoesNotCover()
             assert(Fonts.mode() == "default")
             assert(fontPushes == 0, "default mode must not push Pretendard handles")
             assert(sizePushes == 0, "every push_font_size must be popped")
+            assert(sizePushTotal > 0, "default mode must push font sizes")
             Locale.bundledFontCovers = function() return true end
             ui.draw()
             assert(Fonts.mode() == "bundled")

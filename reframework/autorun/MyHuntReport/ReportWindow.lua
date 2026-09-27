@@ -588,11 +588,21 @@ local function drawFooter(snapshot, ctx)
     end
 end
 
+local function relabelSnapshot(value)
+    if not state.relabeler or type(value) ~= "table" then return end
+    local ok, err = pcall(state.relabeler, value)
+    if not ok then Log.error("snapshot relabel failed: " .. tostring(err), "report:relabel") end
+end
+
 local function drawHistory(ctx)
     if state.entries == nil then
         local entries = History.readAll()
         state.entries = {}
-        for index = #entries, 1, -1 do state.entries[#state.entries + 1] = entries[index] end
+        for index = #entries, 1, -1 do
+            local entry = entries[index]
+            relabelSnapshot(entry)
+            state.entries[#state.entries + 1] = entry
+        end
     end
     if #state.entries == 0 then
         textIn(ctx.fonts.meta, L("history_empty"), Theme.colors.textMuted)
@@ -742,14 +752,9 @@ function ReportWindow.setRelabeler(relabeler)
 end
 
 function ReportWindow.onLanguageChanged()
-    if state.relabeler then
-        for _, field in ipairs({ "snapshot", "liveSnapshot" }) do
-            if type(state[field]) == "table" then
-                local ok, err = pcall(state.relabeler, state[field])
-                if not ok then Log.error("snapshot relabel failed: " .. tostring(err), "report:relabel") end
-            end
-        end
-    end
+    relabelSnapshot(state.snapshot)
+    relabelSnapshot(state.liveSnapshot)
+    for _, entry in ipairs(state.entries or {}) do relabelSnapshot(entry) end
     state.liveRefreshAt = nil
 end
 
@@ -784,6 +789,9 @@ end
 function ReportWindow.draw()
     if not state.open then return end
     local settings = Settings.get()
+    local textKey = Locale.textKey()
+    Locale.refresh()
+    if Locale.textKey() ~= textKey then ReportWindow.onLanguageChanged() end
     ReportWindow.refreshLive(Game.uptime())
     local size = settings.fontSize or 18
     Fonts.setMode(Locale.bundledFontCovers())

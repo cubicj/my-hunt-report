@@ -368,4 +368,44 @@ function T.settingsDeveloperBlockShowsReportFontModeAndTextKey()
     if not ok then error(err, 0) end
 end
 
+function T.settingsPanelRelabelsAndUpdatesFontModeWhenTheRawLanguageChanges()
+    local SettingsPanel = require("MyHuntReport.SettingsPanel")
+    local Settings = require("MyHuntReport.Settings")
+    local Fonts = require("MyHuntReport.Fonts")
+    local onDraw, originalImgui, onLanguage = re.on_draw_ui, imgui, ReportWindow.onLanguageChanged
+    local draw, calls, texts = nil, 0, {}
+    local code, raw = "en", 11
+    Settings.load()
+    Settings.set("language", "auto")
+    Locale.init({ gameLanguage = function() return code, raw end })
+    Settings.set("developerMode", true)
+    Locale.resolve("auto")
+    local ok, err = pcall(function()
+        re.on_draw_ui = function(callback) draw = callback end
+        imgui = setmetatable({
+            tree_node = function() return true end,
+            text = function(text) texts[#texts + 1] = text end,
+        }, { __index = originalImgui })
+        ReportWindow.onLanguageChanged = function() calls = calls + 1 end
+        SettingsPanel.register({})
+        draw()
+        assert(calls == 0, tostring(calls))
+        local drawn = table.concat(texts, "\n")
+        assert(drawn:find("Report font: default (auto:11)", 1, true), drawn)
+        code, raw = "en", 1
+        texts = {}
+        draw()
+        assert(calls == 1, tostring(calls))
+        drawn = table.concat(texts, "\n")
+        assert(drawn:find("Report font: bundled (auto:1)", 1, true), drawn)
+    end)
+    re.on_draw_ui, imgui, ReportWindow.onLanguageChanged = onDraw, originalImgui, onLanguage
+    Fonts.setMode(true)
+    Settings.set("developerMode", false)
+    Settings.set("language", "en")
+    Locale.init({ gameLanguage = function() return nil end })
+    Locale.resolve("en")
+    if not ok then error(err, 0) end
+end
+
 return T
