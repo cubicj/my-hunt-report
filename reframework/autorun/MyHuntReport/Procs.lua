@@ -10,14 +10,20 @@ local HUNTER_CATEGORIES = { [0] = true, [5] = true }
 local brackets = {}
 local installed = false
 local extendedInstalled = false
+local packetDamage = {}
 
 function Procs.reset()
     brackets = {}
+    packetDamage = {}
 end
 
 function Procs.activeKind()
     local bracket = brackets[#brackets]
     return bracket and bracket.kind or nil
+end
+
+function Procs.pendingPacketDamage(kind)
+    return packetDamage[kind]
 end
 
 local function isHunterKey(key)
@@ -91,6 +97,12 @@ local function enterBracket(kind, args)
     brackets[#brackets + 1] = bracket
     local ok, this = pcall(sdk.to_managed_object, args[2])
     if ok then bracket.this = this end
+    local pending = packetDamage[kind]
+    packetDamage[kind] = nil
+    if pending and attributedToMaster(bracket) then
+        bracket.recorded = true
+        Session.addProc({ kind = kind, damage = pending, time = Game.uptime() })
+    end
     if not Log.isDeveloperMode() then return end
     local invoker = readInvoker(bracket)
     local category = diagnosticValue(function() return invoker.Category end)
@@ -126,6 +138,24 @@ local function onExternalDamage(args)
     Session.addProc({ kind = bracket.kind, damage = value, time = Game.uptime() })
 end
 
+local function onActivatePacket(kind)
+    return function(args)
+        local ok, value = pcall(function() return sdk.to_managed_object(args[3]).Damage end)
+        if ok and type(value) == "number" and value > 0 then
+            packetDamage[kind] = value
+        else
+            packetDamage[kind] = nil
+        end
+        Log.debug("proc " .. kind .. " packet damage=" .. (ok and tostring(value) or "?"), "proc:" .. kind .. ":packet")
+    end
+end
+
+local function onActivatePacketDone(kind)
+    return function()
+        packetDamage[kind] = nil
+    end
+end
+
 local function onGetter(kind, args)
     local bracket = brackets[#brackets]
     local matching = bracket and bracket.kind == kind
@@ -154,14 +184,6 @@ function Procs.install()
     end, leaveBracket)
     Game.hook("app.cEnemyStockDamage.cBadConditionDamageInfo",
         "setParam(System.Single, app.TARGET_ACCESS_KEY, System.Boolean)", onSetParam)
-end
-
-function Procs.installExtended()
-    if extendedInstalled then return end
-    extendedInstalled = true
-    Game.hook("app.cEnemyBadConditionPoison", "onUpdateActive", function(args)
-        enterBracket("poison", args)
-    end, leaveBracket)
     Game.hook("app.cEnemyBadConditionSkillStabbing", "onActivate", function(args)
         enterBracket("flayer", args)
     end, leaveBracket)
@@ -171,6 +193,20 @@ function Procs.installExtended()
     Game.hook("app.cEnemyStockDamage",
         "stockExternalDamage(System.Single, System.Boolean, System.Nullable`1<app.TARGET_ACCESS_KEY>, System.Boolean, System.Boolean)",
         onExternalDamage)
+    Game.hook("app.cEnemyBadConditionSkillStabbing",
+        "receiveActivatePacket(app.net_packet.cEmSkillActivateStabbing)",
+        onActivatePacket("flayer"), onActivatePacketDone("flayer"))
+    Game.hook("app.cEnemyBadConditionSkillRyuki",
+        "receiveActivatePacket(app.net_packet.cEmSkillActivateRyuki)",
+        onActivatePacket("elementConvert"), onActivatePacketDone("elementConvert"))
+end
+
+function Procs.installExtended()
+    if extendedInstalled then return end
+    extendedInstalled = true
+    Game.hook("app.cEnemyBadConditionPoison", "onUpdateActive", function(args)
+        enterBracket("poison", args)
+    end, leaveBracket)
     Game.hook("app.cHunterSkill", "getSkillStabbingAddDamage(app.cEnemyContextHolder)", function(args)
         onGetter("flayer", args)
     end)
