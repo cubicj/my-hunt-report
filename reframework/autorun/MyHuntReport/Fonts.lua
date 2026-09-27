@@ -67,9 +67,21 @@ function Fonts.centerNudge(size)
     return math.floor(size * 0.07 + 0.5)
 end
 
+local bundled = true
+
+function Fonts.setMode(useBundled)
+    bundled = useBundled ~= false
+end
+
+function Fonts.mode()
+    if bundled then return "bundled" end
+    return "default"
+end
+
 local function roleFont(role)
     return function(base)
-        return load(FILES[ROLES[role].file], Fonts.size(role, base))
+        local size = Fonts.size(role, base)
+        return { handle = load(FILES[ROLES[role].file], size), size = size }
     end
 end
 
@@ -82,14 +94,24 @@ function Fonts.preload(base)
     for _, role in ipairs(ROLE_ORDER) do Fonts[role](base) end
 end
 
-function Fonts.push(font)
-    if not font then return false end
-    local ok = pcall(imgui.push_font, font)
-    return ok
+function Fonts.push(desc)
+    if type(desc) ~= "table" then return false end
+    if bundled and desc.handle ~= nil then
+        local ok = pcall(imgui.push_font, desc.handle)
+        if ok then return "font" end
+    end
+    if type(imgui.push_font_size) ~= "function" or type(desc.size) ~= "number" then return false end
+    local ok = pcall(imgui.push_font_size, desc.size)
+    if ok then return "size" end
+    return false
 end
 
-function Fonts.pop(pushed)
-    if pushed then pcall(imgui.pop_font) end
+function Fonts.pop(token)
+    if token == "font" then
+        pcall(imgui.pop_font)
+    elseif token == "size" then
+        pcall(imgui.pop_font_size)
+    end
 end
 
 function Fonts.status()
