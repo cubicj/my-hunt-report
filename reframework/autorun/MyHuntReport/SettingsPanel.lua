@@ -98,6 +98,7 @@ local function drawDeveloperBlock(L)
     imgui.spacing()
     local fontStatus = Fonts.status()
     imgui.text(L("settings_font_status") .. ": " .. (fontStatus.loaded and "loaded" or ("not loaded " .. tostring(fontStatus.lastError))))
+    imgui.text(L("settings_report_font") .. ": " .. Fonts.mode() .. " (" .. Locale.textKey() .. ")")
     imgui.text(L("settings_draw_list") .. ": " .. Draw.statusText())
     local changedForce, force = imgui.checkbox(L("settings_force_fallback"), Draw.isForced())
     if changedForce then Draw.setForced(force) end

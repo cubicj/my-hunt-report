@@ -334,4 +334,38 @@ function T.settingsPanelReResolvesAutoLanguageWhileOpen()
     if not ok then error(err, 0) end
 end
 
+function T.settingsDeveloperBlockShowsReportFontModeAndTextKey()
+    local SettingsPanel = require("MyHuntReport.SettingsPanel")
+    local Settings = require("MyHuntReport.Settings")
+    local Fonts = require("MyHuntReport.Fonts")
+    local onDraw, originalImgui = re.on_draw_ui, imgui
+    local draw, texts = nil, {}
+    Settings.load()
+    Locale.init({ gameLanguage = function() return "en", 11 end })
+    Settings.set("language", "auto")
+    Locale.resolve("auto")
+    local ok, err = pcall(function()
+        re.on_draw_ui = function(callback) draw = callback end
+        imgui = setmetatable({
+            tree_node = function() return true end,
+            text = function(text) texts[#texts + 1] = text end,
+        }, { __index = originalImgui })
+        Settings.set("developerMode", true)
+        Fonts.setMode(false)
+        SettingsPanel.register({})
+        draw()
+        local found = false
+        for _, text in ipairs(texts) do
+            if text == "Report font: default (auto:11)" then found = true end
+        end
+        assert(found, table.concat(texts, "\n"))
+    end)
+    Fonts.setMode(true)
+    Settings.set("developerMode", false)
+    Settings.set("language", "en")
+    Locale.resolve("en")
+    re.on_draw_ui, imgui = onDraw, originalImgui
+    if not ok then error(err, 0) end
+end
+
 return T
