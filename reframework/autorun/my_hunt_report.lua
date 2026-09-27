@@ -24,6 +24,7 @@ local Quest = tryRequire("MyHuntReport.Quest")
 local SkillState = tryRequire("MyHuntReport.SkillState")
 local Session = tryRequire("MyHuntReport.Session")
 local Names = tryRequire("MyHuntReport.Names")
+local GuestProbe = tryRequire("MyHuntReport.GuestProbe")
 
 if #loadErrors > 0 then
     for _, err in ipairs(loadErrors) do
@@ -57,6 +58,7 @@ HitCapture.install()
 Procs.install()
 SkillExtras.install()
 Quest.install()
+GuestProbe.install()
 SkillState.install()
 Quest.adoptCurrentState(Game.uptime())
 ReportWindow.setRelabeler(function(snapshot)
@@ -70,6 +72,7 @@ SettingsPanel.register({ quest = Quest })
 
 re.on_frame(function()
     ShellTracker.update()
+    GuestProbe.update()
     Pulse.tick()
     local event = Hotkey.update(function(code)
         local ok, down = pcall(reframework.is_key_down, reframework, code)
