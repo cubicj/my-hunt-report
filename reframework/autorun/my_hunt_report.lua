@@ -55,6 +55,7 @@ Fonts.preload(Settings.get().fontSize)
 ShellTracker.install()
 HitCapture.install()
 Procs.install()
+if Settings.get().skillProcCapture then Procs.installSkillProcs() end
 SkillExtras.install()
 Quest.install()
 SkillState.install()
