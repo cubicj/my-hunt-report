@@ -98,7 +98,7 @@ function T.summaryLineListsCountersInFixedOrder()
         for _, name in ipairs(c.probe.COUNTER_ORDER) do counters[name] = 0 end
         counters.packetFlayer = 2
         local line = c.probe.summaryLine(counters)
-        assert(line == "summary packetFlayer=2 packetRyuki=0 toggle=0 activateBlast=0 activateFlayer=0 activateRyuki=0 activateInsidePacket=0 setParamInsidePacket=0 externalInsidePacket=0", line)
+        assert(line == "summary packetFlayer=2 packetRyuki=0 toggle=0 activateBlast=0 activateFlayer=0 activateRyuki=0 activateInsidePacket=0 setParamInsidePacket=0 externalInsidePacket=0 setParamInsideActivate=0 externalInsideActivate=0", line)
     end)
 end
 
@@ -232,18 +232,31 @@ function T.blastActivationLogsInvokerObjectBracketAndPresetFields()
         assert(ppLines()[1] == "[MyHuntReport] pp activate blast invoker=0/0 obj=MasterPlayer in=none count=2 player=true damageEm=100.0 damageExEm=120.0", ppLines()[1])
         local counters = c.probe.counters()
         assert(counters.activateBlast == 1 and counters.activateInsidePacket == 0, stubs.encode(counters))
+        c.hooks[PROC.blast].post(nil)
+        c.hooks.storage = {}
         c.hooks[PROC.toggle].pre({ [3] = { UniqueIndex = 7, Type = 9, ActiveAndCount = 1, Invoker = 3 } })
+        local toggleStorage = c.hooks.storage
+        c.hooks.storage = {}
         c.hooks[PROC.blast].pre({ [2] = blast })
+        c.hooks[PROC.blast].post(nil)
+        assert(c.probe.activeBracket() == "toggle")
+        c.hooks.storage = toggleStorage
         c.hooks[PROC.toggle].post(nil)
+        assert(c.probe.activeBracket() == nil)
         assert(ppLines()[3]:find("pp activate blast invoker=0/0 obj=MasterPlayer in=toggle count=2", 1, true), ppLines()[3])
         assert(c.probe.counters().activateBlast == 2 and c.probe.counters().activateInsidePacket == 1)
     end)
     withProcProbe(function(c)
         c.hooks[PROC.blast].pre({ [2] = { _Invoker = { Category = 1, UniqueIndex = 2253 } } })
         assert(ppLines()[1] == "[MyHuntReport] pp activate blast invoker=1/2253 obj=nil in=none count=nil player=nil damageEm=? damageExEm=?", ppLines()[1])
+        c.hooks[PROC.blast].post(nil)
+        c.hooks.storage = {}
         c.hooks[PROC.blast].pre({ [2] = raising() })
         assert(ppLines()[2] == "[MyHuntReport] pp activate blast invoker=? obj=? in=none count=? player=? damageEm=? damageExEm=?", ppLines()[2])
+        c.hooks[PROC.blast].post(nil)
+        c.hooks.storage = {}
         c.hooks[PROC.blast].pre({})
+        c.hooks[PROC.blast].post(nil)
         assert(ppLines()[3] == "[MyHuntReport] pp activate blast unreadable step=this", ppLines()[3])
         assert(c.probe.counters().activateBlast == 3)
     end)
@@ -252,16 +265,87 @@ end
 function T.skillActivationsInsidePacketLogInvokerAndCount()
     withProcProbe(function(c)
         c.hooks[PROC.packetFlayer].pre({ [3] = { UniqueIndex = 7, Damage = 60.0, AttackerNetID = 3, GuiState = 0 } })
+        local packetStorage = c.hooks.storage
+        c.hooks.storage = {}
         c.hooks[PROC.flayer].pre({ [2] = { _Invoker = { Category = 0, UniqueIndex = 0 } } })
+        assert(c.probe.activeBracket() == "activate:flayer")
+        c.hooks[PROC.flayer].post(nil)
+        assert(c.probe.activeBracket() == "packet:flayer")
+        c.hooks.storage = packetStorage
         c.hooks[PROC.packetFlayer].post(nil)
+        c.hooks.storage = {}
         c.hooks[PROC.elementConvert].pre({ [2] = { _Invoker = { Category = 0, UniqueIndex = 2 } } })
+        assert(c.probe.activeBracket() == "activate:elementConvert")
+        c.hooks[PROC.elementConvert].post(nil)
+        assert(c.probe.activeBracket() == nil)
         local lines = ppLines()
         assert(lines[2] == "[MyHuntReport] pp activate flayer invoker=0/0 obj=MasterPlayer in=packet:flayer", lines[2])
         assert(lines[3] == "[MyHuntReport] pp activate elementConvert invoker=0/2 obj=Player_Replica_2 in=none", lines[3])
         local counters = c.probe.counters()
         assert(counters.activateFlayer == 1 and counters.activateRyuki == 1 and counters.activateInsidePacket == 1, stubs.encode(counters))
+        c.hooks.storage = {}
         c.hooks[PROC.flayer].pre({ [2] = { _Invoker = nil } })
         assert(ppLines()[4] == "[MyHuntReport] pp activate flayer invoker=nil obj=nil in=none", ppLines()[4])
+        c.hooks[PROC.flayer].post(nil)
+    end)
+end
+
+function T.activationOpensItsOwnBracketAndPostPopsIt()
+    withProcProbe(function(c)
+        local blast = { _Invoker = { Category = 0, UniqueIndex = 0 } }
+        c.hooks[PROC.blast].pre({ [2] = blast })
+        assert(c.probe.activeBracket() == "activate:blast")
+        assert(ppLines()[1] == "[MyHuntReport] pp activate blast invoker=0/0 obj=MasterPlayer in=none count=nil player=nil damageEm=? damageExEm=?", ppLines()[1])
+        assert(c.probe.counters().activateInsidePacket == 0)
+        c.hooks[PROC.blast].post(nil)
+        assert(c.probe.activeBracket() == nil)
+        assert(c.hooks.storage.pushed == nil)
+
+        c.hooks.storage = {}
+        c.hooks[PROC.blast].pre({ [2] = blast })
+        assert(c.probe.activeBracket() == "activate:blast")
+        Log.setDeveloperMode(false)
+        c.hooks[PROC.blast].post(nil)
+        assert(c.probe.activeBracket() == nil)
+        assert(c.hooks.storage.pushed == nil)
+
+        Log.setDeveloperMode(true)
+        c.hooks.storage = {}
+        c.hooks[PROC.blast].pre({})
+        assert(c.probe.activeBracket() == nil)
+        assert(c.hooks.storage.pushed == nil)
+        assert(ppLines()[3] == "[MyHuntReport] pp activate blast unreadable step=this", ppLines()[3])
+        c.hooks[PROC.blast].post(nil)
+        assert(c.probe.activeBracket() == nil)
+    end)
+end
+
+function T.damageCallsInsideActivationCountSeparately()
+    withProcProbe(function(c)
+        c.hooks[PROC.flayer].pre({ [2] = { _Invoker = { Category = 0, UniqueIndex = 0 } } })
+        local flayerStorage = c.hooks.storage
+        c.hooks.storage = {}
+        c.hooks[PROC.external].pre({ [3] = 160.0, [5] = { _HasValue = false, _Value = { Category = 0, UniqueIndex = 0 } } })
+        assert(ppLines()[2] == "[MyHuntReport] pp external value=160.0 hasKey=false key=0/0 in=activate:flayer", ppLines()[2])
+        local counters = c.probe.counters()
+        assert(counters.externalInsideActivate == 1 and counters.externalInsidePacket == 0, stubs.encode(counters))
+
+        c.hooks.storage = {}
+        c.hooks[PROC.blast].pre({ [2] = { _Invoker = { Category = 0, UniqueIndex = 0 } } })
+        local blastStorage = c.hooks.storage
+        c.hooks.storage = {}
+        c.hooks[PROC.setParam].pre({ [3] = 100.0, [4] = { Category = 0, UniqueIndex = 0 } })
+        assert(ppLines()[4] == "[MyHuntReport] pp setParam value=100.0 key=0/0 in=activate:blast", ppLines()[4])
+        assert(counters.setParamInsideActivate == 1 and counters.setParamInsidePacket == 0, stubs.encode(counters))
+        assert(counters.activateInsidePacket == 1)
+        c.hooks.storage = blastStorage
+        c.hooks[PROC.blast].post(nil)
+        assert(c.probe.activeBracket() == "activate:flayer")
+        assert(c.hooks.storage.pushed == nil)
+        c.hooks.storage = flayerStorage
+        c.hooks[PROC.flayer].post(nil)
+        assert(c.probe.activeBracket() == nil)
+        assert(c.hooks.storage.pushed == nil)
     end)
 end
 
@@ -338,11 +422,16 @@ function T.nestedReceivesRestoreTheOuterBracket()
         c.hooks[PROC.toggle].post(nil)
         assert(c.probe.activeBracket() == "packet:flayer")
         Log.setDeveloperMode(true)
-        c.hooks.storage = outerStorage
+        c.hooks.storage = {}
         c.hooks[PROC.blast].pre({ [2] = { _Invoker = { Category = 0, UniqueIndex = 0 } } })
+        assert(c.probe.activeBracket() == "activate:blast")
         local lines = ppLines()
         assert(lines[2]:find("in=packet:flayer", 1, true), lines[2])
         assert(c.probe.counters().activateInsidePacket == 1)
+        c.hooks[PROC.blast].post(nil)
+        assert(c.probe.activeBracket() == "packet:flayer")
+        assert(c.hooks.storage.pushed == nil)
+        c.hooks.storage = outerStorage
         c.hooks[PROC.packetFlayer].post(nil)
         assert(c.probe.activeBracket() == nil)
         assert(c.hooks.storage.pushed == nil)

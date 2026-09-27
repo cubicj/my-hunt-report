@@ -6,6 +6,7 @@ local ProcPacketProbe = {}
 ProcPacketProbe.COUNTER_ORDER = {
     "packetFlayer", "packetRyuki", "toggle", "activateBlast", "activateFlayer", "activateRyuki",
     "activateInsidePacket", "setParamInsidePacket", "externalInsidePacket",
+    "setParamInsideActivate", "externalInsideActivate",
 }
 
 local KEY_TYPE = "app.TARGET_ACCESS_KEY"
@@ -68,6 +69,11 @@ end
 
 local function bracketText()
     return tostring(brackets[#brackets] or "none")
+end
+
+local function insideActivation()
+    local top = brackets[#brackets]
+    return top ~= nil and top:sub(1, 9) == "activate:"
 end
 
 local function managedArg(args, index)
@@ -189,12 +195,14 @@ local function onActivate(kind, counter, extraFields)
         local line = "activate " .. kind .. " invoker=" .. invokerText .. " obj=" .. objectText .. " in=" .. bracketText()
         if extraFields then line = line .. extraFields(this) end
         trace(line)
+        pushBracket("activate:" .. kind)
+        pcall(function() thread.get_hook_storage().pushed = true end)
     end
 end
 
 local function onSetParam(args)
     if not Log.isDeveloperMode() or #brackets == 0 then return end
-    bump("setParamInsidePacket")
+    bump(insideActivation() and "setParamInsideActivate" or "setParamInsidePacket")
     local value = readValue(function() return sdk.to_float(args[3]) end)
     local okKey, key = pcall(function() return sdk.to_valuetype(args[4], KEY_TYPE) end)
     local keyLine = "?"
@@ -204,7 +212,7 @@ end
 
 local function onExternal(args)
     if not Log.isDeveloperMode() or #brackets == 0 then return end
-    bump("externalInsidePacket")
+    bump(insideActivation() and "externalInsideActivate" or "externalInsidePacket")
     local value = readValue(function() return sdk.to_float(args[3]) end)
     local okKey, nullable = pcall(function() return sdk.to_valuetype(args[5], NULLABLE_KEY_TYPE) end)
     local hasKey, key = "?", "?"
@@ -219,9 +227,9 @@ local function installProcHooks()
     Game.hook("app.cEnemyBadConditionSkillStabbing", "receiveActivatePacket(app.net_packet.cEmSkillActivateStabbing)", onPacketPre("flayer", "packetFlayer"), onReceivePost)
     Game.hook("app.cEnemyBadConditionSkillRyuki", "receiveActivatePacket(app.net_packet.cEmSkillActivateRyuki)", onPacketPre("elementConvert", "packetRyuki"), onReceivePost)
     Game.hook("app.cEmModuleConditions.mcUpdater", "onReceivePacket(app.net_packet.cEmToggleCondition)", onTogglePre, onReceivePost)
-    Game.hook("app.cEnemyBadConditionBlast", "onActivate", onActivate("blast", "activateBlast", blastFields))
-    Game.hook("app.cEnemyBadConditionSkillStabbing", "onActivate", onActivate("flayer", "activateFlayer"))
-    Game.hook("app.cEnemyBadConditionSkillRyuki", "onActivate", onActivate("elementConvert", "activateRyuki"))
+    Game.hook("app.cEnemyBadConditionBlast", "onActivate", onActivate("blast", "activateBlast", blastFields), onReceivePost)
+    Game.hook("app.cEnemyBadConditionSkillStabbing", "onActivate", onActivate("flayer", "activateFlayer"), onReceivePost)
+    Game.hook("app.cEnemyBadConditionSkillRyuki", "onActivate", onActivate("elementConvert", "activateRyuki"), onReceivePost)
     Game.hook("app.cEnemyStockDamage.cBadConditionDamageInfo", "setParam(System.Single, app.TARGET_ACCESS_KEY, System.Boolean)", onSetParam)
     Game.hook("app.cEnemyStockDamage", "stockExternalDamage(System.Single, System.Boolean, System.Nullable`1<app.TARGET_ACCESS_KEY>, System.Boolean, System.Boolean)", onExternal)
 end
