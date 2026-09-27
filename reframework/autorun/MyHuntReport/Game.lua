@@ -129,6 +129,30 @@ function Game.languageCode()
     return "en", value
 end
 
+local APP_TO_VIA_LANGUAGE = {
+    [0] = 0, [1] = 1, [2] = 2, [3] = 3, [4] = 4, [5] = 5, [6] = 6, [7] = 7,
+    [8] = 10, [9] = 11, [10] = 12, [11] = 13, [12] = 21, [13] = 32, [14] = 26,
+}
+local PROBE_WEAPON_TYPE = 0
+
+function Game.viaLanguageFor(raw)
+    if type(raw) ~= "number" then return nil end
+    local converted = Game.callStatic("app.LanguageDef", "convert(app.LanguageDef.LANGUAGE_APP)", raw)
+    if type(converted) == "number" then return converted end
+    return APP_TO_VIA_LANGUAGE[raw]
+end
+
+function Game.textLanguageReady(raw)
+    local language = Game.viaLanguageFor(raw)
+    if language == nil then return true end
+    local guid = Game.callStatic("app.WeaponUtil", "getWeaponTypeName(app.WeaponDef.TYPE)", PROBE_WEAPON_TYPE)
+    if guid == nil then return true end
+    local current = Game.callStatic("via.gui.message", "get(System.Guid)", guid)
+    local expected = Game.callStatic("via.gui.message", "get(System.Guid, via.Language)", guid, language)
+    if not Game.isUsableText(current) or not Game.isUsableText(expected) then return true end
+    return current == expected
+end
+
 function Game.componentOf(gameObject, typeName)
     if gameObject == nil then return nil end
     local ok, component = pcall(function()

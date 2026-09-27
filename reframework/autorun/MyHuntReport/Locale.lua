@@ -180,11 +180,31 @@ local STRINGS = {
 local active = "en"
 local setting = "auto"
 local VIA_LANGUAGE = { en = 1, ko = 11 }
+local SETTLE_TIMEOUT_SECONDS = 10
 local detector = nil
-local detectedRaw = nil
+local textReady = nil
+local clock = os.time
+local effectiveRaw = nil
+local effectiveCode = "en"
+local pendingRaw = nil
+local pendingSince = nil
 
 function Locale.init(options)
-    detector = options and options.gameLanguage or nil
+    options = options or {}
+    detector = options.gameLanguage
+    textReady = options.textReady
+    clock = options.clock or os.time
+    effectiveRaw, pendingRaw, pendingSince = nil, nil, nil
+    effectiveCode = "en"
+    active = "en"
+end
+
+local function adopt(detected, detectedRaw)
+    effectiveRaw = detectedRaw
+    if detected == "ko" then active = "ko" else active = "en" end
+    effectiveCode = active
+    Log.debug("language auto raw=" .. tostring(detectedRaw) .. " -> " .. active, "locale:auto:" .. tostring(detectedRaw))
+    return active
 end
 
 function Locale.resolve(setting_)
@@ -193,8 +213,7 @@ function Locale.resolve(setting_)
         active = setting
         return active
     end
-    local detected = nil
-    detectedRaw = nil
+    local detected, detectedRaw = nil, nil
     if detector then
         local ok, err = pcall(function()
             detected, detectedRaw = detector()
@@ -203,9 +222,29 @@ function Locale.resolve(setting_)
             Log.error("language detection failed: " .. tostring(err), "locale:detect")
         end
     end
-    if detected == "ko" then active = "ko" else active = "en" end
-    Log.debug("language auto raw=" .. tostring(detectedRaw) .. " -> " .. active, "locale:auto:" .. tostring(detectedRaw))
-    return active
+    if detectedRaw == nil or effectiveRaw == nil or detectedRaw == effectiveRaw then
+        pendingRaw, pendingSince = nil, nil
+        return adopt(detected, detectedRaw)
+    end
+    local now = clock()
+    if pendingRaw ~= detectedRaw then
+        pendingRaw, pendingSince = detectedRaw, now
+        Log.debug("text language pending raw=" .. tostring(effectiveRaw) .. " -> " .. tostring(detectedRaw), "locale:pending:" .. tostring(detectedRaw))
+    end
+    local ready = true
+    if textReady then
+        local ok, value = pcall(textReady, detectedRaw)
+        ready = (not ok) or value == true
+        if not ok then Log.error("text readiness probe failed: " .. tostring(value), "locale:probe") end
+    end
+    local waited = now - pendingSince
+    if not ready and waited < SETTLE_TIMEOUT_SECONDS then
+        active = effectiveCode
+        return active
+    end
+    Log.debug("text language switched raw=" .. tostring(effectiveRaw) .. " -> " .. tostring(detectedRaw) .. " after " .. tostring(waited) .. "s " .. (ready and "ready" or "timeout"), "locale:switch:" .. tostring(detectedRaw))
+    pendingRaw, pendingSince = nil, nil
+    return adopt(detected, detectedRaw)
 end
 
 function Locale.refresh()
@@ -217,8 +256,8 @@ local COVERED_TEXT_LANGUAGES = { [1] = true, [9] = true }
 
 function Locale.bundledFontCovers()
     if setting == "en" or setting == "ko" then return true end
-    if detectedRaw == nil then return true end
-    return COVERED_TEXT_LANGUAGES[detectedRaw] == true
+    if effectiveRaw == nil then return true end
+    return COVERED_TEXT_LANGUAGES[effectiveRaw] == true
 end
 
 function Locale.viaLanguage()
@@ -228,7 +267,7 @@ end
 function Locale.textKey()
     local language = VIA_LANGUAGE[setting]
     if language then return "via:" .. tostring(language) end
-    return "auto:" .. tostring(detectedRaw ~= nil and detectedRaw or active)
+    return "auto:" .. tostring(effectiveRaw ~= nil and effectiveRaw or active)
 end
 
 function Locale.current()

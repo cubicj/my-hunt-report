@@ -49,7 +49,7 @@ if #loadErrors > 0 then
 end
 
 Settings.load()
-Locale.init({ gameLanguage = Game.languageCode })
+Locale.init({ gameLanguage = Game.languageCode, textReady = Game.textLanguageReady })
 Locale.resolve(Settings.get().language)
 Fonts.preload(Settings.get().fontSize)
 ShellTracker.install()

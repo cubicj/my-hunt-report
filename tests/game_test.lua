@@ -100,4 +100,52 @@ function T.enemyIsDeadReadsTheHealthManager()
     if not ok then error(err, 0) end
 end
 
+local function withStaticStub(answers, callback)
+    local originalCall = Game.callStatic
+    local calls = {}
+    local ok, err = pcall(function()
+        Game.callStatic = function(typeName, signature, ...)
+            local key = typeName .. "::" .. signature
+            calls[#calls + 1] = { key = key, ... }
+            local answer = answers[key]
+            if type(answer) == "function" then return answer(...) end
+            return answer
+        end
+        callback(calls)
+    end)
+    Game.callStatic = originalCall
+    if not ok then error(err, 0) end
+end
+
+function T.viaLanguageForPrefersTheGameConverterAndFallsBackToTheTable()
+    withStaticStub({ ["app.LanguageDef::convert(app.LanguageDef.LANGUAGE_APP)"] = 26 }, function()
+        assert(Game.viaLanguageFor(14) == 26)
+    end)
+    withStaticStub({}, function()
+        assert(Game.viaLanguageFor(9) == 11 and Game.viaLanguageFor(10) == 12 and Game.viaLanguageFor(11) == 13)
+        assert(Game.viaLanguageFor(1) == 1 and Game.viaLanguageFor(13) == 32 and Game.viaLanguageFor(14) == 26)
+        assert(Game.viaLanguageFor(99) == nil and Game.viaLanguageFor(nil) == nil)
+    end)
+end
+
+function T.textLanguageReadyComparesCurrentAndForcedWeaponNames()
+    local texts = { current = "大剑", forced = "대검" }
+    local answers = {
+        ["app.WeaponUtil::getWeaponTypeName(app.WeaponDef.TYPE)"] = function(weaponType) assert(weaponType == 0) return "guid-gs" end,
+        ["via.gui.message::get(System.Guid)"] = function(guid) assert(guid == "guid-gs") return texts.current end,
+        ["via.gui.message::get(System.Guid, via.Language)"] = function(guid, language) assert(guid == "guid-gs" and language == 11) return texts.forced end,
+    }
+    withStaticStub(answers, function()
+        assert(Game.textLanguageReady(9) == false)
+        texts.current = "대검"
+        assert(Game.textLanguageReady(9) == true)
+        texts.current = ""
+        assert(Game.textLanguageReady(9) == true, "unusable current text cannot block the switch")
+    end)
+    withStaticStub({}, function()
+        assert(Game.textLanguageReady(9) == true, "a missing guid cannot block the switch")
+        assert(Game.textLanguageReady(99) == true, "an unmapped language adopts immediately")
+    end)
+end
+
 return T

@@ -185,4 +185,117 @@ function T.reportFontLabelExistsInBothLanguages()
     assert(Locale.text("settings_report_font") == "리포트 글꼴")
 end
 
+function T.autoKeepsTheOldTextLanguageUntilTheProbeSaysReady()
+    local raw, ready = 11, false
+    Locale.init({ gameLanguage = function() return raw == 9 and "ko" or "en", raw end, textReady = function() return ready end })
+    Locale.resolve("auto")
+    assert(Locale.textKey() == "auto:11" and Locale.current() == "en" and Locale.bundledFontCovers() == false)
+    raw = 9
+    Locale.refresh()
+    assert(Locale.textKey() == "auto:11", Locale.textKey())
+    assert(Locale.current() == "en" and Locale.bundledFontCovers() == false)
+    Locale.refresh()
+    assert(Locale.textKey() == "auto:11")
+    ready = true
+    Locale.refresh()
+    assert(Locale.textKey() == "auto:9" and Locale.current() == "ko" and Locale.bundledFontCovers() == true)
+    Locale.refresh()
+    assert(Locale.textKey() == "auto:9")
+end
+
+function T.autoProbeReceivesTheNewRawValue()
+    local raw, probed = 1, {}
+    Locale.init({ gameLanguage = function() return "en", raw end, textReady = function(value) probed[#probed + 1] = value return true end })
+    Locale.resolve("auto")
+    assert(#probed == 0, "the first detection adopts without probing")
+    raw = 11
+    Locale.refresh()
+    assert(#probed == 1 and probed[1] == 11)
+    assert(Locale.textKey() == "auto:11")
+end
+
+function T.autoSwitchesAfterTheSettleTimeout()
+    local raw, now = 1, 1000
+    Locale.init({ gameLanguage = function() return "en", raw end, textReady = function() return false end, clock = function() return now end })
+    Locale.resolve("auto")
+    raw = 11
+    Locale.refresh()
+    now = 1009
+    Locale.refresh()
+    assert(Locale.textKey() == "auto:1", Locale.textKey())
+    now = 1010
+    Locale.refresh()
+    assert(Locale.textKey() == "auto:11", Locale.textKey())
+end
+
+function T.autoPendingRestartsWhenTheTargetChangesAgain()
+    local raw, now = 1, 1000
+    Locale.init({ gameLanguage = function() return "en", raw end, textReady = function() return false end, clock = function() return now end })
+    Locale.resolve("auto")
+    raw = 11
+    Locale.refresh()
+    now = 1008
+    raw = 10
+    Locale.refresh()
+    now = 1012
+    Locale.refresh()
+    assert(Locale.textKey() == "auto:1", "a new target restarts the settle timer")
+    now = 1018
+    Locale.refresh()
+    assert(Locale.textKey() == "auto:10", Locale.textKey())
+end
+
+function T.autoAdoptsImmediatelyWhenTheProbeErrorsOrRawIsNil()
+    local raw = 1
+    Locale.init({ gameLanguage = function() return "en", raw end, textReady = function() error("probe broke") end })
+    Locale.resolve("auto")
+    raw = 11
+    Locale.refresh()
+    assert(Locale.textKey() == "auto:11")
+    local Log = require("MyHuntReport.Log")
+    assert(Log.count("locale:probe") == 1)
+    Locale.init({ gameLanguage = function() return "en", raw end, textReady = function() return false end })
+    Locale.resolve("auto")
+    raw = nil
+    Locale.refresh()
+    assert(Locale.textKey() == "auto:en")
+end
+
+function T.returningToAutoAfterAForcedLanguageKeepsTheEffectiveRaw()
+    local raw, ready = 9, false
+    Locale.init({ gameLanguage = function() return "ko", raw end, textReady = function() return ready end })
+    Locale.resolve("auto")
+    Locale.resolve("ko")
+    assert(Locale.textKey() == "via:11")
+    raw = 11
+    Locale.resolve("auto")
+    assert(Locale.textKey() == "auto:9", "the forced interval does not adopt an unsettled raw")
+    ready = true
+    Locale.refresh()
+    assert(Locale.textKey() == "auto:11")
+end
+
+function T.pendingAutoRestoresTheEffectiveUiLanguageAfterAForcedInterval()
+    local raw, ready = 11, false
+    Locale.init({ gameLanguage = function() return raw == 9 and "ko" or "en", raw end, textReady = function() return ready end })
+    Locale.resolve("auto")
+    Locale.resolve("ko")
+    raw = 9
+    assert(Locale.resolve("auto") == "en")
+    assert(Locale.textKey() == "auto:11" and Locale.current() == "en" and Locale.bundledFontCovers() == false)
+    ready = true
+    Locale.refresh()
+    assert(Locale.textKey() == "auto:9" and Locale.current() == "ko")
+    raw, ready = 9, false
+    Locale.init({ gameLanguage = function() return raw == 9 and "ko" or "en", raw end, textReady = function() return ready end })
+    Locale.resolve("auto")
+    Locale.resolve("en")
+    raw = 11
+    assert(Locale.resolve("auto") == "ko")
+    assert(Locale.textKey() == "auto:9" and Locale.current() == "ko" and Locale.bundledFontCovers() == true)
+    ready = true
+    Locale.refresh()
+    assert(Locale.textKey() == "auto:11" and Locale.current() == "en")
+end
+
 return T
