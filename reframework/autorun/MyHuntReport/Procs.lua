@@ -10,6 +10,7 @@ local PACKET_TTL_SECONDS = 1.0
 
 local brackets = {}
 local installed = false
+local skillProcsInstalled = false
 local extendedInstalled = false
 local packetDamage = {}
 
@@ -188,6 +189,11 @@ function Procs.install()
     end, leaveBracket)
     Game.hook("app.cEnemyStockDamage.cBadConditionDamageInfo",
         "setParam(System.Single, app.TARGET_ACCESS_KEY, System.Boolean)", onSetParam)
+end
+
+function Procs.installSkillProcs()
+    if skillProcsInstalled then return end
+    skillProcsInstalled = true
     Game.hook("app.cEnemyBadConditionSkillStabbing", "onActivate", function(args)
         enterBracket("flayer", args)
     end, leaveBracket)
@@ -203,6 +209,10 @@ function Procs.install()
     Game.hook("app.cEnemyBadConditionSkillRyuki",
         "receiveActivatePacket(app.net_packet.cEmSkillActivateRyuki)",
         onActivatePacket("elementConvert"))
+end
+
+function Procs.skillProcsInstalled()
+    return skillProcsInstalled
 end
 
 function Procs.installExtended()

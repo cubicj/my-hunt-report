@@ -60,6 +60,7 @@ local function withProcs(callback)
         end
         local procs = assert(loadfile("reframework/autorun/MyHuntReport/Procs.lua"))()
         procs.install()
+        procs.installSkillProcs()
         procs.installExtended()
         local context = { procs = procs, hooks = hooks, recorded = recorded, master = master, other = other, callStaticCalls = c_callStaticCalls }
         function context.enter(kind, key)
@@ -517,7 +518,7 @@ function T.invokerIsReadOnlyWhenDamageNeedsAttribution()
     end)
 end
 
-function T.installRegistersSkillProcAndPacketHooks()
+function T.installRegistersBlastHooksOnly()
     local hook = Game.hook
     local names = {}
     local ok, err = pcall(function()
@@ -525,20 +526,52 @@ function T.installRegistersSkillProcAndPacketHooks()
         local procs = assert(loadfile("reframework/autorun/MyHuntReport/Procs.lua"))()
         procs.install()
         procs.install()
-        assert(#names == 7, table.concat(names, ","))
+        assert(#names == 2, table.concat(names, ","))
         assert(names[1] == BRACKETS.blast, names[1])
         assert(names[2] == SET_PARAM, names[2])
+        assert(procs.skillProcsInstalled() == false)
+    end)
+    Game.hook = hook
+    if not ok then error(err, 0) end
+end
+
+function T.installSkillProcsRegistersTheFiveSkillProcHooks()
+    local hook = Game.hook
+    local names = {}
+    local ok, err = pcall(function()
+        Game.hook = function(typeName, signature) names[#names + 1] = typeName .. "." .. signature end
+        local procs = assert(loadfile("reframework/autorun/MyHuntReport/Procs.lua"))()
+        procs.install()
+        procs.installSkillProcs()
+        procs.installSkillProcs()
+        assert(#names == 7, table.concat(names, ","))
         assert(names[3] == BRACKETS.flayer, names[3])
         assert(names[4] == BRACKETS.elementConvert, names[4])
         assert(names[5] == EXTERNAL, names[5])
         assert(names[6] == PACKETS.flayer, names[6])
         assert(names[7] == PACKETS.elementConvert, names[7])
+        assert(procs.skillProcsInstalled() == true)
         procs.installExtended()
         procs.installExtended()
         assert(#names == 10, table.concat(names, ","))
         assert(names[8] == BRACKETS.poison, names[8])
         assert(names[9] == GETTERS.stabbing, names[9])
         assert(names[10] == GETTERS.ryuki, names[10])
+    end)
+    Game.hook = hook
+    if not ok then error(err, 0) end
+end
+
+function T.installSkillProcsWorksWithoutInstall()
+    local hook = Game.hook
+    local names = {}
+    local ok, err = pcall(function()
+        Game.hook = function(typeName, signature) names[#names + 1] = typeName .. "." .. signature end
+        local procs = assert(loadfile("reframework/autorun/MyHuntReport/Procs.lua"))()
+        procs.installSkillProcs()
+        assert(#names == 5, table.concat(names, ","))
+        assert(names[1] == BRACKETS.flayer, names[1])
+        assert(procs.skillProcsInstalled() == true)
     end)
     Game.hook = hook
     if not ok then error(err, 0) end
