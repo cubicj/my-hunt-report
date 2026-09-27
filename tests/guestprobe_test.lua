@@ -21,6 +21,20 @@ local HIT = {
     receive = "app.EnemyCharacter.receivePacket_Damage(app.net_packet.cEmDamage)",
 }
 
+local PROC = {
+    netCond = "app.cEnemyStockDamage.stockExternalBadConditionDamageNet(app.net_packet.cEmDamageExternalCondition)",
+    extCond = "app.cEnemyStockDamage.stockExternalBadConditionDamage(app.EnemyDef.CONDITION, System.Single, app.cHorizontalUDDirection, System.Boolean, via.GameObject, System.Boolean)",
+    receiveCond = "app.EnemyCharacter.receivePacket_DamageExternalCondition(app.net_packet.cEmDamageExternalCondition)",
+    external = "app.cEnemyStockDamage.stockExternalDamage(System.Single, System.Boolean, System.Nullable`1<app.TARGET_ACCESS_KEY>, System.Boolean, System.Boolean)",
+    setParam = "app.cEnemyStockDamage.cBadConditionDamageInfo.setParam(System.Single, app.TARGET_ACCESS_KEY, System.Boolean)",
+    blast = "app.cEnemyBadConditionBlast.onActivate",
+    flayer = "app.cEnemyBadConditionSkillStabbing.onActivate",
+    elementConvert = "app.cEnemyBadConditionSkillRyuki.onActivate",
+    poison = "app.cEnemyBadConditionPoison.onUpdateActive",
+    stabbingGetter = "app.cHunterSkill.getSkillStabbingAddDamage(app.cEnemyContextHolder)",
+    ryukiGetter = "app.cHunterSkill.getSkillRyukiAddDamage(app.cEnemyContextHolder, System.Single, System.Single)",
+}
+
 local function raising()
     return setmetatable({}, { __index = function(_, key) error("touched " .. tostring(key)) end })
 end
@@ -93,6 +107,7 @@ function T.installsFlowHooksAndStaysSilentWhenDeveloperModeOff()
     withProbe(function(c)
         for _, signature in pairs(FLOW) do assert(c.hooks[signature], signature) end
         for _, signature in pairs(HIT) do assert(c.hooks[signature], signature) end
+        for _, signature in pairs(PROC) do assert(c.hooks[signature], signature) end
         for _, entry in pairs(c.hooks) do
             if type(entry) == "table" and entry.pre then entry.pre(raising()) end
             if type(entry) == "table" and entry.post then entry.post(raising()) end
@@ -495,6 +510,211 @@ function T.receiveDecodeFailuresPreserveSuccessfulLineBudget()
         for index = 6, 25 do
             assert(lines[index]:find("gp receive damage em=3 attacker=1", 1, true), lines[index])
         end
+    end)
+end
+
+local function withProcProbe(callback)
+    local toFloat, toInt, toValue, callStatic, masterHunter = sdk.to_float, sdk.to_int64, sdk.to_valuetype, Game.callStatic, Game.masterHunter
+    withProbe(function(c)
+        local ok, err = pcall(function()
+            stubs.logLines = {}
+            sdk.to_float = function(value) return value end
+            sdk.to_int64 = function(value) return value end
+            sdk.to_valuetype = function(value) return value end
+            Game.callStatic = function(_, _, key)
+                if key and key.UniqueIndex == 1 then return { get_GameObject = function() return { get_Name = function() return "MasterPlayer" end } end } end
+                return nil
+            end
+            Game.masterHunter = function() return { get_HunterSkill = function() return { get_address = function() return 777 end } end } end
+            Log.setDeveloperMode(true)
+            callback(c)
+        end)
+        sdk.to_float, sdk.to_int64, sdk.to_valuetype, Game.callStatic, Game.masterHunter = toFloat, toInt, toValue, callStatic, masterHunter
+        if not ok then error(err, 0) end
+    end)
+end
+
+function T.conditionNameMapsKnownValuesAndFallsBack()
+    withProbe(function(c)
+        assert(c.probe.conditionName(3) == "POISON(3)")
+        assert(c.probe.conditionName(9) == "BLAST(9)")
+        assert(c.probe.conditionName(36) == "SKILL_STABBING_PL3(36)")
+        assert(c.probe.conditionName(38) == "SKILL_RYUKI(38)")
+        assert(c.probe.conditionName(99) == "?(99)")
+        assert(c.probe.conditionName(nil) == "?(nil)")
+    end)
+end
+
+function T.netCondAndExtCondLogFieldsAndCount()
+    withProcProbe(function(c)
+        c.hooks[PROC.netCond].pre({ [3] = { AttackerIndex = 2, AttackCond = 3, CondValue = 15.0, ActivateLimit = 1 } })
+        c.hooks[PROC.extCond].pre({ [3] = 9, [4] = 100.0, [7] = { get_Name = function() return "Player_Replica_32" end } })
+        local counters = c.probe.counters()
+        assert(counters.netCond == 1 and counters.extCond == 1, stubs.encode(counters))
+        local lines = gpLines()
+        assert(lines[1]:find("gp net cond attacker=2 cond=3 value=15.0 limit=1", 1, true), lines[1])
+        assert(lines[2]:find("gp ext cond=BLAST(9) value=100.0 obj=Player_Replica_32 net=false", 1, true), lines[2])
+    end)
+    withProcProbe(function(c)
+        sdk.to_managed_object = function() error("decode failed") end
+        c.hooks[PROC.netCond].pre(raising())
+        assert(c.probe.counters().netCond == 1)
+        assert(gpLines()[1] == "[MyHuntReport] gp net cond unreadable step=packet")
+        sdk.to_managed_object = function(value) return value end
+        c.hooks[PROC.netCond].pre({ [3] = raising() })
+        assert(gpLines()[2] == "[MyHuntReport] gp net cond attacker=? cond=? value=? limit=?")
+        sdk.to_float = function() error("float failed") end
+        c.hooks[PROC.extCond].pre({ [3] = 9, [4] = 100.0, [7] = raising() })
+        assert(gpLines()[3] == "[MyHuntReport] gp ext cond=BLAST(9) value=? obj=? net=false")
+    end)
+end
+
+function T.activationBracketLogsInvokerAndExternalReportsBracket()
+    withProcProbe(function(c)
+        c.hooks[PROC.flayer].pre({ [2] = { _Invoker = { Category = 0, UniqueIndex = 1 } } })
+        assert(c.probe.activeProcKind() == "flayer")
+        c.hooks[PROC.stabbingGetter].pre({ [2] = { get_address = function() return 777 end } })
+        c.hooks[PROC.external].pre({ [3] = 160.0, [5] = { _HasValue = false, _Value = { Category = 0, UniqueIndex = 0 } } })
+        c.hooks[PROC.flayer].post(nil)
+        assert(c.probe.activeProcKind() == nil)
+        local counters = c.probe.counters()
+        assert(counters.external == 1, stubs.encode(counters))
+        local lines = gpLines()
+        assert(lines[1]:find("gp proc flayer invoker=0/1 obj=MasterPlayer", 1, true), lines[1])
+        assert(lines[2]:find("gp getter stabbing master=true bracket=flayer", 1, true), lines[2])
+        assert(lines[3]:find("gp external value=160.0 hasKey=false key=0/0 bracket=flayer net=false", 1, true), lines[3])
+    end)
+    withProcProbe(function(c)
+        for _, name in ipairs({ "blast", "flayer", "elementConvert", "poison" }) do
+            c.hooks[PROC[name]].pre({})
+            assert(c.probe.activeProcKind() == name)
+            assert(gpLines()[#gpLines()] == "[MyHuntReport] gp proc " .. name .. " unreadable step=this")
+        end
+        for _, name in ipairs({ "poison", "elementConvert", "flayer", "blast" }) do
+            assert(c.probe.activeProcKind() == name)
+            c.hooks[PROC[name]].post(nil)
+        end
+        assert(c.probe.activeProcKind() == nil)
+        c.hooks[PROC.ryukiGetter].pre({})
+        assert(gpLines()[#gpLines()] == "[MyHuntReport] gp getter ryuki unreadable step=this")
+        c.hooks[PROC.external].pre({ [3] = 1.0 })
+        assert(c.probe.counters().external == 1)
+        assert(gpLines()[#gpLines()] == "[MyHuntReport] gp external unreadable step=key")
+        c.hooks[PROC.external].pre({ [3] = 1.0, [5] = raising() })
+        assert(gpLines()[#gpLines()] == "[MyHuntReport] gp external value=1.0 hasKey=? key=?/? bracket=none net=false")
+        c.hooks[PROC.flayer].pre({ [2] = raising() })
+        assert(gpLines()[#gpLines()] == "[MyHuntReport] gp proc flayer invoker=? obj=?")
+        Log.setDeveloperMode(false)
+        c.hooks[PROC.flayer].post(nil)
+        assert(c.probe.activeProcKind() == "flayer")
+        Log.setDeveloperMode(true)
+        c.hooks[PROC.flayer].post(nil)
+        assert(c.probe.activeProcKind() == nil)
+    end)
+end
+
+function T.getterWithoutMasterPreservesActivationBracket()
+    withProcProbe(function(c)
+        c.hooks[PROC.flayer].pre({ [2] = { _Invoker = { Category = 0, UniqueIndex = 1 } } })
+        Game.masterHunter = function() return nil end
+        c.hooks[PROC.stabbingGetter].pre({ [2] = { get_address = function() return 777 end } })
+        assert(gpLines()[2] == "[MyHuntReport] gp getter stabbing master=? bracket=flayer")
+        assert(c.probe.activeProcKind() == "flayer")
+        c.hooks[PROC.flayer].post(nil)
+        assert(c.probe.activeProcKind() == nil)
+    end)
+end
+
+function T.setParamLogsKeyAndBracket()
+    withProcProbe(function(c)
+        c.hooks[PROC.blast].pre({ [2] = { _Invoker = { Category = 0, UniqueIndex = 3 } } })
+        c.hooks[PROC.setParam].pre({ [3] = 100.0, [4] = { Category = 0, UniqueIndex = 3 } })
+        c.hooks[PROC.blast].post(nil)
+        assert(c.probe.counters().setParam == 1)
+        local lines = gpLines()
+        assert(lines[1]:find("gp proc blast invoker=0/3 obj=nil", 1, true), lines[1])
+        assert(lines[2]:find("gp setParam value=100.0 key=0/3 bracket=blast", 1, true), lines[2])
+    end)
+    withProcProbe(function(c)
+        sdk.to_valuetype = function() error("key failed") end
+        c.hooks[PROC.setParam].pre({ [3] = 100.0, [4] = {} })
+        assert(c.probe.counters().setParam == 1)
+        assert(gpLines()[1] == "[MyHuntReport] gp setParam unreadable step=key")
+        sdk.to_valuetype = function(value) return value end
+        c.hooks[PROC.setParam].pre({ [3] = 100.0, [4] = raising() })
+        assert(gpLines()[2] == "[MyHuntReport] gp setParam value=100.0 key=?/? bracket=none")
+    end)
+end
+
+function T.poisonBracketLogsOncePerEnemy()
+    withProcProbe(function(c)
+        local this = { _Invoker = { Category = 0, UniqueIndex = 1 }, get_address = function() return 4242 end }
+        for _ = 1, 3 do
+            c.hooks[PROC.poison].pre({ [2] = this })
+            assert(c.probe.activeProcKind() == "poison")
+            c.hooks[PROC.poison].post(nil)
+            assert(c.probe.activeProcKind() == nil)
+        end
+        assert(#gpLines() == 1, #gpLines())
+        assert(gpLines()[1]:find("gp proc poison invoker=0/1 obj=MasterPlayer", 1, true), gpLines()[1])
+        this.get_address = function() return 4243 end
+        c.hooks[PROC.poison].pre({ [2] = this })
+        assert(#gpLines() == 2)
+        c.hooks[FLOW.playing].pre({})
+        assert(c.probe.activeProcKind() == nil)
+        local before = #gpLines()
+        c.hooks[PROC.poison].pre({ [2] = this })
+        c.hooks[PROC.poison].post(nil)
+        assert(#gpLines() == before + 1)
+    end)
+end
+
+function T.poisonAddressFailuresDoNotSuppressInvokerLines()
+    for _, addressRead in ipairs({
+        function() error("address failed") end,
+        function() return nil end,
+    }) do
+        withProcProbe(function(c)
+            local first = { _Invoker = { Category = 0, UniqueIndex = 1 }, get_address = addressRead }
+            local second = { _Invoker = { Category = 0, UniqueIndex = 3 }, get_address = addressRead }
+            for _, this in ipairs({ first, second, first, second }) do
+                local before = #gpLines()
+                c.hooks[PROC.poison].pre({ [2] = this })
+                assert(c.probe.activeProcKind() == "poison")
+                assert(#gpLines() == before + 1, "missing invoker line after address failure")
+                local expected = this == first and "0/1 obj=MasterPlayer" or "0/3 obj=nil"
+                assert(gpLines()[before + 1] == "[MyHuntReport] gp proc poison invoker=" .. expected)
+                c.hooks[PROC.poison].post(nil)
+                assert(c.probe.activeProcKind() == nil)
+            end
+        end)
+    end
+end
+
+function T.receiveCondCountsAndLogsFirstTwenty()
+    withProcProbe(function(c)
+        for _ = 1, 22 do c.hooks[PROC.receiveCond].pre({ [3] = { AttackerIndex = 2, AttackCond = 3, CondValue = 1.0 } }) end
+        assert(c.probe.counters().receiveCond == 22)
+        assert(#gpLines() == 20, #gpLines())
+        assert(gpLines()[1]:find("gp receive cond attacker=2 cond=3 value=1.0", 1, true), gpLines()[1])
+    end)
+    withProcProbe(function(c)
+        sdk.to_managed_object = function() error("packet failed") end
+        for _ = 1, 20 do c.hooks[PROC.receiveCond].pre({}) end
+        assert(c.probe.counters().receiveCond == 20)
+        assert(#gpLines() == 5)
+        assert(gpLines()[1] == "[MyHuntReport] gp receive cond unreadable step=packet")
+        sdk.to_managed_object = function(value) return value end
+        for _ = 1, 22 do c.hooks[PROC.receiveCond].pre({ [3] = raising() }) end
+        assert(c.probe.counters().receiveCond == 42)
+        assert(#gpLines() == 25)
+        assert(gpLines()[25] == "[MyHuntReport] gp receive cond attacker=? cond=? value=?")
+        c.hooks[FLOW.playing].pre({})
+        assert(c.probe.counters().receiveCond == 0)
+        local before = #gpLines()
+        c.hooks[PROC.receiveCond].pre({ [3] = { AttackerIndex = 2, AttackCond = 3, CondValue = 1.0 } })
+        assert(#gpLines() == before + 1)
+        assert(c.probe.counters().receiveCond == 1)
     end)
 end
 

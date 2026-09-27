@@ -16,6 +16,9 @@ local RESULT_KEY = "mhr_gp_result"
 local counters = {}
 local ownPending = {}
 local netDepth = 0
+local procStack = {}
+local poisonLogged = {}
+local receiveCondLines = 0
 local ownLines = 0
 local receiveLines = 0
 local stateLogged = false
@@ -29,6 +32,9 @@ local function resetQuestState()
     resetCounters()
     ownPending = {}
     netDepth = 0
+    procStack = {}
+    poisonLogged = {}
+    receiveCondLines = 0
     ownLines = 0
     receiveLines = 0
 end
@@ -273,6 +279,160 @@ local function installHitHooks()
     Game.hook("app.EnemyCharacter", "receivePacket_Damage(app.net_packet.cEmDamage)", onReceiveDamage)
 end
 
+local CONDITION_NAMES = {
+    [0] = "ANGRY", [1] = "TIRED", [2] = "DEPLETION", [3] = "POISON", [4] = "POISON_EM", [5] = "PARALYSE", [6] = "PARALYSE_EM",
+    [7] = "SLEEP", [8] = "SLEEP_EM", [9] = "BLAST", [10] = "BLAST_REACTION", [11] = "BLAST_EM", [12] = "BLAST_REACTION_EM",
+    [13] = "RIDE", [14] = "STAMINA", [15] = "STUN", [16] = "STUN_EM", [17] = "CAPTURE", [18] = "FLASH", [19] = "FLASH_EM",
+    [20] = "EAR", [21] = "KOYASI", [22] = "WEAK_ATTR_SLINGER", [23] = "WEAK_ATTR_BOOST", [24] = "LIGHT_PLANT", [25] = "PARRY",
+    [26] = "PARRY_NPC", [27] = "BLOCK", [28] = "BLOCK_NPC", [29] = "SAND_DIG", [30] = "SCAR", [31] = "FIELD_PITFALL",
+    [32] = "SMOKE_BALL", [33] = "EM_LEAD", [34] = "SKILL_STABBING_PL1", [35] = "SKILL_STABBING_PL2", [36] = "SKILL_STABBING_PL3",
+    [37] = "SKILL_STABBING_PL4", [38] = "SKILL_RYUKI", [39] = "TRAP_FALL", [40] = "TRAP_PARALYSE", [41] = "TRAP_IVY",
+    [42] = "TRAP_PARALYSE_ANIMAL", [43] = "TRAP_PARALYSE_OTOMO", [44] = "TRAP_BOUND_NPC", [45] = "SLINGER",
+}
+local KEY_TYPE = "app.TARGET_ACCESS_KEY"
+local NULLABLE_KEY_TYPE = "System.Nullable`1<app.TARGET_ACCESS_KEY>"
+local HUNTER_CATEGORIES = { [0] = true, [5] = true }
+
+function GuestProbe.conditionName(value)
+    local name = type(value) == "number" and CONDITION_NAMES[value] or nil
+    return (name or "?") .. "(" .. tostring(value) .. ")"
+end
+
+function GuestProbe.activeProcKind()
+    return procStack[#procStack]
+end
+
+local function keyText(key)
+    return readValue(function() return key.Category end) .. "/" .. readValue(function() return key.UniqueIndex end)
+end
+
+local function keyObjectName(key)
+    local ok, name = pcall(function()
+        if not HUNTER_CATEGORIES[key.Category] then return nil end
+        local character, err = Game.callStatic("app.TargetAccessKeyUtil", "getHunterCharacter(app.TARGET_ACCESS_KEY)", key)
+        if err then error(err) end
+        if not character then return nil end
+        return character:get_GameObject():get_Name()
+    end)
+    if ok then return GuestProbe.formatValue(name) end
+    return "?"
+end
+
+local function bracketText()
+    return tostring(GuestProbe.activeProcKind() or "none")
+end
+
+local function onProcEnter(kind)
+    return function(args)
+        if not Log.isDeveloperMode() then return end
+        procStack[#procStack + 1] = kind
+        local okThis, this = pcall(function() return sdk.to_managed_object(args[2]) end)
+        if not okThis or not this then return unreadable("proc " .. kind, "this") end
+        if kind == "poison" then
+            local okAddress, address = pcall(function() return this:get_address() end)
+            if okAddress and address ~= nil then
+                local key = tostring(address)
+                if poisonLogged[key] then return end
+                poisonLogged[key] = true
+            end
+        end
+        local okInvoker, invoker = pcall(function() return this._Invoker end)
+        local invokerText = okInvoker and invoker and keyText(invoker) or "?"
+        local objectText = okInvoker and (invoker and keyObjectName(invoker) or "nil") or "?"
+        trace("proc " .. kind .. " invoker=" .. invokerText .. " obj=" .. objectText)
+    end
+end
+
+local function onProcLeave()
+    if not Log.isDeveloperMode() then return end
+    procStack[#procStack] = nil
+end
+
+local function onNetCond(args)
+    if not Log.isDeveloperMode() then return end
+    bump("netCond")
+    local okPacket, packet = pcall(function() return sdk.to_managed_object(args[3]) end)
+    if not okPacket or not packet then return unreadable("net cond", "packet") end
+    trace("net cond attacker=" .. readValue(function() return packet.AttackerIndex end)
+        .. " cond=" .. readValue(function() return packet.AttackCond end)
+        .. " value=" .. readValue(function() return packet.CondValue end)
+        .. " limit=" .. readValue(function() return packet.ActivateLimit end))
+end
+
+local function onExtCond(args)
+    if not Log.isDeveloperMode() then return end
+    bump("extCond")
+    local okCond, condition = pcall(function() return sdk.to_int64(args[3]) end)
+    local value = readValue(function() return sdk.to_float(args[4]) end)
+    local objectName = readValue(function() return sdk.to_managed_object(args[7]):get_Name() end)
+    trace("ext cond=" .. GuestProbe.conditionName(okCond and condition or nil)
+        .. " value=" .. value
+        .. " obj=" .. objectName .. " net=" .. tostring(netDepth > 0))
+end
+
+local function onReceiveCond(args)
+    if not Log.isDeveloperMode() then return end
+    bump("receiveCond")
+    local okPacket, packet = pcall(function() return sdk.to_managed_object(args[3]) end)
+    if not okPacket or not packet then return unreadable("receive cond", "packet") end
+    if receiveCondLines >= RECEIVE_LINE_BUDGET then return end
+    receiveCondLines = receiveCondLines + 1
+    trace("receive cond attacker=" .. readValue(function() return packet.AttackerIndex end)
+        .. " cond=" .. readValue(function() return packet.AttackCond end)
+        .. " value=" .. readValue(function() return packet.CondValue end))
+end
+
+local function onExternal(args)
+    if not Log.isDeveloperMode() then return end
+    bump("external")
+    local value = readValue(function() return sdk.to_float(args[3]) end)
+    local okKey, nullable = pcall(function() return sdk.to_valuetype(args[5], NULLABLE_KEY_TYPE) end)
+    if not okKey or not nullable then return unreadable("external", "key") end
+    local hasKey = readValue(function() return nullable._HasValue end)
+    local key = readValue(function() return nullable._Value.Category end) .. "/" .. readValue(function() return nullable._Value.UniqueIndex end)
+    trace("external value=" .. value .. " hasKey=" .. hasKey .. " key=" .. key
+        .. " bracket=" .. bracketText() .. " net=" .. tostring(netDepth > 0))
+end
+
+local function onSetParam(args)
+    if not Log.isDeveloperMode() then return end
+    bump("setParam")
+    local value = readValue(function() return sdk.to_float(args[3]) end)
+    local okKey, key = pcall(function() return sdk.to_valuetype(args[4], KEY_TYPE) end)
+    if not okKey or not key then return unreadable("setParam", "key") end
+    trace("setParam value=" .. value .. " key=" .. keyText(key) .. " bracket=" .. bracketText())
+end
+
+local function onGetter(name)
+    return function(args)
+        if not Log.isDeveloperMode() then return end
+        local okThis, this = pcall(function() return sdk.to_managed_object(args[2]) end)
+        if not okThis or not this then return unreadable("getter " .. name, "this") end
+        local master = readValue(function()
+            return this:get_address() == Game.masterHunter():get_HunterSkill():get_address()
+        end)
+        trace("getter " .. name .. " master=" .. master .. " bracket=" .. bracketText())
+    end
+end
+
+local function installProcHooks()
+    Game.hook("app.cEnemyStockDamage", "stockExternalBadConditionDamageNet(app.net_packet.cEmDamageExternalCondition)", onNetCond)
+    Game.hook("app.cEnemyStockDamage",
+        "stockExternalBadConditionDamage(app.EnemyDef.CONDITION, System.Single, app.cHorizontalUDDirection, System.Boolean, via.GameObject, System.Boolean)",
+        onExtCond)
+    Game.hook("app.EnemyCharacter", "receivePacket_DamageExternalCondition(app.net_packet.cEmDamageExternalCondition)", onReceiveCond)
+    Game.hook("app.cEnemyStockDamage",
+        "stockExternalDamage(System.Single, System.Boolean, System.Nullable`1<app.TARGET_ACCESS_KEY>, System.Boolean, System.Boolean)",
+        onExternal)
+    Game.hook("app.cEnemyStockDamage.cBadConditionDamageInfo", "setParam(System.Single, app.TARGET_ACCESS_KEY, System.Boolean)", onSetParam)
+    Game.hook("app.cEnemyBadConditionBlast", "onActivate", onProcEnter("blast"), onProcLeave)
+    Game.hook("app.cEnemyBadConditionSkillStabbing", "onActivate", onProcEnter("flayer"), onProcLeave)
+    Game.hook("app.cEnemyBadConditionSkillRyuki", "onActivate", onProcEnter("elementConvert"), onProcLeave)
+    Game.hook("app.cEnemyBadConditionPoison", "onUpdateActive", onProcEnter("poison"), onProcLeave)
+    Game.hook("app.cHunterSkill", "getSkillStabbingAddDamage(app.cEnemyContextHolder)", onGetter("stabbing"))
+    Game.hook("app.cHunterSkill", "getSkillRyukiAddDamage(app.cEnemyContextHolder, System.Single, System.Single)", onGetter("ryuki"))
+end
+
 local function unresolvedOr(read)
     local ok, value = pcall(read)
     if ok and value ~= nil then return GuestProbe.formatValue(value) end
@@ -344,6 +504,7 @@ function GuestProbe.install()
     installed = true
     installFlowHooks()
     installHitHooks()
+    installProcHooks()
 end
 
 return GuestProbe
