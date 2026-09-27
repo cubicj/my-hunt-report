@@ -83,7 +83,9 @@ end
 local function drawSkillProcCapture(s, L)
     local changed, value = imgui.checkbox(L("settings_skill_proc_capture"), s.skillProcCapture)
     if changed then Settings.set("skillProcCapture", value) end
-    if Settings.get().skillProcCapture == Procs.skillProcsInstalled() then return end
+    local enabled = Settings.get().skillProcCapture
+    if enabled and not Procs.skillProcsInstalled() then Procs.installSkillProcs() end
+    if enabled or not Procs.skillProcsInstalled() then return end
     local pushed = pcall(imgui.push_style_color, 0, Theme.colors.textMuted)
     local ok, err = pcall(imgui.text, L("settings_restart_required"))
     if pushed then pcall(imgui.pop_style_color, 1) end

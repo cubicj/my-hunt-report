@@ -210,51 +210,86 @@ function T.settingsPanelClearButtonPrecedesSkillProcAndDeveloperMode()
     end)
 end
 
-function T.settingsPanelSkillProcCheckboxSavesAndShowsRestartLineWhenStateDiffers()
+local function withSkillProcStubs(callback)
+    local Procs = require("MyHuntReport.Procs")
+    local installed, install = Procs.skillProcsInstalled, Procs.installSkillProcs
+    local state = { installed = true, installs = 0 }
+    Procs.skillProcsInstalled = function() return state.installed end
+    Procs.installSkillProcs = function()
+        state.installs = state.installs + 1
+        state.installed = true
+    end
+    local ok, err = pcall(callback, state)
+    Procs.skillProcsInstalled, Procs.installSkillProcs = installed, install
+    if not ok then error(err, 0) end
+end
+
+function T.settingsPanelSkillProcHintShowsOnlyWhileDisabledButInstalled()
     withClearPanel(function(ui)
         local Settings = require("MyHuntReport.Settings")
-        local Procs = require("MyHuntReport.Procs")
         local Theme = require("MyHuntReport.Theme")
-        local installed = Procs.skillProcsInstalled
-        Procs.skillProcsInstalled = function() return true end
-        ui.draw()
-        assert(Settings.get().skillProcCapture == true)
-        assert(ui.find("Takes effect after a game restart") == nil)
-        Settings.set("skillProcCapture", false)
-        ui.draw()
-        local hint, hintIndex = ui.find("Takes effect after a game restart")
-        local _, skill = ui.find("Record Flayer and Element Convert damage")
-        local _, developer = ui.find("Developer Mode")
-        assert(hint and hint.kind == "text" and hint.colors[0] == Theme.colors.textMuted)
-        assert(skill + 1 == hintIndex and hintIndex + 1 == developer)
-        Procs.skillProcsInstalled = function() return false end
-        ui.draw()
-        assert(ui.find("Takes effect after a game restart") == nil)
-        Settings.set("skillProcCapture", true)
-        ui.draw()
-        hint = ui.find("Takes effect after a game restart")
-        assert(hint and hint.kind == "text")
-        Procs.skillProcsInstalled = installed
+        withSkillProcStubs(function(state)
+            ui.draw()
+            assert(Settings.get().skillProcCapture == true)
+            assert(ui.find("Takes effect after a game restart") == nil)
+            Settings.set("skillProcCapture", false)
+            ui.draw()
+            local hint, hintIndex = ui.find("Takes effect after a game restart")
+            local _, skill = ui.find("Record Flayer and Element Convert damage")
+            local _, developer = ui.find("Developer Mode")
+            assert(hint and hint.kind == "text" and hint.colors[0] == Theme.colors.textMuted)
+            assert(skill + 1 == hintIndex and hintIndex + 1 == developer)
+            state.installed = false
+            ui.draw()
+            assert(ui.find("Takes effect after a game restart") == nil)
+            assert(state.installs == 0)
+            Settings.set("skillProcCapture", true)
+        end)
     end)
 end
 
-function T.settingsPanelSkillProcCheckboxChangeIsSaved()
+function T.settingsPanelSkillProcEnableInstallsHooksImmediately()
     withClearPanel(function(ui)
         local Settings = require("MyHuntReport.Settings")
-        local Procs = require("MyHuntReport.Procs")
-        local installed = Procs.skillProcsInstalled
-        Procs.skillProcsInstalled = function() return true end
-        local checkbox = imgui.checkbox
-        imgui.checkbox = function(label, value)
-            if label == "Record Flayer and Element Convert damage" then return true, false end
-            return checkbox(label, value)
-        end
-        ui.draw()
-        imgui.checkbox = checkbox
-        assert(Settings.get().skillProcCapture == false)
-        assert(stubs.jsonFiles[Settings.FILE].skillProcCapture == false)
-        Settings.set("skillProcCapture", true)
-        Procs.skillProcsInstalled = installed
+        withSkillProcStubs(function(state)
+            state.installed = false
+            Settings.set("skillProcCapture", false)
+            ui.draw()
+            assert(state.installs == 0)
+            local checkbox = imgui.checkbox
+            imgui.checkbox = function(label, value)
+                if label == "Record Flayer and Element Convert damage" then return true, true end
+                return checkbox(label, value)
+            end
+            ui.draw()
+            imgui.checkbox = checkbox
+            assert(Settings.get().skillProcCapture == true)
+            assert(state.installs == 1 and state.installed == true)
+            assert(ui.find("Takes effect after a game restart") == nil)
+            ui.draw()
+            assert(state.installs == 1)
+        end)
+    end)
+end
+
+function T.settingsPanelSkillProcDisableIsSavedAndShowsHint()
+    withClearPanel(function(ui)
+        local Settings = require("MyHuntReport.Settings")
+        withSkillProcStubs(function(state)
+            local checkbox = imgui.checkbox
+            imgui.checkbox = function(label, value)
+                if label == "Record Flayer and Element Convert damage" then return true, false end
+                return checkbox(label, value)
+            end
+            ui.draw()
+            imgui.checkbox = checkbox
+            assert(Settings.get().skillProcCapture == false)
+            assert(stubs.jsonFiles[Settings.FILE].skillProcCapture == false)
+            assert(state.installs == 0)
+            local hint = ui.find("Takes effect after a game restart")
+            assert(hint and hint.kind == "text")
+            Settings.set("skillProcCapture", true)
+        end)
     end)
 end
 
