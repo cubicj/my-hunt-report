@@ -42,7 +42,7 @@ lua5.4 tests/run.lua
 
 Inspired by [Skill Uptime Tracker](https://www.nexusmods.com/monsterhunterwilds/mods/3249) by JuIianMH. This mod was written from scratch and reuses no code from other projects.
 
-The report window uses the [Pretendard](https://github.com/orioncactus/pretendard) font by Kil Hyung-jin, licensed under the SIL Open Font License 1.1 (see `reframework/fonts/MyHuntReport/LICENSE-Pretendard.txt`).
+The report window uses the [Pretendard](https://github.com/orioncactus/pretendard) font by Kil Hyung-jin, licensed under the SIL Open Font License 1.1 (see `reframework/fonts/MyHuntReport/LICENSE-Pretendard.txt`). For game languages that font cannot draw, such as Chinese or Japanese, the report uses REFramework's default font instead.
 
 ## License
 
