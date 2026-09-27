@@ -128,6 +128,100 @@ local function onResultPost()
     trace(ProcPacketProbe.summaryLine(counters))
 end
 
+local function onPacketPre(kind, counter)
+    return function(args)
+        if not Log.isDeveloperMode() then return end
+        pushBracket("packet:" .. kind)
+        bump(counter)
+        local packet = managedArg(args, 3)
+        if not packet then return unreadable("packet " .. kind, "packet") end
+        local gui = "-"
+        if kind == "flayer" then gui = readValue(function() return packet.GuiState end) end
+        trace("packet " .. kind .. " em=" .. readValue(function() return packet.UniqueIndex end)
+            .. " damage=" .. readValue(function() return packet.Damage end)
+            .. " attackerNet=" .. readValue(function() return packet.AttackerNetID end)
+            .. " gui=" .. gui)
+    end
+end
+
+local function onTogglePre(args)
+    if not Log.isDeveloperMode() then return end
+    pushBracket("toggle")
+    bump("toggle")
+    local packet = managedArg(args, 3)
+    if not packet then return unreadable("toggle", "packet") end
+    trace("toggle em=" .. readValue(function() return packet.UniqueIndex end)
+        .. " type=" .. readValue(function() return packet.Type end)
+        .. " active=" .. readValue(function() return packet.ActiveAndCount end)
+        .. " invoker=" .. readValue(function() return packet.Invoker end))
+end
+
+local function onReceivePost()
+    popBracket()
+end
+
+local function invokerTexts(this)
+    local okInvoker, invoker = pcall(function() return this._Invoker end)
+    if not okInvoker then return "?", "?" end
+    if invoker == nil then return "nil", "nil" end
+    return keyText(invoker), keyObjectName(invoker)
+end
+
+local function blastFields(this)
+    return " count=" .. readValue(function() return this._Count end)
+        .. " player=" .. readValue(function() return this._IsPlayerCondition end)
+        .. " damageEm=" .. readValue(function() return this._PresetParamRef._DamageEm end)
+        .. " damageExEm=" .. readValue(function() return this._PresetParamRef._DamageExEm end)
+end
+
+local function onActivate(kind, counter, extraFields)
+    return function(args)
+        if not Log.isDeveloperMode() then return end
+        bump(counter)
+        if #brackets > 0 then bump("activateInsidePacket") end
+        local this = managedArg(args, 2)
+        if not this then return unreadable("activate " .. kind, "this") end
+        local invokerText, objectText = invokerTexts(this)
+        local line = "activate " .. kind .. " invoker=" .. invokerText .. " obj=" .. objectText .. " in=" .. bracketText()
+        if extraFields then line = line .. extraFields(this) end
+        trace(line)
+    end
+end
+
+local function onSetParam(args)
+    if not Log.isDeveloperMode() or #brackets == 0 then return end
+    bump("setParamInsidePacket")
+    local value = readValue(function() return sdk.to_float(args[3]) end)
+    local okKey, key = pcall(function() return sdk.to_valuetype(args[4], KEY_TYPE) end)
+    local keyLine = "?"
+    if okKey and key then keyLine = keyText(key) end
+    trace("setParam value=" .. value .. " key=" .. keyLine .. " in=" .. bracketText())
+end
+
+local function onExternal(args)
+    if not Log.isDeveloperMode() or #brackets == 0 then return end
+    bump("externalInsidePacket")
+    local value = readValue(function() return sdk.to_float(args[3]) end)
+    local okKey, nullable = pcall(function() return sdk.to_valuetype(args[5], NULLABLE_KEY_TYPE) end)
+    local hasKey, key = "?", "?"
+    if okKey and nullable then
+        hasKey = readValue(function() return nullable._HasValue end)
+        key = readValue(function() return nullable._Value.Category end) .. "/" .. readValue(function() return nullable._Value.UniqueIndex end)
+    end
+    trace("external value=" .. value .. " hasKey=" .. hasKey .. " key=" .. key .. " in=" .. bracketText())
+end
+
+local function installProcHooks()
+    Game.hook("app.cEnemyBadConditionSkillStabbing", "receiveActivatePacket(app.net_packet.cEmSkillActivateStabbing)", onPacketPre("flayer", "packetFlayer"), onReceivePost)
+    Game.hook("app.cEnemyBadConditionSkillRyuki", "receiveActivatePacket(app.net_packet.cEmSkillActivateRyuki)", onPacketPre("elementConvert", "packetRyuki"), onReceivePost)
+    Game.hook("app.cEmModuleConditions.mcUpdater", "onReceivePacket(app.net_packet.cEmToggleCondition)", onTogglePre, onReceivePost)
+    Game.hook("app.cEnemyBadConditionBlast", "onActivate", onActivate("blast", "activateBlast", blastFields))
+    Game.hook("app.cEnemyBadConditionSkillStabbing", "onActivate", onActivate("flayer", "activateFlayer"))
+    Game.hook("app.cEnemyBadConditionSkillRyuki", "onActivate", onActivate("elementConvert", "activateRyuki"))
+    Game.hook("app.cEnemyStockDamage.cBadConditionDamageInfo", "setParam(System.Single, app.TARGET_ACCESS_KEY, System.Boolean)", onSetParam)
+    Game.hook("app.cEnemyStockDamage", "stockExternalDamage(System.Single, System.Boolean, System.Nullable`1<app.TARGET_ACCESS_KEY>, System.Boolean, System.Boolean)", onExternal)
+end
+
 local function installFlowHooks()
     Game.hook("app.cQuestPlaying", "enter()", onQuestStart)
     Game.hook("app.cGUIQuestResultInfo", "execute()", nil, onResultPost)
@@ -137,6 +231,7 @@ function ProcPacketProbe.install()
     if installed then return end
     installed = true
     installFlowHooks()
+    installProcHooks()
 end
 
 return ProcPacketProbe
