@@ -201,14 +201,13 @@ local function traceLongSwordShell(shell, address, entry)
     if not hunter then return end
     local okType, weaponType = pcall(function() return hunter:get_WeaponType() end)
     if not okType or weaponType ~= WEAPON_LONG_SWORD then return end
-    local okOwner, isMaster = pcall(function() return Game.isMasterGameObject(shell:get_ShellOwner()) end)
-    if not okOwner or not isMaster then return end
     local parts = { "ls shell " .. tostring(address) }
     local function add(name, read)
         local ok, value = pcall(read)
         parts[#parts + 1] = name .. "=" .. (ok and probeValue(value) or "?")
     end
     parts[#parts + 1] = "key=" .. tostring(entry and (entry.hitTime and "hitTime" or entry.key) or "none")
+    add("owner", function() return shell:get_ShellOwner():get_Name() end)
     add("hash", function() return shell:call("get_NameHash") end)
     add("unique", function() return shell._ShellUniqueIndex end)
     add("chain", function() return shell._ChainShellID end)
