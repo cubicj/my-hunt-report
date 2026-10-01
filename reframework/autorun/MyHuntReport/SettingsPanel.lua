@@ -80,16 +80,21 @@ local function drawHotkey(s, L)
     end
 end
 
+local function drawMutedHint(text, label)
+    local pushed = pcall(imgui.push_style_color, 0, Theme.colors.textMuted)
+    local ok, err = pcall(imgui.text, text)
+    if pushed then pcall(imgui.pop_style_color, 1) end
+    if not ok then Log.error(label .. " hint text failed: " .. tostring(err), "panel:" .. label) end
+end
+
 local function drawSkillProcCapture(s, L)
     local changed, value = imgui.checkbox(L("settings_skill_proc_capture"), s.skillProcCapture)
     if changed then Settings.set("skillProcCapture", value) end
     local enabled = Settings.get().skillProcCapture
     if enabled and not Procs.skillProcsInstalled() then Procs.installSkillProcs() end
+    drawMutedHint(L("settings_skill_proc_crash_hint"), "crash")
     if enabled or not Procs.skillProcsInstalled() then return end
-    local pushed = pcall(imgui.push_style_color, 0, Theme.colors.textMuted)
-    local ok, err = pcall(imgui.text, L("settings_restart_required"))
-    if pushed then pcall(imgui.pop_style_color, 1) end
-    if not ok then Log.error("restart hint text failed: " .. tostring(err), "panel:restart") end
+    drawMutedHint(L("settings_restart_required"), "restart")
 end
 
 local function drawFontAndLanguage(s, L)
