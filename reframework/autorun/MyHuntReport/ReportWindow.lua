@@ -362,6 +362,7 @@ local function drawRows(idPrefix, rows, columnWidth, layout)
                 imgui.text(clipName(tostring(row.name), nameWidth))
                 imgui.same_line()
                 local percent = Format.percent(row.share)
+                if row.valueKind == "hp" then percent = "HP " .. percent end
                 local w = textWidth(percent)
                 local x = w and (rightEdge - w) or (rightEdge - percentWidth)
                 imgui.set_cursor_pos(Vector2f.new(x, imgui.get_cursor_pos().y))

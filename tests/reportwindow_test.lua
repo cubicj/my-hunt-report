@@ -1831,4 +1831,24 @@ function T.draw_usesDefaultFontSizePushesWhenBundledFontDoesNotCover()
     if not ok then error(err, 0) end
 end
 
+function T.hpRowsCarryTheHpPrefix()
+    withNavigation(function(ui)
+        local shown = snapshot("clear")
+        shown.skills = {
+            { name = "Skill", share = 0.5 },
+            { name = "Hasten Recovery", share = 0.24, valueKind = "hp" },
+        }
+        ReportWindow.show(shown)
+        ui.draw()
+        local texts, inRows = {}, false
+        for _, event in ipairs(ui.events) do
+            if event.kind == "row" and event.value == "skill1" then inRows = true end
+            if inRows and event.kind == "text" then texts[#texts + 1] = event.value end
+        end
+        local joined = table.concat(texts, "|")
+        assert(joined:find("Skill|50.0%|", 1, true), joined)
+        assert(joined:find("Hasten Recovery|HP 24.0%", 1, true), joined)
+    end)
+end
+
 return T
