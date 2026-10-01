@@ -18,6 +18,15 @@ local MARK_SHOT_HASHES = {
 local WEAPON_BOW = 11
 local WEAPON_HEAVY_BOWGUN = 12
 local WEAPON_LIGHT_BOWGUN = 13
+local WEAPON_LONG_SWORD = 3
+local LONG_SWORD_PROBE_FIELDS = {
+    "_IsKabutowariStart", "_IsKabutowariDelayHitSetup", "_KabutowariShellNum", "_KabutowariHitNum",
+    "_KabutowariCreateShellTimer", "<KabutowariAuraLevel>k__BackingField", "<AuraLevel>k__BackingField",
+    "_IsIaiDelayHitStart", "_IaiDelayHitCreateShellTimer", "_IaiDelayHitAuraLevel",
+    "_IsRenkiReleaseDelayShellStart", "_IsRenkiReleaseDelayShellSetup", "_RenkiReleaseDelayShellNum",
+    "_IsWeakPointBreakDelayReserve", "_WeakPointBreakDelayTimer", "_EmRideFinishDelayHitTimer",
+}
+local LONG_SWORD_PROBE_LISTS = { "_IaiDelayHitInfo", "_RenkiReleaseHitInfo", "_WeakPointDelayAttackInfos" }
 
 local launches = {}
 local hitTimeCount = 0
@@ -176,6 +185,55 @@ local function setEntry(address, entry)
     if hitTimeCount == 0 then lastAttackClass, lastAttackGuideId = nil, nil end
 end
 
+local function probeValue(value)
+    if math.type(value) == "float" then return string.format("%.2f", value) end
+    return tostring(value)
+end
+
+local function probeName(field)
+    local name = field:gsub("^_", "")
+    name = name:gsub("^<(.-)>k__BackingField$", "%1")
+    return name
+end
+
+local function traceLongSwordShell(shell, address, entry)
+    local hunter = Game.masterHunter()
+    if not hunter then return end
+    local okType, weaponType = pcall(function() return hunter:get_WeaponType() end)
+    if not okType or weaponType ~= WEAPON_LONG_SWORD then return end
+    local okOwner, isMaster = pcall(function() return Game.isMasterGameObject(shell:get_ShellOwner()) end)
+    if not okOwner or not isMaster then return end
+    local parts = { "ls shell " .. tostring(address) }
+    local function add(name, read)
+        local ok, value = pcall(read)
+        parts[#parts + 1] = name .. "=" .. (ok and probeValue(value) or "?")
+    end
+    parts[#parts + 1] = "key=" .. tostring(entry and (entry.hitTime and "hitTime" or entry.key) or "none")
+    add("hash", function() return shell:call("get_NameHash") end)
+    add("unique", function() return shell._ShellUniqueIndex end)
+    add("chain", function() return shell._ChainShellID end)
+    add("collision", function() return shell["<Setting>k__BackingField"]._AttackCollisionID end)
+    add("parent", function() return shell:get_ParentShell() ~= nil end)
+    local baseClass, baseGuideId = MotionNames.describe(readControllerAction(hunter, "get_BaseActionController"))
+    local subClass = MotionNames.describe(readControllerAction(hunter, "get_SubActionController"))
+    parts[#parts + 1] = "base=" .. tostring(baseClass) .. "/" .. tostring(baseGuideId) .. " sub=" .. tostring(subClass)
+    local okHandling, handling = pcall(function() return hunter:get_WeaponHandling() end)
+    if okHandling and handling then
+        for _, field in ipairs(LONG_SWORD_PROBE_FIELDS) do
+            add(probeName(field), function() return handling[field] end)
+        end
+        for _, field in ipairs(LONG_SWORD_PROBE_LISTS) do
+            add(probeName(field), function()
+                local list = handling[field]
+                return list and list:get_Count() or 0
+            end)
+        end
+    else
+        parts[#parts + 1] = "handling=?"
+    end
+    Log.trace(table.concat(parts, " "))
+end
+
 local function onSetUp(args)
     local shell = sdk.to_managed_object(args[2])
     if not shell then return end
@@ -193,6 +251,7 @@ local function onSetUp(args)
         if key then entry = { key = key, label = label } end
     end
     setEntry(address, entry)
+    if Log.isDeveloperMode() then traceLongSwordShell(shell, address, entry) end
     if entry and Log.isDeveloperMode() then
         local key = entry.hitTime and "hitTime" or entry.key
         local okOwner, owner = pcall(function() return shell:get_ShellOwner():get_Name() end)
