@@ -694,4 +694,69 @@ function T.relabelKeepsSnapshotsWithoutDiagnosticsDiagnosticsFree()
     assert(type(live.diagnostics.names) == "table")
 end
 
+function T.addHealRejectsInvalidInput()
+    Session.reset(0)
+    assert(Session.addHeal({ kind = "hastenRecovery", amount = 0, maxHp = 150 }) == false)
+    assert(Session.addHeal({ kind = "hastenRecovery", amount = 5, maxHp = 0 }) == false)
+    assert(Session.addHeal({ kind = "potion", amount = 5, maxHp = 150 }) == false)
+    assert(Session.addHeal({ kind = "superRecovery", amount = "x", maxHp = 150 }) == false)
+    assert(#Session.snapshot().skills == 0)
+end
+
+function T.addHealAccumulatesShareAtEachMaxHp()
+    Session.reset(0)
+    assert(Session.addHeal({ kind = "hastenRecovery", amount = 15, maxHp = 150 }) == true)
+    assert(Session.addHeal({ kind = "hastenRecovery", amount = 20, maxHp = 200 }) == true)
+    local rows = Session.snapshot().skills
+    assert(#rows == 1, #rows)
+    assert(rows[1].label.kind == "heal" and rows[1].label.heal == "hastenRecovery")
+    assert(math.abs(rows[1].share - 0.2) < 1e-9, rows[1].share)
+    assert(rows[1].valueKind == "hp" and rows[1].id == nil)
+    assert(rows[1].name == "hastenRecovery")
+end
+
+function T.healRowsFollowUptimeRowsInKindOrder()
+    Session.reset(0)
+    Session.addHit(hit({ activeSkills = { [59] = true }, weight = 10 }))
+    Session.addHeal({ kind = "superRecovery", amount = 3, maxHp = 150 })
+    Session.addHeal({ kind = "hastenRecovery", amount = 30, maxHp = 150 })
+    local rows = Session.snapshot({ equippedSkills = { { id = 59 } } }).skills
+    assert(#rows == 3, #rows)
+    assert(rows[1].id == 59)
+    assert(rows[2].label.heal == "hastenRecovery" and math.abs(rows[2].share - 0.2) < 1e-9)
+    assert(rows[3].label.heal == "superRecovery" and math.abs(rows[3].share - 0.02) < 1e-9)
+end
+
+function T.healSharesCanExceedOneAndResetClearsThem()
+    Session.reset(0)
+    Session.addHeal({ kind = "superRecovery", amount = 300, maxHp = 150 })
+    assert(math.abs(Session.snapshot().skills[1].share - 2) < 1e-9)
+    Session.reset(0)
+    assert(#Session.snapshot().skills == 0)
+end
+
+function T.healOnlySessionHasNoDamageData()
+    Session.reset(0)
+    Session.addHeal({ kind = "superRecovery", amount = 3, maxHp = 150 })
+    assert(Session.hasData() == false)
+end
+
+function T.relabelKeepsHigherHealSharesAfterSortedUptimeRows()
+    Session.reset(0)
+    Session.addHit(hit({ activeSkills = { [59] = true, [65] = true }, weight = 10 }))
+    Session.addHit(hit({ activeSkills = { [59] = true }, weight = 30 }))
+    Session.addHeal({ kind = "superRecovery", amount = 90, maxHp = 150 })
+    Session.addHeal({ kind = "hastenRecovery", amount = 15, maxHp = 150 })
+    local snapshot = Session.snapshot({ equippedSkills = { { id = 59 }, { id = 65 } } })
+    local rows = snapshot.skills
+    assert(#rows == 4, #rows)
+    assert(rows[1].id == 59 and math.abs(rows[1].share - 1) < 1e-9)
+    assert(rows[2].id == 65 and math.abs(rows[2].share - 0.25) < 1e-9)
+    assert(rows[3].label.heal == "hastenRecovery" and math.abs(rows[3].share - 0.1) < 1e-9)
+    assert(rows[4].label.heal == "superRecovery" and math.abs(rows[4].share - 0.6) < 1e-9)
+    Session.relabel(snapshot)
+    assert(snapshot.skills[1].id == 59 and snapshot.skills[2].id == 65)
+    assert(snapshot.skills[3].label.heal == "hastenRecovery" and snapshot.skills[4].label.heal == "superRecovery")
+end
+
 return T

@@ -5,6 +5,8 @@ local Session = {}
 
 local SKILL_DAMAGE_KINDS = { "flare", "fury", "violent", "ryukiExplosion", "darkWave", "mirrorBlade", "flayer", "elementConvert" }
 local SKILL_PROC_KINDS = { flayer = true, elementConvert = true }
+local HEAL_KINDS = { "hastenRecovery", "superRecovery" }
+local HEAL_KIND_SET = { hastenRecovery = true, superRecovery = true }
 
 local state = nil
 
@@ -41,6 +43,7 @@ function Session.reset(startTime)
         monsterOrder = {},
         skills = {},
         skillEligible = {},
+        heal = {},
         motions = {},
         motionOrder = {},
         procs = {},
@@ -182,6 +185,14 @@ function Session.addProc(proc)
     return true
 end
 
+function Session.addHeal(heal)
+    local amount = tonumber(heal.amount) or 0
+    local maxHp = tonumber(heal.maxHp) or 0
+    if amount <= 0 or maxHp <= 0 or not HEAL_KIND_SET[heal.kind] then return false end
+    state.heal[heal.kind] = (state.heal[heal.kind] or 0) + amount / maxHp
+    return true
+end
+
 function Session.noteWeightFallback()
     state.weightFallbacks = state.weightFallbacks + 1
 end
@@ -236,6 +247,12 @@ local function skillRows(equipped)
         return tostring(a) < tostring(b)
     end)
     for _, id in ipairs(credited) do add(id) end
+    for _, kind in ipairs(HEAL_KINDS) do
+        local share = state.heal[kind] or 0
+        if share > 0 then
+            rows[#rows + 1] = { label = { kind = "heal", heal = kind }, share = share, valueKind = "hp" }
+        end
+    end
     return rows
 end
 
@@ -393,6 +410,7 @@ end
 local function defaultName(label)
     if label.kind == "motion" then return label.className end
     if label.kind == "proc" then return label.proc end
+    if label.kind == "heal" then return label.heal end
     if label.kind == "monster" then return "#" .. tostring(label.emId) end
     if label.kind == "skill" then return "#" .. tostring(label.id) end
     if label.kind == "weapon" then return "#" .. tostring(label.type) end
@@ -445,7 +463,17 @@ function Session.relabel(snapshot, resolve)
                 table.remove(snapshot.skills, index)
             end
         end
-        sortRows(snapshot.skills)
+        local uptime, heals = {}, {}
+        for _, row in ipairs(snapshot.skills) do
+            if row.label and row.label.kind == "heal" then
+                heals[#heals + 1] = row
+            else
+                uptime[#uptime + 1] = row
+            end
+        end
+        sortRows(uptime)
+        for _, row in ipairs(heals) do uptime[#uptime + 1] = row end
+        snapshot.skills = uptime
     end
     return snapshot
 end
