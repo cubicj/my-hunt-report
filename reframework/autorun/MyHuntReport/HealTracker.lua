@@ -37,4 +37,68 @@ function HealTracker.detect(pre, post, previous)
     return found
 end
 
+function HealTracker.snapshot(health)
+    local s = { at = Game.uptime() }
+    local ok = pcall(function()
+        local manager = health:get_HealthMgr()
+        s.hp = manager:get_Health()
+        s.maxHp = manager:get_MaxHealth()
+        s.red = health:get_RedHealth()
+        s.autoTimer = health._AutoRecoverTimerSkill or 0
+        local info = health:get_Status()._Skill._HunterSkillParamInfo
+        s.accHits = (info._AccHealHitCount or 0) + (info._DKAccHealHitCount or 0)
+    end)
+    if not ok or type(s.hp) ~= "number" then return nil end
+    return s
+end
+
+local function record(entries)
+    for _, entry in ipairs(entries) do
+        if Session.addHeal(entry) then
+            Log.debug(string.format("heal %s +%.1f (hp %.1f->%.1f)", entry.kind, entry.amount, entry.from, entry.to),
+                "heal:" .. entry.kind)
+        end
+    end
+end
+
+local function isMaster(health)
+    local okAddress, address = pcall(function() return health:get_address() end)
+    if not okAddress or address == nil then return false end
+    local cached = masterByAddress[address]
+    if cached ~= nil then return cached end
+    local ok, result = pcall(function()
+        local status = health:get_Status()
+        if status == nil then return nil end
+        return status:get_IsMaster()
+    end)
+    if not ok or type(result) ~= "boolean" then return false end
+    masterByAddress[address] = result
+    return result
+end
+
+local function onUpdatePre(args)
+    local health = sdk.to_managed_object(args[2])
+    if not health or not isMaster(health) then return end
+    local pre = HealTracker.snapshot(health)
+    if not pre then return end
+    record(HealTracker.detect(pre, nil, lastPost))
+    pending = { health = health, pre = pre }
+end
+
+local function onUpdatePost()
+    local update = pending
+    pending = nil
+    if not update then return end
+    local post = HealTracker.snapshot(update.health)
+    if not post then return end
+    record(HealTracker.detect(update.pre, post, nil))
+    lastPost = post
+end
+
+function HealTracker.install()
+    if installed then return end
+    installed = true
+    Game.hook("app.cHunterHealth", "update(System.Single, System.Boolean)", onUpdatePre, onUpdatePost)
+end
+
 return HealTracker
