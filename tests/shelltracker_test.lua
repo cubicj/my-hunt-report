@@ -99,6 +99,77 @@ function T.shellGlaiveMarkShotPrecedesParentLookup()
     end)
 end
 
+local function assertHelmbreakerEntry(tracker, object)
+    local key, label, hitTime = tracker.nameForAttackObject(object)
+    assert(stubs.encode({ key = key, label = label, hitTime = hitTime }) == stubs.encode({
+        key = "cKabutowariLand",
+        label = { kind = "motion", className = "cKabutowariLand", guideId = 1909693824, weaponType = 3 },
+    }))
+end
+
+function T.shellLongSwordHelmbreakerDelayedShellsIgnoreCurrentAction()
+    withShellTracker(function(tracker, hooks, hunter)
+        hunter.weaponType = 3
+        hunter.sub = fakeAction("cNothing", -1)
+        hunter.handling = { _IsKabutowariDelayHitSetup = true }
+        for _, className in ipairs({ "cKabutowariLand", "cIaiWpOff", "cRenkiReleaseSlash", "cKijinSlash1" }) do
+            hunter.base = fakeAction(className, 100)
+            for _, hash in ipairs({ 1344756103, 3676865012, 4065868603, 1585023120 }) do
+                local object = shell(hash, nil, hash)
+                hooks.doOnSetUp({ [2] = object })
+                assertHelmbreakerEntry(tracker, object)
+            end
+        end
+    end)
+end
+
+function T.shellLongSwordWithoutDelayFlagKeepsCurrentAction()
+    withShellTracker(function(tracker, hooks, hunter)
+        hunter.weaponType = 3
+        hunter.sub = fakeAction("cNothing", -1)
+        hunter.base = fakeAction("cIaiWpOff", -1559988736)
+        for _, handling in ipairs({
+            { _IsKabutowariDelayHitSetup = false },
+            {},
+            setmetatable({}, { __index = function() error("field unavailable") end }),
+        }) do
+            hunter.handling = handling
+            local object = shell(4065868603, nil, 4065868603)
+            hooks.doOnSetUp({ [2] = object })
+            local key, label = tracker.nameForAttackObject(object)
+            assert(key == "cIaiWpOff" and label.guideId == -1559988736 and label.weaponType == 3)
+        end
+    end)
+end
+
+function T.shellLongSwordDelayFlagOnOtherWeaponsKeepsExistingRules()
+    withShellTracker(function(tracker, hooks, hunter)
+        hunter.weaponType = 7
+        hunter.sub = fakeAction("cNothing", -1)
+        hunter.handling = { _IsKabutowariDelayHitSetup = true }
+        local object = shell(1344756103, nil, 1344756103)
+        hooks.doOnSetUp({ [2] = object })
+        local key, label = tracker.nameForAttackObject(object)
+        assert(key == "cActBase" and label.guideId == 100 and label.weaponType == 7)
+    end)
+end
+
+function T.shellLongSwordParentLabelPrecedesHelmbreakerFlag()
+    withShellTracker(function(tracker, hooks, hunter)
+        hunter.weaponType = 3
+        hunter.sub = fakeAction("cNothing", -1)
+        hunter.handling = { _IsKabutowariDelayHitSetup = false }
+        hunter.base = fakeAction("cRenkiReleaseSlash", -1093563648)
+        local parent = shell(1)
+        hooks.doOnSetUp({ [2] = parent })
+        hunter.handling._IsKabutowariDelayHitSetup = true
+        local child = shell(2, parent, 1344756103)
+        hooks.doOnSetUp({ [2] = child })
+        local key, label = tracker.nameForAttackObject(child)
+        assert(key == "cRenkiReleaseSlash" and label.guideId == -1093563648)
+    end)
+end
+
 function T.shellGlaiveMarkShotHashesOnOtherWeaponsKeepExistingRules()
     withShellTracker(function(tracker, hooks, hunter)
         hunter.weaponType = 7

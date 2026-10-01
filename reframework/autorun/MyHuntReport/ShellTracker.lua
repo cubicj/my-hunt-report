@@ -19,6 +19,8 @@ local WEAPON_BOW = 11
 local WEAPON_HEAVY_BOWGUN = 12
 local WEAPON_LIGHT_BOWGUN = 13
 local WEAPON_LONG_SWORD = 3
+local HELMBREAKER_CLASS = "cKabutowariLand"
+local HELMBREAKER_GUIDE_ID = 1909693824
 local LONG_SWORD_PROBE_FIELDS = {
     "_IsKabutowariStart", "_IsKabutowariDelayHitSetup", "_KabutowariShellNum", "_KabutowariHitNum",
     "_KabutowariCreateShellTimer", "<KabutowariAuraLevel>k__BackingField", "<AuraLevel>k__BackingField",
@@ -178,6 +180,19 @@ local function hornEntry(shell)
     return nil
 end
 
+local function helmbreakerEntry()
+    local hunter = Game.masterHunter()
+    if not hunter then return nil end
+    local ok, delayed = pcall(function()
+        if hunter:get_WeaponType() ~= WEAPON_LONG_SWORD then return false end
+        local handling = hunter:get_WeaponHandling()
+        return handling ~= nil and handling._IsKabutowariDelayHitSetup == true
+    end)
+    if not ok or not delayed then return nil end
+    return { key = HELMBREAKER_CLASS,
+        label = { kind = "motion", className = HELMBREAKER_CLASS, guideId = HELMBREAKER_GUIDE_ID, weaponType = WEAPON_LONG_SWORD } }
+end
+
 local function setEntry(address, entry)
     if launches[address] and launches[address].hitTime then hitTimeCount = hitTimeCount - 1 end
     launches[address] = entry
@@ -243,7 +258,7 @@ local function onSetUp(args)
         local okParent, parent = pcall(function() return shell:get_ParentShell() end)
         local parentAddress = okParent and parent and addressOf(parent) or nil
         local parentEntry = parentAddress and launches[parentAddress] or nil
-        entry = parentEntry or hornEntry(shell)
+        entry = parentEntry or hornEntry(shell) or helmbreakerEntry()
     end
     if not entry then
         local key, label = launchName()
