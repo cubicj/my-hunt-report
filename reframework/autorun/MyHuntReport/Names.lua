@@ -106,6 +106,7 @@ function Names.resolve(label)
     if label.kind == "kinsect" then return Locale.text("motion_kinsect") end
     if label.kind == "slinger" then return Locale.text("motion_slinger") end
     if label.kind == "proc" then return Locale.text("proc_" .. label.proc) end
+    if label.kind == "heal" then return Locale.text("heal_" .. label.heal) end
     if label.kind == "skill" then
         local text = SkillState.skillName(label.id)
         local weaponType = SkillState.weaponStateType(label.id)

@@ -377,4 +377,14 @@ function T.weaponStateRowsArePrefixedWithTheWeaponName()
     end)
 end
 
+function T.healLabelsResolveThroughLocale()
+    withNames(function(Names)
+        assert(Names.resolve({ kind = "heal", heal = "hastenRecovery" }) == "Hasten Recovery")
+        assert(Names.resolve({ kind = "heal", heal = "superRecovery" }) == "Super Recovery")
+        Locale.resolve("ko")
+        assert(Names.resolve({ kind = "heal", heal = "hastenRecovery" }) == "가속 재생")
+        assert(Names.resolve({ kind = "heal", heal = "superRecovery" }) == "슈퍼 회복력")
+    end)
+end
+
 return T
