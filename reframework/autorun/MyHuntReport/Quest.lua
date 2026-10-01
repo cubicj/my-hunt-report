@@ -9,6 +9,7 @@ local HitCapture = require("MyHuntReport.HitCapture")
 local ShellTracker = require("MyHuntReport.ShellTracker")
 local Procs = require("MyHuntReport.Procs")
 local SkillExtras = require("MyHuntReport.SkillExtras")
+local HealTracker = require("MyHuntReport.HealTracker")
 local History = require("MyHuntReport.History")
 local ReportWindow = require("MyHuntReport.ReportWindow")
 
@@ -122,6 +123,7 @@ function Quest.handleQuestStart(now)
     Names.reset()
     Procs.reset()
     SkillExtras.reset()
+    HealTracker.reset()
     ReportWindow.setNotSaved(false)
     phase = "playing"
     trainingSession = false
@@ -336,6 +338,7 @@ function Quest.resetForTests()
     ShellTracker.reset()
     Procs.reset()
     SkillExtras.reset()
+    HealTracker.reset()
     ReportWindow.hide()
     ReportWindow.setNotSaved(false)
 end

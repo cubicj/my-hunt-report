@@ -82,4 +82,34 @@ function T.entryInstallsSkillProcHooksOnlyWhenTheSettingIsOn()
     if not ok then error(err, 0) end
 end
 
+function T.entryInstallsTheHealTracker()
+    local Session = require("MyHuntReport.Session")
+    local Names = require("MyHuntReport.Names")
+    local noop = function() end
+    local dummy = setmetatable({}, { __index = function() return noop end })
+    local calls = {}
+    local modules = {
+        ["MyHuntReport.ReportWindow"] = ReportWindow,
+        ["MyHuntReport.Session"] = Session,
+        ["MyHuntReport.Names"] = Names,
+        ["MyHuntReport.HealTracker"] = { install = function() calls[#calls + 1] = "install" end, reset = noop },
+        ["MyHuntReport.Settings"] = {
+            load = noop,
+            get = function() return { language = "en", fontSize = 18, developerMode = false, skillProcCapture = true } end,
+        },
+    }
+    local environment = setmetatable({
+        require = function(name) return modules[name] or dummy end,
+        re = { on_draw_ui = noop, on_frame = noop, on_config_save = noop },
+    }, { __index = _G })
+    local ok, err = pcall(function()
+        assert(loadfile("reframework/autorun/my_hunt_report.lua", "t", environment))()
+        assert(table.concat(calls, ",") == "install", table.concat(calls, ","))
+    end)
+    ReportWindow.setRelabeler(nil)
+    ReportWindow.setSnapshotProvider(nil)
+    ReportWindow.hide()
+    if not ok then error(err, 0) end
+end
+
 return T

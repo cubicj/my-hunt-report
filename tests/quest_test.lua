@@ -561,4 +561,22 @@ function T.questStartRefreshesEquipmentAfterReset()
     if not ok then error(err, 0) end
 end
 
+function T.questStartAndResetForTestsResetTheHealTracker()
+    local HealTracker = require("MyHuntReport.HealTracker")
+    local reset = HealTracker.reset
+    local calls = 0
+    local ok, err = pcall(function()
+        HealTracker.reset = function() calls = calls + 1 end
+        Quest.resetForTests()
+        assert(calls == 1, calls)
+        History.resetForTests()
+        Settings.load()
+        Quest.handleQuestStart(100)
+        assert(calls == 2, calls)
+    end)
+    HealTracker.reset = reset
+    Quest.resetForTests()
+    if not ok then error(err, 0) end
+end
+
 return T
