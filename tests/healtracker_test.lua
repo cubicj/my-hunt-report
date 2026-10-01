@@ -232,4 +232,32 @@ function T.masterCheckRetriesAfterTransientStatusFailure()
     end)
 end
 
+function T.failedPostSnapshotConsumesHastenRecoveryBaseline()
+    withTracker(function(c)
+        local spec = { master = true, hp = 100, maxHp = 150, red = 100, accHits = 4, address = 7 }
+        local master = fakeHealth(spec)
+        local info = master:get_Status()._Skill._HunterSkillParamInfo
+        local getHealthMgr, failPost = master.get_HealthMgr, false
+        function master:get_HealthMgr()
+            if failPost then error("post snapshot failure") end
+            return getHealthMgr(self)
+        end
+        c.update(master)
+        c.advance(0.02)
+        spec.hp, spec.red, info._AccHealHitCount = 106, 106, 0
+        c.update(master, function() failPost = true end)
+        failPost = false
+        assert(#c.recorded == 1, #c.recorded)
+        c.advance(0.02)
+        c.update(master, function() info._AccHealHitCount = 4 end)
+        assert(#c.recorded == 1, "failed post reused baseline: " .. #c.recorded)
+        assert(c.recorded[1].kind == "hastenRecovery" and c.recorded[1].amount == 6)
+        c.advance(0.02)
+        spec.hp, spec.red, info._AccHealHitCount = 111, 111, 0
+        c.update(master)
+        assert(#c.recorded == 2, #c.recorded)
+        assert(c.recorded[2].kind == "hastenRecovery" and c.recorded[2].amount == 5)
+    end)
+end
+
 return T

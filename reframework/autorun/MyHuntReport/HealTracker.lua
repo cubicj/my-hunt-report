@@ -81,7 +81,9 @@ local function onUpdatePre(args)
     if not health or not isMaster(health) then return end
     local pre = HealTracker.snapshot(health)
     if not pre then return end
-    record(HealTracker.detect(pre, nil, lastPost))
+    local previous = lastPost
+    lastPost = nil
+    record(HealTracker.detect(pre, nil, previous))
     pending = { health = health, pre = pre }
 end
 

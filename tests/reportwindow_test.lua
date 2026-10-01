@@ -1851,4 +1851,42 @@ function T.hpRowsCarryTheHpPrefix()
     end)
 end
 
+function T.hpRowNamesReserveMeasuredValueWidth()
+    withNavigation(function(ui)
+        require("MyHuntReport.Settings").get().fontSize = 14
+        local calcTextSize = imgui.calc_text_size
+        imgui.calc_text_size = function(text) return { x = #text * 8, y = 18 } end
+        local fullName = "Hasten Recovery with a very long skill name"
+        local ordinaryName = "Ordinary skill name 12"
+        local shown = snapshot("clear")
+        shown.skills = {
+            { name = fullName, share = 1.4, valueKind = "hp" },
+            { name = ordinaryName, share = 0.5 },
+        }
+        ReportWindow.show(shown)
+        ui.draw()
+        imgui.calc_text_size = calcTextSize
+        local rows, current = {}, nil
+        for _, event in ipairs(ui.events) do
+            if event.kind == "row" then
+                current = {}
+                rows[event.value] = current
+            elseif current and event.kind == "text" then
+                current[#current + 1] = event
+                if #current == 2 then current = nil end
+            end
+        end
+        local hp, ordinary = rows.skill1, rows.skill2
+        assert(hp and #hp == 2 and ordinary and #ordinary == 2, "missing skill rows")
+        local name = hp[1].value
+        assert(#name < #fullName and name:sub(-#"…") == "…", name)
+        assert(fullName:sub(1, #name - #"…") == name:sub(1, -#"…" - 1), name)
+        assert(hp[2].value == "HP 140.0%", hp[2].value)
+        local valuePosition = ui.positions[hp[2].positionCount]
+        assert(#name * 8 <= valuePosition.x - 8, "clipped name overlaps HP value reservation")
+        assert(ordinary[1].value == ordinaryName, ordinary[1].value)
+        assert(ordinary[2].value == "50.0%", ordinary[2].value)
+    end)
+end
+
 return T

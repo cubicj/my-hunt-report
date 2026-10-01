@@ -349,7 +349,6 @@ local function drawRows(idPrefix, rows, columnWidth, layout)
     local ok, err = pcall(function()
         local rightEdge = columnWidth - 4 - (layout.scrolls and Theme.metrics.scrollbarWidth or 0)
         local percentWidth = math.floor(Theme.metrics.percentColumnWidth * layout.scale)
-        local nameWidth = rightEdge - percentWidth - 8
         for index, row in ipairs(rows) do
             imgui.push_id(idPrefix .. index)
             local okRow, rowErr = pcall(function()
@@ -359,11 +358,12 @@ local function drawRows(idPrefix, rows, columnWidth, layout)
                         columnWidth - (layout.scrolls and Theme.metrics.scrollbarWidth or 0), layout.rowHeight,
                         Theme.colors.rowStripe, Theme.metrics.stripeRounding, Draw.CORNERS.all)
                 end
-                imgui.text(clipName(tostring(row.name), nameWidth))
-                imgui.same_line()
                 local percent = Format.percent(row.share)
                 if row.valueKind == "hp" then percent = "HP " .. percent end
                 local w = textWidth(percent)
+                local nameWidth = rightEdge - math.max(percentWidth, w or 0) - 8
+                imgui.text(clipName(tostring(row.name), nameWidth))
+                imgui.same_line()
                 local x = w and (rightEdge - w) or (rightEdge - percentWidth)
                 imgui.set_cursor_pos(Vector2f.new(x, imgui.get_cursor_pos().y))
                 coloredText(percent, Theme.colors.text)
