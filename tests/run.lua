@@ -22,6 +22,7 @@ local SUITES = {
     "shelltracker_test",
     "hitcapture_test",
     "quest_test",
+    "hdrprobe_test",
     "motionnames_test",
     "names_test",
     "pulse_test",
