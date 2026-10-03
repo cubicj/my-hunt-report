@@ -502,4 +502,25 @@ function T.settingsPanelRelabelsAndUpdatesFontModeWhenTheRawLanguageChanges()
     if not ok then error(err, 0) end
 end
 
+function T.settingsPanelCloseOnResultCloseFollowsCloseOnQuestStartAndSaves()
+    withClearPanel(function(ui)
+        local Settings = require("MyHuntReport.Settings")
+        ui.draw()
+        local questStart, questStartIndex = ui.find("Close report when a quest starts")
+        local resultClose, resultCloseIndex = ui.find("Close report when the quest result screen closes")
+        assert(questStart.kind == "checkbox" and resultClose.kind == "checkbox")
+        assert(questStartIndex + 1 == resultCloseIndex)
+        assert(Settings.get().closeOnResultClose == false)
+        local checkbox = imgui.checkbox
+        imgui.checkbox = function(label, value)
+            if label == "Close report when the quest result screen closes" then return true, true end
+            return checkbox(label, value)
+        end
+        ui.draw()
+        imgui.checkbox = checkbox
+        assert(Settings.get().closeOnResultClose == true)
+        Settings.set("closeOnResultClose", false)
+    end)
+end
+
 return T

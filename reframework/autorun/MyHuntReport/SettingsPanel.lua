@@ -146,6 +146,9 @@ local function drawTree()
     changed, value = imgui.checkbox(L("settings_close_on_quest_start"), s.closeOnQuestStart)
     if changed then Settings.set("closeOnQuestStart", value) end
 
+    changed, value = imgui.checkbox(L("settings_close_on_result_close"), s.closeOnResultClose)
+    if changed then Settings.set("closeOnResultClose", value) end
+
     drawHotkey(s, L)
     drawFontAndLanguage(s, L)
     drawClearHistory()

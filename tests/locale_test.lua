@@ -308,4 +308,12 @@ function T.woundBreakTextsResolve()
     assert(Locale.text("settings_skill_proc_capture") == "쇄인자격·속성 변환·상처 파괴·독 대미지 집계")
 end
 
+function T.closeOnResultCloseTextsResolve()
+    Locale.init({ gameLanguage = function() return "en" end })
+    assert(Locale.resolve("en") == "en")
+    assert(Locale.text("settings_close_on_result_close") == "Close report when the quest result screen closes")
+    assert(Locale.resolve("ko") == "ko")
+    assert(Locale.text("settings_close_on_result_close") == "결과 화면을 닫으면 리포트 닫기")
+end
+
 return T
