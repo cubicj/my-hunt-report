@@ -1852,6 +1852,68 @@ local function checkStatTileDrawing(failMeasurement)
     if not ok then error(err, 0) end
 end
 
+function T.wrapBreaksStartANewLineOnlyWhenTheNextItemOverflows()
+    local cases = {
+        { { 100, 100, 100 }, 340, 20, { false, false, false } },
+        { { 100, 100, 100 }, 339, 20, { false, false, true } },
+        { { 300, 300, 300 }, 400, 20, { false, true, true } },
+        { { 900, 100, 100 }, 400, 20, { false, true, false } },
+        { { 100, 900, 100 }, 400, 20, { false, true, true } },
+        { {}, 400, 20, {} },
+    }
+    for index, case in ipairs(cases) do
+        local breaks = ReportWindow.wrapBreaks(case[1], case[2], case[3])
+        assert(#breaks == #case[4], "case " .. index)
+        for item, expected in ipairs(case[4]) do
+            assert(breaks[item] == expected, "case " .. index .. " item " .. item)
+        end
+    end
+end
+
+local function skillDamageLineStarts(nameWidth)
+    local starts = {}
+    withNavigation(function(ui)
+        Locale.resolve("en")
+        local shown = snapshot("clear")
+        shown.skillDamage = {
+            { kind = "flare", share = 0.05 },
+            { kind = "flayer", share = 0.04 },
+            { kind = "blast", share = 0.03 },
+        }
+        local names = { ["Rathalos's Flare"] = 1, ["Flayer"] = 2, ["Blast"] = 3 }
+        local text = imgui.text
+        local sameLine = false
+        imgui.calc_text_size = function(value)
+            if nameWidth == nil then return nil end
+            return { x = names[value] and nameWidth or 40, y = 18 }
+        end
+        imgui.same_line = function() sameLine = true end
+        imgui.text = function(value)
+            if names[value] then starts[names[value]] = not sameLine end
+            sameLine = false
+            text(value)
+        end
+        ReportWindow.show(shown)
+        ui.draw()
+    end)
+    return starts
+end
+
+function T.skillDamageLineKeepsShortItemsOnOneLine()
+    local starts = skillDamageLineStarts(50)
+    assert(starts[1] == true and starts[2] == false and starts[3] == false)
+end
+
+function T.skillDamageLineWrapsWholeItemsWhenTheLineOverflows()
+    local starts = skillDamageLineStarts(250)
+    assert(starts[1] == true and starts[2] == false and starts[3] == true)
+end
+
+function T.skillDamageLineStaysOnOneLineWhenMeasurementFails()
+    local starts = skillDamageLineStarts(nil)
+    assert(starts[1] == true and starts[2] == false and starts[3] == false)
+end
+
 function T.reportWrapsStatTilesOnTheColumnGrid()
     checkStatTileDrawing(false)
 end

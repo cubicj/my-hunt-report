@@ -119,9 +119,11 @@ local function sectionLabel(id, text, ctx, width)
     verticalGap(Theme.metrics.labelGap)
 end
 
+local LABEL_VALUE_GAP = 6
+
 local function labeledValue(ctx, name, value)
     textIn(ctx.fonts.body, name)
-    sameLineGap(6)
+    sameLineGap(LABEL_VALUE_GAP)
     moveCursor(0, ctx.sizes.body - ctx.sizes.meta)
     textIn(ctx.fonts.meta, value, Theme.colors.textMuted)
 end
@@ -287,6 +289,24 @@ function ReportWindow.tileLayout(widths, totalWidth, minGap)
         layout[index] = { row = (index - 1) // columns + 1, x = columnWidth * ((index - 1) % columns) }
     end
     return layout
+end
+
+function ReportWindow.wrapBreaks(widths, totalWidth, gap)
+    local breaks = {}
+    local used = 0
+    for index, width in ipairs(widths) do
+        if index == 1 then
+            breaks[index] = false
+            used = width
+        elseif used + gap + width > totalWidth then
+            breaks[index] = true
+            used = width
+        else
+            breaks[index] = false
+            used = used + gap + width
+        end
+    end
+    return breaks
 end
 
 local function resultLabel(result)
@@ -505,9 +525,26 @@ end
 local function drawSkillDamage(snapshot, ctx)
     local rows = snapshot.skillDamage
     if type(rows) ~= "table" or #rows == 0 then return end
+    local items, widths, measured = {}, {}, true
     for index, row in ipairs(rows) do
-        if index > 1 then sameLineGap(Theme.metrics.procGap) end
-        labeledValue(ctx, ReportWindow.skillDamageName(row.kind), Format.percent(row.share))
+        local item = { name = ReportWindow.skillDamageName(row.kind), value = Format.percent(row.share) }
+        items[index] = item
+        local pushed = Fonts.push(ctx.fonts.body)
+        local nameWidth = textWidth(item.name)
+        Fonts.pop(pushed)
+        pushed = Fonts.push(ctx.fonts.meta)
+        local valueWidth = textWidth(item.value)
+        Fonts.pop(pushed)
+        if nameWidth and valueWidth then
+            widths[index] = math.ceil(nameWidth + LABEL_VALUE_GAP + valueWidth)
+        else
+            measured = false
+        end
+    end
+    local breaks = measured and ReportWindow.wrapBreaks(widths, ctx.width, Theme.metrics.procGap) or {}
+    for index, item in ipairs(items) do
+        if index > 1 and not breaks[index] then sameLineGap(Theme.metrics.procGap) end
+        labeledValue(ctx, item.name, item.value)
     end
 end
 
