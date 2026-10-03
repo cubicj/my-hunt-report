@@ -218,6 +218,79 @@ function T.updateDrawsTwoCellsPerSwatchWithTheConvertedColour()
     end)
 end
 
+function T.updatePushesOpaqueAlphaAroundTheWindow()
+    withProbe(function(c)
+        local styleEnum = rawget(imgui, "ImGuiStyleVar")
+        local pushStyle, popStyle = rawget(imgui, "push_style_var"), rawget(imgui, "pop_style_var")
+        local beginWindow, endWindow = rawget(imgui, "begin_window"), rawget(imgui, "end_window")
+        local events = {}
+        imgui.ImGuiStyleVar = { Alpha = 0 }
+        imgui.push_style_var = function(index, value)
+            events[#events + 1] = "push:" .. tostring(index) .. ":" .. tostring(value)
+        end
+        imgui.pop_style_var = function(count) events[#events + 1] = "pop:" .. tostring(count) end
+        imgui.begin_window = function() events[#events + 1] = "begin" return true end
+        imgui.end_window = function() events[#events + 1] = "end" end
+        local ok, err = pcall(function()
+            c.probe.update()
+            assert(table.concat(events, " ") == "push:0:1.0 begin end pop:1", table.concat(events, " "))
+        end)
+        imgui.ImGuiStyleVar = styleEnum
+        imgui.push_style_var, imgui.pop_style_var = pushStyle, popStyle
+        imgui.begin_window, imgui.end_window = beginWindow, endWindow
+        if not ok then error(err, 0) end
+    end)
+end
+
+function T.updatePopsTheAlphaWhenTheWindowFailsToBegin()
+    withProbe(function(c)
+        local styleEnum = rawget(imgui, "ImGuiStyleVar")
+        local pushStyle, popStyle = rawget(imgui, "push_style_var"), rawget(imgui, "pop_style_var")
+        local beginWindow, endWindow = rawget(imgui, "begin_window"), rawget(imgui, "end_window")
+        local events = {}
+        imgui.ImGuiStyleVar = { Alpha = 0 }
+        imgui.push_style_var = function(index, value)
+            events[#events + 1] = "push:" .. tostring(index) .. ":" .. tostring(value)
+        end
+        imgui.pop_style_var = function(count) events[#events + 1] = "pop:" .. tostring(count) end
+        imgui.begin_window = function() error("begin failed") end
+        imgui.end_window = function() events[#events + 1] = "end" end
+        local ok, err = pcall(function()
+            c.probe.update()
+            assert(table.concat(events, " ") == "push:0:1.0 pop:1", table.concat(events, " "))
+        end)
+        imgui.ImGuiStyleVar = styleEnum
+        imgui.push_style_var, imgui.pop_style_var = pushStyle, popStyle
+        imgui.begin_window, imgui.end_window = beginWindow, endWindow
+        if not ok then error(err, 0) end
+    end)
+end
+
+function T.updateSkipsTheAlphaPushWithoutTheStyleEnum()
+    withProbe(function(c)
+        local styleEnum = rawget(imgui, "ImGuiStyleVar")
+        local pushStyle, popStyle = rawget(imgui, "push_style_var"), rawget(imgui, "pop_style_var")
+        local beginWindow, endWindow = rawget(imgui, "begin_window"), rawget(imgui, "end_window")
+        local events = {}
+        imgui.ImGuiStyleVar = nil
+        imgui.push_style_var = function(index, value)
+            events[#events + 1] = "push:" .. tostring(index) .. ":" .. tostring(value)
+        end
+        imgui.pop_style_var = function(count) events[#events + 1] = "pop:" .. tostring(count) end
+        imgui.begin_window = function() events[#events + 1] = "begin" return true end
+        imgui.end_window = function() events[#events + 1] = "end" end
+        local ok, err = pcall(function()
+            assert(type(imgui.ImGuiStyleVar) == "function")
+            c.probe.update()
+            assert(table.concat(events, " ") == "begin end", table.concat(events, " "))
+        end)
+        imgui.ImGuiStyleVar = styleEnum
+        imgui.push_style_var, imgui.pop_style_var = pushStyle, popStyle
+        imgui.begin_window, imgui.end_window = beginWindow, endWindow
+        if not ok then error(err, 0) end
+    end)
+end
+
 function T.controlsUpdateTheConversionAndLogTheChange()
     withProbe(function(c)
         local slider, checkbox = imgui.slider_int, imgui.checkbox

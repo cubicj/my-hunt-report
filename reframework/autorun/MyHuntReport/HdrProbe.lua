@@ -170,10 +170,18 @@ local function drawSwatches()
     end
 end
 
+local function pushOpaque()
+    local enum = imgui.ImGuiStyleVar
+    if type(enum) ~= "table" or type(enum.Alpha) ~= "number" then return false end
+    return (pcall(imgui.push_style_var, enum.Alpha, 1.0))
+end
+
 local function drawWindow()
+    local pushed = pushOpaque()
     local okBegin, err = pcall(imgui.begin_window, WINDOW_ID, true, 0)
     if not okBegin then
         Log.error("hdr probe window begin failed: " .. tostring(err), "hdrprobe:begin")
+        if pushed then pcall(imgui.pop_style_var, 1) end
         return
     end
     local okDraw, drawErr = pcall(function()
@@ -181,6 +189,7 @@ local function drawWindow()
         drawSwatches()
     end)
     pcall(imgui.end_window)
+    if pushed then pcall(imgui.pop_style_var, 1) end
     if not okDraw then Log.error("hdr probe draw failed: " .. tostring(drawErr), "hdrprobe:draw") end
 end
 
