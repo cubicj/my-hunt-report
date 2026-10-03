@@ -10,6 +10,7 @@ local SUITES = {
     "hotkey_test",
     "locale_test",
     "format_test",
+    "hdr_test",
     "theme_test",
     "draw_test",
     "fonts_test",
