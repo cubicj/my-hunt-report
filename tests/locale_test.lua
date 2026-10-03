@@ -326,4 +326,12 @@ function T.closeOnResultCloseTextsResolve()
     assert(Locale.text("settings_close_on_result_close") == "결과 화면을 닫으면 리포트 닫기")
 end
 
+function T.avgAttackTextsResolve()
+    Locale.init({ gameLanguage = function() return "en" end })
+    assert(Locale.resolve("en") == "en")
+    assert(Locale.text("avg_attack") == "Avg attack")
+    assert(Locale.resolve("ko") == "ko")
+    assert(Locale.text("avg_attack") == "평균 공격력")
+end
+
 return T
