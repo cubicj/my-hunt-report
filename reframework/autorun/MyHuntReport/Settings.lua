@@ -15,6 +15,7 @@ local DEFAULTS = {
     language = "auto",
     developerMode = false,
     skillProcCapture = true,
+    hdrCorrection = "auto",
 }
 
 local RANGES = {
@@ -24,6 +25,7 @@ local RANGES = {
 
 local INTEGER_KEYS = { toggleKey = true, fontSize = true }
 local LANGUAGES = { auto = true, en = true, ko = true }
+local HDR_CORRECTIONS = { auto = true, on = true, off = true }
 
 local current = {}
 local pendingBackupText = nil
@@ -46,6 +48,8 @@ local function sanitize(raw)
         elseif type(value) == "number" then
             value = clamp(key, value)
         elseif key == "language" and not LANGUAGES[value] then
+            value = default
+        elseif key == "hdrCorrection" and not HDR_CORRECTIONS[value] then
             value = default
         end
         result[key] = value

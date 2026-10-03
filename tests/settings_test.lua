@@ -15,6 +15,24 @@ function T.defaultsWhenFileMissing()
     assert(s.language == "auto")
     assert(s.developerMode == false)
     assert(s.skillProcCapture == true)
+    assert(s.hdrCorrection == "auto")
+end
+
+function T.hdrCorrectionAcceptsOnlyTheThreeValues()
+    for _, value in ipairs({ "auto", "on", "off" }) do
+        stubs.jsonFiles[Settings.FILE] = { hdrCorrection = value }
+        assert(Settings.load().hdrCorrection == value, value)
+        assert(Settings.set("hdrCorrection", value) and Settings.get().hdrCorrection == value)
+        assert(stubs.jsonFiles[Settings.FILE].hdrCorrection == value)
+    end
+    for _, value in ipairs({ "ON", "hdr10", "", true, 1 }) do
+        stubs.jsonFiles[Settings.FILE] = { hdrCorrection = value }
+        assert(Settings.load().hdrCorrection == "auto", tostring(value))
+    end
+    Settings.load()
+    Settings.set("hdrCorrection", "on")
+    Settings.set("hdrCorrection", "bogus")
+    assert(Settings.get().hdrCorrection == "auto")
 end
 
 function T.clampsAndCoercesLoadedValues()
