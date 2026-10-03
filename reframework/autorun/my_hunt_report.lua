@@ -25,6 +25,7 @@ local Quest = tryRequire("MyHuntReport.Quest")
 local SkillState = tryRequire("MyHuntReport.SkillState")
 local Session = tryRequire("MyHuntReport.Session")
 local Names = tryRequire("MyHuntReport.Names")
+local HdrProbe = tryRequire("MyHuntReport.HdrProbe")
 
 if #loadErrors > 0 then
     for _, err in ipairs(loadErrors) do
@@ -60,6 +61,7 @@ if Settings.get().skillProcCapture then Procs.installSkillProcs() end
 SkillExtras.install()
 HealTracker.install()
 Quest.install()
+HdrProbe.install()
 SkillState.install()
 Quest.adoptCurrentState(Game.uptime())
 ReportWindow.setRelabeler(function(snapshot)
@@ -73,6 +75,7 @@ SettingsPanel.register({ quest = Quest })
 
 re.on_frame(function()
     ShellTracker.update()
+    HdrProbe.update()
     Pulse.tick()
     local event = Hotkey.update(function(code)
         local ok, down = pcall(reframework.is_key_down, reframework, code)
