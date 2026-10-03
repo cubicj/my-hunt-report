@@ -272,25 +272,19 @@ end
 
 function ReportWindow.tileLayout(widths, totalWidth, minGap)
     local layout = {}
-    local row, rowWidth, rowCount = 1, 0, 0
-    local gaps = {}
-    for index, width in ipairs(widths) do
-        if rowCount > 0 and rowWidth + width + minGap * (rowCount + 1) > totalWidth then
-            gaps[row] = math.max(0, math.floor((totalWidth - rowWidth) / rowCount))
-            row = row + 1
-            rowWidth, rowCount = 0, 0
-        end
-        layout[index] = { row = row, x = rowWidth }
-        rowWidth, rowCount = rowWidth + width, rowCount + 1
+    local count = #widths
+    if count == 0 then return layout end
+    local maxWidth = 0
+    for _, width in ipairs(widths) do
+        if width > maxWidth then maxWidth = width end
     end
-    if #layout == 0 then return layout end
-    gaps[row] = math.max(0, math.floor((totalWidth - rowWidth) / rowCount))
-    local offset, previousRow = 0, 1
-    for _, position in ipairs(layout) do
-        if position.row ~= previousRow then offset = 0 end
-        position.x = math.floor(position.x + offset)
-        offset = offset + math.min(gaps[1], gaps[position.row])
-        previousRow = position.row
+    local columns = count
+    if maxWidth + minGap > math.floor(totalWidth / count) then
+        columns = math.max(1, math.floor(totalWidth / (maxWidth + minGap)))
+    end
+    local columnWidth = math.floor(totalWidth / columns)
+    for index = 1, count do
+        layout[index] = { row = (index - 1) // columns + 1, x = columnWidth * ((index - 1) % columns) }
     end
     return layout
 end
@@ -436,7 +430,7 @@ local function drawStats(snapshot, ctx)
     end
     local minGap = math.floor(Theme.metrics.tileGap * ctx.scale)
     if not measured then
-        for index = 1, #tiles do widths[index] = math.floor(ctx.width / #tiles) end
+        for index = 1, #tiles do widths[index] = 0 end
         minGap = 0
     end
     local layout = ReportWindow.tileLayout(widths, ctx.width, minGap)

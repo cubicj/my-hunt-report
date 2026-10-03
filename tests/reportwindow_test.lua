@@ -1731,16 +1731,18 @@ function T.elementTilesUseListOrderAndSuppressLegacyTileWhenListExists()
     assert(#tiles == 6 and tiles[6].label == "Fire hitzone" and tiles[6].value == "99.0")
 end
 
-function T.tileLayoutMatchesContentWidthCases()
+function T.tileLayoutUsesEqualColumnsAndGridWrap()
     local cases = {
         { { 100, 100, 100 }, 600, 20, { { 1, 0 }, { 1, 200 }, { 1, 400 } } },
         { { 200, 200, 200, 200 }, 600, 20, { { 1, 0 }, { 1, 300 }, { 2, 0 }, { 2, 300 } } },
         { { 700 }, 600, 20, { { 1, 0 } } },
-        { { 170, 170, 170, 170 }, 680, 0, { { 1, 0 }, { 1, 170 }, { 1, 340 }, { 1, 510 } } },
+        { { 0, 0, 0, 0 }, 680, 0, { { 1, 0 }, { 1, 170 }, { 1, 340 }, { 1, 510 } } },
         { {}, 600, 20, {} },
-        { { 100, 100, 550, 100 }, 720, 16, { { 1, 0 }, { 1, 360 }, { 2, 0 }, { 2, 585 } } },
-        { { 300, 300, 100, 100, 100 }, 720, 16, { { 1, 0 }, { 1, 360 }, { 2, 0 }, { 2, 160 }, { 2, 320 } } },
+        { { 98, 82, 82, 82, 82, 82, 82 }, 720, 16, { { 1, 0 }, { 1, 120 }, { 1, 240 }, { 1, 360 }, { 1, 480 }, { 1, 600 }, { 2, 0 } } },
+        { { 132, 100, 100, 100, 100, 100 }, 720, 16, { { 1, 0 }, { 1, 180 }, { 1, 360 }, { 1, 540 }, { 2, 0 }, { 2, 180 } } },
+        { { 100, 100, 550, 100 }, 720, 16, { { 1, 0 }, { 2, 0 }, { 3, 0 }, { 4, 0 } } },
     }
+    local columnWidths = { 200, 300, 600, 170, 0, 120, 180, 720 }
     for index, case in ipairs(cases) do
         local layout = ReportWindow.tileLayout(case[1], case[2], case[3])
         assert(#layout == #case[4], "case " .. index)
@@ -1751,6 +1753,7 @@ function T.tileLayoutMatchesContentWidthCases()
         for tile, expected in ipairs(case[4]) do
             assert(layout[tile].row == expected[1] and layout[tile].x == expected[2], "case " .. index .. " tile " .. tile)
             assert(math.type(layout[tile].x) == "integer")
+            assert(layout[tile].x % columnWidths[index] == 0, "case " .. index .. " tile " .. tile .. " is off grid")
             assert(rowCounts[layout[tile].row] == 1 or layout[tile].x + case[1][tile] <= case[2],
                 "case " .. index .. " tile " .. tile .. " exceeds row width")
         end
@@ -1801,23 +1804,41 @@ local function checkStatTileDrawing(failMeasurement)
             ui.draw()
             assert(ReportWindow.isOpen() and #stack == 0)
             local first = assert(drawn[tiles[1].label])
+            local layoutWidths = {}
+            for index, tile in ipairs(tiles) do
+                layoutWidths[index] = failMeasurement and 0 or math.ceil(math.max(widths[tile.label], widths[tile.value]))
+            end
+            local layout = ReportWindow.tileLayout(layoutWidths, 720, failMeasurement and 0 or 16)
+            for index, tile in ipairs(tiles) do
+                assert(drawn[tile.label].x == first.x + layout[index].x)
+            end
             if failMeasurement then
                 for index, tile in ipairs(tiles) do
                     local label, value = drawn[tile.label], drawn[tile.value]
+                    assert(layout[index].row == 1 and layout[index].x == (index - 1) * math.floor(720 / #tiles))
                     assert(label.x == first.x + (index - 1) * math.floor(720 / #tiles) and label.y == first.y)
                     assert(value.x == label.x and value.y == first.y + 28)
                 end
             else
+                local columnWidth = math.floor(720 / 5)
+                assert(math.max(table.unpack(layoutWidths)) > math.floor(720 / #tiles) - 16)
                 assert(drawn[tiles[#tiles].label].y > first.y, "last tile must wrap to a second row")
                 for index, tile in ipairs(tiles) do
                     assert(measured[tile.label] == "tile-small" and measured[tile.value] == "tile-header", "wrong measurement font")
                     local label, value = drawn[tile.label], drawn[tile.value]
                     assert(value.x == label.x and value.y == label.y + 28)
-                    if index < #tiles then assert(label.y == first.y) end
+                    assert(layout[index].row == (index - 1) // 5 + 1)
+                    assert(layout[index].x == columnWidth * ((index - 1) % 5))
+                    if layout[index].row == 1 then
+                        assert(label.y == first.y)
+                    else
+                        assert(label.y == drawn[tiles[6].label].y and label.y > first.y)
+                    end
                     if index > 1 then
                         local previous = tiles[index - 1]
                         local previousLabel = drawn[previous.label]
                         if label.y == previousLabel.y then
+                            assert(label.x == previousLabel.x + columnWidth)
                             assert(label.x >= previousLabel.x + math.ceil(math.max(widths[previous.label], widths[previous.value])))
                         else
                             assert(label.x == first.x and label.y == drawn[previous.value].y + 36 + 16)
@@ -1831,7 +1852,7 @@ local function checkStatTileDrawing(failMeasurement)
     if not ok then error(err, 0) end
 end
 
-function T.reportWrapsStatTilesWithoutOverlap()
+function T.reportWrapsStatTilesOnTheColumnGrid()
     checkStatTileDrawing(false)
 end
 
