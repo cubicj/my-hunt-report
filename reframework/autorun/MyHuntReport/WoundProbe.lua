@@ -260,7 +260,6 @@ local function onHitMarkPre(args)
     local watch = watches[index]
     if watch == nil then return end
     local now = Game.uptime()
-    if now - watch.startedAt >= WoundProbe.WATCH_SECONDS then return end
     bump("hitsInWindow")
     local calc = managedArg(args, 2)
     trace("hit t=" .. timeText(now) .. " em=" .. tostring(index)
@@ -287,7 +286,8 @@ function WoundProbe.update()
         if now - watch.startedAt >= WoundProbe.WATCH_SECONDS then
             local drop = nil
             if watch.openHealth ~= nil and health ~= nil then drop = watch.openHealth - health end
-            trace("watch-end em=" .. tostring(index) .. " after=" .. watch.label .. " drop=" .. WoundProbe.formatValue(drop))
+            trace(string.format("watch-end em=%s after=%s dt=%.3f drop=%s",
+                tostring(index), watch.label, now - watch.startedAt, WoundProbe.formatValue(drop)))
             watches[index] = nil
         end
     end

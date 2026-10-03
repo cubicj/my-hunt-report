@@ -395,7 +395,7 @@ function T.updateLogsHpChangesAndClosesTheWindowWithTheDrop()
         assert(#wbLines() == 4 and c.probe.watch(7) ~= nil)
         c.now = 11.0
         c.probe.update()
-        assert(wbLines()[5] == "[MyHuntReport] wb watch-end em=7 after=external:142.5 drop=617.5", wbLines()[5])
+        assert(wbLines()[5] == "[MyHuntReport] wb watch-end em=7 after=external:142.5 dt=1.000 drop=617.5", wbLines()[5])
         assert(c.probe.watch(7) == nil)
         local counters = c.probe.counters()
         assert(counters.hpChanges == 2 and counters.windows == 1, stubs.encode(counters))
@@ -414,7 +414,7 @@ function T.updateHandlesUnreadableHealth()
         assert(#wbLines() == 2, #wbLines())
         c.now = 2.0
         c.probe.update()
-        assert(wbLines()[3] == "[MyHuntReport] wb watch-end em=7 after=external:30.0 drop=nil", wbLines()[3])
+        assert(wbLines()[3] == "[MyHuntReport] wb watch-end em=7 after=external:30.0 dt=1.000 drop=nil", wbLines()[3])
         assert(c.probe.counters().hpChanges == 0)
     end)
 end
@@ -461,19 +461,44 @@ function T.hitOutsideAnyWindowReadsNothing()
     end)
 end
 
-function T.hitAfterDeadlineBeforeNextUpdateIsIgnored()
+function T.hitAfterDeadlineBeforeNextUpdateIsStillCounted()
     withDeveloperProbe(function(c)
         local target = primed(c, 7, 1000.0)
         openExternal(c, target, 142.5, 10.0)
         target.state.health = 900.0
         c.now = 11.05
         c.hooks[HOOKS.hitMark].pre({ [2] = { FinalDamage = 100.0 }, [3] = { get_DamageOwner = function() return target.owner end } })
-        assert(#wbLines() == 2, #wbLines())
-        assert(c.probe.counters().hitsInWindow == 0)
+        assert(wbLines()[3] == "[MyHuntReport] wb hit t=11.05 em=7 final=100.0 hp=900.0", wbLines()[3])
+        assert(c.probe.counters().hitsInWindow == 1)
         c.probe.update()
-        assert(wbLines()[3] == "[MyHuntReport] wb hp t=11.05 em=7 after=external:142.5 dt=1.050 hp=900.0 delta=100.0", wbLines()[3])
-        assert(wbLines()[4] == "[MyHuntReport] wb watch-end em=7 after=external:142.5 drop=100.0", wbLines()[4])
+        assert(wbLines()[4] == "[MyHuntReport] wb hp t=11.05 em=7 after=external:142.5 dt=1.050 hp=900.0 delta=100.0", wbLines()[4])
+        assert(wbLines()[5] == "[MyHuntReport] wb watch-end em=7 after=external:142.5 dt=1.050 drop=100.0", wbLines()[5])
         assert(c.probe.watch(7) == nil)
+    end)
+end
+
+function T.updateHandlesThrowingHealthGetter()
+    withDeveloperProbe(function(c)
+        local target = primed(c, 7, 1000.0)
+        target.owner.character.get_HealthMgr = function()
+            return {
+                get_Health = function() error("unreadable health") end,
+                get_MaxHealth = function() return 1000.0 end,
+            }
+        end
+        c.now = 1.0
+        c.hooks[HOOKS.external].pre({ [2] = target.stock, [3] = 30.0, [5] = nullableKey(false, 0, 0) })
+        c.hooks[HOOKS.external].post(nil)
+        assert(wbLines()[1]:find(" hp=nil/1000.0 ", 1, true), wbLines()[1])
+        assert(c.probe.watch(7).openHealth == nil)
+        c.now = 1.5
+        c.probe.update()
+        assert(#wbLines() == 2, #wbLines())
+        c.now = 2.0
+        c.probe.update()
+        assert(#wbLines() == 3, #wbLines())
+        assert(wbLines()[3] == "[MyHuntReport] wb watch-end em=7 after=external:30.0 dt=1.000 drop=nil", wbLines()[3])
+        assert(c.probe.counters().hpChanges == 0)
     end)
 end
 
