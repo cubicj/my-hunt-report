@@ -112,4 +112,38 @@ function T.entryInstallsTheHealTracker()
     if not ok then error(err, 0) end
 end
 
+function T.entryDoesNotLoadTheAttackProbe()
+    local Session = require("MyHuntReport.Session")
+    local Names = require("MyHuntReport.Names")
+    local noop = function() end
+    local dummy = setmetatable({}, { __index = function() return noop end })
+    local required = {}
+    local modules = {
+        ["MyHuntReport.ReportWindow"] = ReportWindow,
+        ["MyHuntReport.Session"] = Session,
+        ["MyHuntReport.Names"] = Names,
+        ["MyHuntReport.Settings"] = {
+            load = noop,
+            get = function() return { language = "en", fontSize = 18, developerMode = false, skillProcCapture = false } end,
+        },
+    }
+    local environment = setmetatable({
+        require = function(name)
+            required[name] = true
+            return modules[name] or dummy
+        end,
+        re = { on_draw_ui = noop, on_frame = noop, on_config_save = noop },
+    }, { __index = _G })
+    local ok, err = pcall(function()
+        assert(loadfile("reframework/autorun/my_hunt_report.lua", "t", environment))()
+        assert(required["MyHuntReport.HitCapture"] == true)
+        assert(required["MyHuntReport.AttackProbe"] == nil)
+        assert(io.open("reframework/autorun/MyHuntReport/AttackProbe.lua", "r") == nil)
+    end)
+    ReportWindow.setRelabeler(nil)
+    ReportWindow.setSnapshotProvider(nil)
+    ReportWindow.hide()
+    if not ok then error(err, 0) end
+end
+
 return T
