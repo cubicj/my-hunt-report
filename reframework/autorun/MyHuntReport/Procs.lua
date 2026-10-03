@@ -75,7 +75,7 @@ local function invokerIsMaster(bracket)
 end
 
 local function attributedToMaster(bracket)
-    if (bracket.kind == "flayer" or bracket.kind == "elementConvert") and bracket.getterIsMaster ~= nil then
+    if bracket.kind == "flayer" and bracket.getterIsMaster ~= nil then
         return bracket.getterIsMaster == true
     end
     return invokerIsMaster(bracket)
@@ -209,10 +209,9 @@ local function onGetter(kind, args)
     end)
     if matching then bracket.getterIsMaster = ok and isMaster == true end
     if not Log.isDeveloperMode() then return end
-    local method = kind == "flayer" and "stabbing" or "ryuki"
     local identity = ok and isMaster ~= nil and tostring(isMaster) or "?"
-    Log.debug("proc getter " .. method .. " master=" .. identity .. " kind=" .. tostring(Procs.activeKind()),
-        "proc:getter:" .. method)
+    Log.debug("proc getter stabbing master=" .. identity .. " kind=" .. tostring(Procs.activeKind()),
+        "proc:getter:stabbing")
 end
 
 function Procs.install()
@@ -248,9 +247,6 @@ function Procs.installSkillProcs()
     end, leaveBracket)
     Game.hook("app.cHunterSkill", "getSkillStabbingAddDamage(app.cEnemyContextHolder)", function(args)
         onGetter("flayer", args)
-    end)
-    Game.hook("app.cHunterSkill", "getSkillRyukiAddDamage(app.cEnemyContextHolder, System.Single, System.Single)", function(args)
-        onGetter("elementConvert", args)
     end)
 end
 

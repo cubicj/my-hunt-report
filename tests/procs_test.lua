@@ -16,8 +16,8 @@ local SET_PARAM = "app.cEnemyStockDamage.cBadConditionDamageInfo.setParam(System
 local EXTERNAL = "app.cEnemyStockDamage.stockExternalDamage(System.Single, System.Boolean, System.Nullable`1<app.TARGET_ACCESS_KEY>, System.Boolean, System.Boolean)"
 local GETTERS = {
     stabbing = "app.cHunterSkill.getSkillStabbingAddDamage(app.cEnemyContextHolder)",
-    ryuki = "app.cHunterSkill.getSkillRyukiAddDamage(app.cEnemyContextHolder, System.Single, System.Single)",
 }
+local RYUKI_GETTER = "app.cHunterSkill.getSkillRyukiAddDamage(app.cEnemyContextHolder, System.Single, System.Single)"
 
 local PACKETS = {
     flayer = "app.cEnemyBadConditionSkillStabbing.receiveActivatePacket(app.net_packet.cEmSkillActivateStabbing)",
@@ -271,7 +271,7 @@ end
 
 local function checkGetterAttribution(kind, path)
     withProcs(function(c)
-        local getter = kind == "flayer" and GETTERS.stabbing or GETTERS.ryuki
+        local getter = GETTERS.stabbing
         local function damage(key)
             if path == "setParam" then c.setParam(160, key) else c.external(160, { _HasValue = false }) end
         end
@@ -301,12 +301,26 @@ function T.flayerExternalPrefersGetterIdentityWithInvokerFallback()
     checkGetterAttribution("flayer", "external")
 end
 
-function T.elementConvertSetParamPrefersGetterIdentityWithInvokerFallback()
-    checkGetterAttribution("elementConvert", "setParam")
-end
-
-function T.elementConvertExternalPrefersGetterIdentityWithInvokerFallback()
-    checkGetterAttribution("elementConvert", "external")
+function T.elementConvertIsAttributedByInvokerAndIgnoresTheStabbingGetter()
+    withProcs(function(c)
+        local masterArgs = { [2] = { get_address = function() return 123 end } }
+        local otherArgs = { [2] = { get_address = function() return 456 end } }
+        c.enter("elementConvert", c.other)
+        c.hooks[GETTERS.stabbing].pre(masterArgs)
+        c.setParam(160, c.other)
+        c.external(160, { _HasValue = false })
+        c.leave("elementConvert")
+        assert(#c.recorded == 0)
+        c.enter("elementConvert", c.master)
+        c.hooks[GETTERS.stabbing].pre(otherArgs)
+        c.setParam(160, c.master)
+        c.leave("elementConvert")
+        assert(#c.recorded == 1 and c.recorded[1].kind == "elementConvert" and c.recorded[1].damage == 160)
+        c.enter("elementConvert", c.master)
+        c.external(160, { _HasValue = false })
+        c.leave("elementConvert")
+        assert(#c.recorded == 2 and c.recorded[2].kind == "elementConvert")
+    end)
 end
 
 function T.gettersOutsideMatchingBracketDoNotAffectAttribution()
@@ -335,7 +349,6 @@ function T.gettersOutsideMatchingBracketDoNotAffectAttribution()
         c.leave("poison")
         assert(#c.recorded == 1 and c.recorded[1].kind == "poison")
         c.enter("flayer", c.master)
-        c.hooks[GETTERS.ryuki].pre(otherArgs)
         c.external(160)
         c.leave("flayer")
         c.enter("elementConvert", c.master)
@@ -348,18 +361,14 @@ end
 
 function T.failedGetterIdentityRejectsMasterInvoker()
     withProcs(function(c)
-        for _, kind in ipairs({ "flayer", "elementConvert" }) do
-            local getter = kind == "flayer" and GETTERS.stabbing or GETTERS.ryuki
-            for _, readAddress in ipairs({
-                function() error("address unavailable") end,
-                function() return nil end,
-            }) do
-                c.enter(kind, c.master)
-                c.hooks[getter].pre({ [2] = { get_address = readAddress } })
-                c.setParam(160, c.master)
-                c.external(160)
-                c.leave(kind)
-            end
+        for _, readAddress in ipairs({
+            function() error("address unavailable") end,
+            function() return nil end,
+        }) do
+            c.enter("flayer", c.master)
+            c.hooks[GETTERS.stabbing].pre({ [2] = { get_address = readAddress } })
+            c.external(160)
+            c.leave("flayer")
         end
         assert(#c.recorded == 0 and #stubs.logLines == 0)
     end)
@@ -414,14 +423,12 @@ end
 function T.diagnosticsAreGatedAndUseSharedLogKeys()
     withProcs(function(c)
         local sameSkill = { get_address = function() return 123 end }
-        local otherSkill = { get_address = function() return 456 end }
         local function probe()
             for _, kind in ipairs({ "blast", "poison", "flayer", "elementConvert" }) do
                 c.enter(kind, c.master)
                 c.external(0, { _HasValue = false })
                 if kind == "blast" or kind == "elementConvert" then c.setParam(0, c.master) end
                 c.hooks[GETTERS.stabbing].pre({ [2] = sameSkill })
-                c.hooks[GETTERS.ryuki].pre({ [2] = otherSkill })
                 c.leave(kind)
             end
         end
@@ -434,7 +441,6 @@ function T.diagnosticsAreGatedAndUseSharedLogKeys()
             assert(lines:find("proc " .. kind .. " invoker Category=0 UniqueIndex=7 GameObject=MasterPlayer", 1, true))
             assert(lines:find("proc " .. kind .. " external value=0 _HasValue=false", 1, true))
             assert(lines:find("proc getter stabbing master=true kind=" .. kind, 1, true))
-            assert(lines:find("proc getter ryuki master=false kind=" .. kind, 1, true))
             assert(Log.count("proc:" .. kind .. ":invoker") == 1)
             assert(Log.count("proc:" .. kind .. ":external") == 1)
             if kind == "blast" or kind == "elementConvert" then
@@ -442,7 +448,7 @@ function T.diagnosticsAreGatedAndUseSharedLogKeys()
                 assert(Log.count("proc:" .. kind .. ":setParam") == 1)
             end
         end
-        assert(Log.count("proc:getter:stabbing") == 4 and Log.count("proc:getter:ryuki") == 4)
+        assert(Log.count("proc:getter:stabbing") == 4 and not lines:find("getter ryuki", 1, true))
         assert(#c.recorded == 0)
     end)
 end
@@ -583,7 +589,7 @@ function T.installRegistersBlastHooksOnly()
     if not ok then error(err, 0) end
 end
 
-function T.installSkillProcsRegistersTheEightSkillProcHooks()
+function T.installSkillProcsRegistersTheSevenSkillProcHooksWithoutTheRyukiGetter()
     local hook = Game.hook
     local names = {}
     local ok, err = pcall(function()
@@ -592,7 +598,7 @@ function T.installSkillProcsRegistersTheEightSkillProcHooks()
         procs.install()
         procs.installSkillProcs()
         procs.installSkillProcs()
-        assert(#names == 10, table.concat(names, ","))
+        assert(#names == 9, table.concat(names, ","))
         assert(names[3] == BRACKETS.flayer, names[3])
         assert(names[4] == BRACKETS.elementConvert, names[4])
         assert(names[5] == EXTERNAL, names[5])
@@ -600,7 +606,7 @@ function T.installSkillProcsRegistersTheEightSkillProcHooks()
         assert(names[7] == PACKETS.elementConvert, names[7])
         assert(names[8] == BRACKETS.poison, names[8])
         assert(names[9] == GETTERS.stabbing, names[9])
-        assert(names[10] == GETTERS.ryuki, names[10])
+        for _, name in ipairs(names) do assert(name ~= RYUKI_GETTER, name) end
     end)
     Game.hook = hook
     if not ok then error(err, 0) end
@@ -613,7 +619,7 @@ function T.installSkillProcsWorksWithoutInstall()
         Game.hook = function(typeName, signature) names[#names + 1] = typeName .. "." .. signature end
         local procs = assert(loadfile("reframework/autorun/MyHuntReport/Procs.lua"))()
         procs.installSkillProcs()
-        assert(#names == 8, table.concat(names, ","))
+        assert(#names == 7, table.concat(names, ","))
         assert(names[1] == BRACKETS.flayer, names[1])
         assert(procs.skillProcsInstalled() == true)
     end)
