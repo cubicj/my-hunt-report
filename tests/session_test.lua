@@ -833,4 +833,68 @@ function T.attackAverageIsNilWithoutQualifyingHitsAndAfterReset()
     assert(Session.snapshot().stats.avgAttack == nil)
 end
 
+function T.palicoDamageAccumulatesOnlyValidPositiveValues()
+    Session.reset(0)
+    assert(Session.addPalicoHit(32.4) == true and Session.addPalicoHit(30.9) == true)
+    for _, value in ipairs({ 0, -5, "12", false, 0 / 0, math.huge, -math.huge }) do
+        assert(Session.addPalicoHit(value) == false)
+        assert(Session.addPalicoProc("blast", value) == false)
+    end
+    assert(Session.addPalicoHit(nil) == false and Session.addPalicoProc("poison", nil) == false)
+    assert(Session.addPalicoProc("blast", 100) == true and Session.addPalicoProc("poison", 15) == true)
+    assert(Session.addPalicoProc("flayer", 160) == false and Session.addPalicoProc("hits", 5) == false)
+    local totals = Session.palicoTotals()
+    assert(totals.hits == 2 and math.abs(totals.direct - 63.3) < 1e-9 and totals.blast == 100 and totals.poison == 15)
+    totals.hits = 99
+    assert(Session.palicoTotals().hits == 2)
+    Session.reset(0)
+    totals = Session.palicoTotals()
+    assert(totals.hits == 0 and totals.direct == 0 and totals.blast == 0 and totals.poison == 0)
+end
+
+function T.snapshotPalicoBlockUsesOwnPlusPalicoAsTheDenominator()
+    Session.reset(0)
+    assert(Session.snapshot().palico == nil)
+    Session.addHit(hit({ finalDamage = 900, physical = 900, element = 0 }))
+    assert(Session.snapshot().palico == nil)
+    Session.addPalicoHit(60)
+    Session.addPalicoProc("blast", 25)
+    Session.addPalicoProc("poison", 15)
+    local palico = Session.snapshot().palico
+    assert(palico.damage == 100 and palico.share == 0.1)
+    assert(palico.hits == 1 and palico.direct == 60 and palico.blast == 25 and palico.poison == 15)
+    Session.reset(0)
+    Session.addPalicoHit(100)
+    palico = Session.snapshot().palico
+    assert(palico.damage == 100 and palico.share == 1.0)
+end
+
+function T.palicoDamageLeavesEveryOwnFigureUnchanged()
+    local function build(withPalico)
+        Session.reset(0)
+        Session.addHit(hit({ finalDamage = 900, physical = 800, element = 100, extra = nil }))
+        Session.addProc({ kind = "blast", damage = 100, time = 11 })
+        Session.addProc({ kind = "woundBreak", damage = 50, time = 12 })
+        if withPalico then
+            Session.addPalicoHit(60)
+            Session.addPalicoProc("blast", 40)
+        end
+        return Session.snapshot({ endedAt = 1, elapsedSeconds = 30 })
+    end
+    local plain, mixed = build(false), build(true)
+    assert(mixed.palico ~= nil and plain.palico == nil)
+    assert(mixed.palico.damage == 100 and mixed.palico.share == 100 / 1150)
+    mixed.palico = nil
+    assert(stubs.encode(mixed) == stubs.encode(plain))
+    assert(plain.damage.total == 1050 and plain.damage.status == 100)
+end
+
+function T.palicoDamageAloneIsNotReportData()
+    Session.reset(0)
+    Session.addPalicoHit(60)
+    Session.addPalicoProc("poison", 15)
+    assert(Session.hasData() == false and Session.hitCount() == 0)
+    assert(Session.snapshotHasData(Session.snapshot()) == false)
+end
+
 return T

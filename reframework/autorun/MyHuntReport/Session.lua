@@ -8,6 +8,7 @@ local SKILL_PROC_KINDS = { flayer = true, elementConvert = true }
 local STATUS_PROC_KINDS = { blast = true, poison = true }
 local FIXED_PROC_KINDS = { woundBreak = true }
 local HEAL_KINDS = { "hastenRecovery", "superRecovery" }
+local PALICO_PROC_KINDS = { blast = true, poison = true }
 local HEAL_KIND_SET = { hastenRecovery = true, superRecovery = true }
 
 local state = nil
@@ -43,6 +44,7 @@ function Session.reset(startTime)
         attributeHitzones = {},
         fightingSeconds = 0,
         skillDamage = {},
+        palico = { hits = 0, direct = 0, blast = 0, poison = 0 },
         monsters = {},
         monsterOrder = {},
         skills = {},
@@ -203,6 +205,28 @@ function Session.addProc(proc)
     return true
 end
 
+local function positiveFinite(value)
+    return type(value) == "number" and value > 0 and value < math.huge
+end
+
+function Session.addPalicoHit(damage)
+    if not positiveFinite(damage) then return false end
+    state.palico.hits = state.palico.hits + 1
+    state.palico.direct = state.palico.direct + damage
+    return true
+end
+
+function Session.addPalicoProc(kind, damage)
+    if not PALICO_PROC_KINDS[kind] or not positiveFinite(damage) then return false end
+    state.palico[kind] = state.palico[kind] + damage
+    return true
+end
+
+function Session.palicoTotals()
+    local palico = state.palico
+    return { hits = palico.hits, direct = palico.direct, blast = palico.blast, poison = palico.poison }
+end
+
 function Session.addHeal(heal)
     local amount = tonumber(heal.amount) or 0
     local maxHp = tonumber(heal.maxHp) or 0
@@ -292,6 +316,15 @@ local function skillDamageRows(total)
         return a.kind < b.kind
     end)
     return rows
+end
+
+local function palicoBlock(total)
+    local palico = Session.palicoTotals()
+    local damage = palico.direct + palico.blast + palico.poison
+    if damage <= 0 then return nil end
+    palico.damage = damage
+    palico.share = damage / (total + damage)
+    return palico
 end
 
 local function dominantAttribute()
@@ -418,6 +451,7 @@ function Session.snapshot(options)
             avgAttributeHitzone = attributeBucket and ratio(attributeBucket.sum, attributeBucket.count) or nil,
         },
         skillDamage = skillDamageRows(total),
+        palico = palicoBlock(total),
         skills = skillRows(options.equippedSkills),
         motions = motions,
         procs = procs,
