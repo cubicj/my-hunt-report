@@ -1889,4 +1889,33 @@ function T.hpRowNamesReserveMeasuredValueWidth()
     end)
 end
 
+function T.drawAppliesTheHdrTargetForTheCurrentSettingOnlyWhileOpen()
+    local Hdr = require("MyHuntReport.Hdr")
+    local Settings = require("MyHuntReport.Settings")
+    local Theme = require("MyHuntReport.Theme")
+    local targetNits, apply, originalImgui = Hdr.targetNits, Theme.apply, imgui
+    local settingsSeen, applied = {}, {}
+    Settings.load()
+    Settings.set("hdrCorrection", "on")
+    ReportWindow.show(snapshot("clear"))
+    local ok, err = pcall(function()
+        Hdr.targetNits = function(setting)
+            settingsSeen[#settingsSeen + 1] = setting
+            return 455
+        end
+        Theme.apply = function(nits) applied[#applied + 1] = nits end
+        imgui = setmetatable({ begin_window = function() return true end }, { __index = originalImgui })
+        ReportWindow.draw()
+        assert(#settingsSeen == 1 and settingsSeen[1] == "on", tostring(settingsSeen[1]))
+        assert(#applied == 1 and applied[1] == 455)
+        ReportWindow.hide()
+        ReportWindow.draw()
+        assert(#settingsSeen == 1 and #applied == 1)
+    end)
+    Hdr.targetNits, Theme.apply, imgui = targetNits, apply, originalImgui
+    ReportWindow.hide()
+    Settings.set("hdrCorrection", "auto")
+    if not ok then error(err, 0) end
+end
+
 return T

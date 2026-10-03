@@ -7,6 +7,7 @@ local Settings = require("MyHuntReport.Settings")
 local Log = require("MyHuntReport.Log")
 local History = require("MyHuntReport.History")
 local Game = require("MyHuntReport.Game")
+local Hdr = require("MyHuntReport.Hdr")
 
 local ReportWindow = {}
 
@@ -790,6 +791,7 @@ end
 function ReportWindow.draw()
     if not state.open then return end
     local settings = Settings.get()
+    Theme.apply(Hdr.targetNits(settings.hdrCorrection))
     local textKey = Locale.textKey()
     Locale.refresh()
     if Locale.textKey() ~= textKey then ReportWindow.onLanguageChanged() end

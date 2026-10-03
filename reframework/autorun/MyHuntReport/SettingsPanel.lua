@@ -8,10 +8,12 @@ local Hotkey = require("MyHuntReport.Hotkey")
 local Theme = require("MyHuntReport.Theme")
 local Draw = require("MyHuntReport.Draw")
 local Procs = require("MyHuntReport.Procs")
+local Hdr = require("MyHuntReport.Hdr")
 
 local SettingsPanel = {}
 
 local LANGUAGE_OPTIONS = { "auto", "en", "ko" }
+local HDR_OPTIONS = { "auto", "on", "off" }
 
 local quest = nil
 local armedAt = nil
@@ -21,6 +23,13 @@ local statusKey = nil
 local function languageIndex(code)
     for index, value in ipairs(LANGUAGE_OPTIONS) do
         if value == code then return index end
+    end
+    return 1
+end
+
+local function hdrIndex(value)
+    for index, option in ipairs(HDR_OPTIONS) do
+        if option == value then return index end
     end
     return 1
 end
@@ -112,6 +121,13 @@ local function drawFontAndLanguage(s, L)
     end
 end
 
+local function drawHdrCorrection(s, L)
+    local labels = { L("settings_hdr_auto"), L("settings_hdr_on"), L("settings_hdr_off") }
+    local changed, value = imgui.combo(L("settings_hdr_correction"), hdrIndex(s.hdrCorrection), labels)
+    if changed then Settings.set("hdrCorrection", HDR_OPTIONS[value]) end
+    drawMutedHint(L("settings_hdr_hint"), "hdr")
+end
+
 local function drawDeveloperBlock(L)
     imgui.spacing()
     local fontStatus = Fonts.status()
@@ -134,6 +150,7 @@ local function drawTree()
     Fonts.setMode(Locale.bundledFontCovers())
     local s = Settings.get()
     local L = Locale.text
+    Theme.apply(Hdr.targetNits(s.hdrCorrection))
 
     if imgui.button(L("settings_open_report")) then
         ReportWindow.toggle(nil)
@@ -151,6 +168,7 @@ local function drawTree()
 
     drawHotkey(s, L)
     drawFontAndLanguage(s, L)
+    drawHdrCorrection(s, L)
     drawClearHistory()
 
     drawSkillProcCapture(s, L)

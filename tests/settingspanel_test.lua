@@ -20,7 +20,10 @@ function T.settingsLanguageComboNotifiesAfterLocaleResolves()
         re.on_draw_ui = function(callback) draw = callback end
         imgui = setmetatable({
             tree_node = function() return true end,
-            combo = function() return true, 2 end,
+            combo = function(label, value)
+                if label == "언어" then return true, 2 end
+                return false, value
+            end,
         }, { __index = originalImgui })
         ReportWindow.onLanguageChanged = function()
             calls = calls + 1
@@ -205,11 +208,69 @@ function T.settingsPanelClearButtonPrecedesSkillProcAndDeveloperMode()
             local _, developer = ui.find("Developer Mode")
             assert(button.kind == "button" and skillProc.kind == "checkbox")
             assert(crashHint.kind == "text" and crashHint.colors[0] == Theme.colors.textMuted)
-            assert(font < language and language + 1 == clear and clear + 1 == skill and skill + 1 == crash and crash + 1 == developer)
+            local hdrCombo, hdr = ui.find("HDR color correction")
+            local hdrHint, hint = ui.find("Auto follows the game's HDR setting. Use On only if the game runs in HDR and the report still looks oversaturated")
+            assert(hdrCombo.kind == "combo" and hdrHint.kind == "text" and hdrHint.colors[0] == Theme.colors.textMuted)
+            assert(font < language and language + 1 == hdr and hdr + 1 == hint and hint + 1 == clear)
+            assert(clear + 1 == skill and skill + 1 == crash and crash + 1 == developer)
             assert(ui.find("Takes effect after a game restart") == nil)
         end
         Settings.set("developerMode", false)
         Procs.skillProcsInstalled = installed
+    end)
+end
+
+local function withHdrStubs(callback)
+    local Hdr = require("MyHuntReport.Hdr")
+    local Theme = require("MyHuntReport.Theme")
+    local targetNits, apply = Hdr.targetNits, Theme.apply
+    local state = { settings = {}, applied = {}, nits = 455 }
+    Hdr.targetNits = function(setting)
+        state.settings[#state.settings + 1] = setting
+        return state.nits
+    end
+    Theme.apply = function(nits) state.applied[#state.applied + 1] = nits end
+    local ok, err = pcall(callback, state)
+    Hdr.targetNits, Theme.apply = targetNits, apply
+    if not ok then error(err, 0) end
+end
+
+function T.settingsPanelAppliesTheHdrTargetBeforeDrawing()
+    withClearPanel(function(ui)
+        local Settings = require("MyHuntReport.Settings")
+        withHdrStubs(function(state)
+            Settings.set("hdrCorrection", "on")
+            ui.draw()
+            assert(#state.settings == 1 and state.settings[1] == "on", tostring(state.settings[1]))
+            assert(#state.applied == 1 and state.applied[1] == 455)
+            Settings.set("hdrCorrection", "auto")
+        end)
+    end)
+end
+
+function T.settingsPanelHdrComboShowsLocalizedOptionsAndStoresTheChoice()
+    withClearPanel(function(ui)
+        local Settings = require("MyHuntReport.Settings")
+        withHdrStubs(function(state)
+            state.nits = nil
+            local combo = imgui.combo
+            local seen
+            local ok, err = pcall(function()
+                Settings.set("hdrCorrection", "off")
+                imgui.combo = function(label, index, options)
+                    if label ~= "HDR color correction" then return false, index end
+                    seen = { index = index, options = options }
+                    return true, 2
+                end
+                ui.draw()
+                assert(seen.index == 3 and #seen.options == 3)
+                assert(seen.options[1] == "Auto" and seen.options[2] == "On" and seen.options[3] == "Off")
+                assert(Settings.get().hdrCorrection == "on")
+            end)
+            imgui.combo = combo
+            Settings.set("hdrCorrection", "auto")
+            if not ok then error(err, 0) end
+        end)
     end)
 end
 
