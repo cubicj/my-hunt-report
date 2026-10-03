@@ -37,6 +37,8 @@ function Session.reset(startTime)
         negativeCritHits = 0,
         hitzoneSum = 0,
         hitzoneCount = 0,
+        attackSum = 0,
+        attackCount = 0,
         attributeHitzones = {},
         fightingSeconds = 0,
         skillDamage = {},
@@ -96,6 +98,10 @@ local function addDamageStats(hit, physical, element)
     if not hit.fixed and physical > 0 and type(hit.baseHitzone) == "number" then
         state.hitzoneSum = state.hitzoneSum + hit.baseHitzone
         state.hitzoneCount = state.hitzoneCount + 1
+    end
+    if not hit.fixed and physical > 0 and type(hit.attackPower) == "number" then
+        state.attackSum = state.attackSum + hit.attackPower
+        state.attackCount = state.attackCount + 1
     end
     local attribute = tonumber(hit.attribute) or 0
     if attribute > 0 and element > 0 and type(hit.attributeHitzone) == "number" and hit.attributeHitzone > 0 then
@@ -399,6 +405,7 @@ function Session.snapshot(options)
             combatDps = ratio(total, fighting),
             critRate = ratio(state.critHits, state.crittableHits),
             negativeCritRate = ratio(state.negativeCritHits, state.crittableHits),
+            avgAttack = ratio(state.attackSum, state.attackCount),
             avgHitzone = ratio(state.hitzoneSum, state.hitzoneCount),
             attribute = attribute,
             attributeHitzones = attributeHitzones,

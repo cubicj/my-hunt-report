@@ -205,6 +205,7 @@ function HitCapture.handleStockDamageDetail(hitInfo)
         hitzone = nil,
         fixed = actionType == 0,
         baseHitzone = nil,
+        attackPower = nil,
         attribute = 0,
         elementHitzones = nil,
         skillExtras = useAdd and SkillExtras.take() or {},
@@ -265,6 +266,14 @@ function HitCapture.handleCalcStockDamage(this, preCalc, damageRate)
     hit.fixed = HitCapture.isFixed(actionType, okHide and hideRate or nil)
     local okAttr, attackAttr = pcall(function() return preCalc.AttackAttr end)
     hit.attribute = okAttr and tonumber(attackAttr) or 0
+    local okPower, power = pcall(function()
+        return Game.masterHunter():get_HunterStatus():get_AttackPower():call("get_CurrentAttackPower()")
+    end)
+    if okPower and type(power) == "number" then
+        hit.attackPower = power
+    else
+        Log.debug("attack power read failed: " .. tostring(power), "hit:attack")
+    end
     local ok, hitzone = pcall(function()
         if actionType == 0 then return nil end
         local meatIndex = preCalc.Common.MeatIndex._Value
@@ -426,6 +435,7 @@ function HitCapture.handlePlayHitMarkEffect(calc, hitInfo)
         critType = stats.critType,
         specialType = stats.specialType,
         baseHitzone = hit.baseHitzone,
+        attackPower = hit.attackPower,
         attribute = hit.attribute,
         attributeHitzone = HitCapture.elementHitzone(hit.elementHitzones, hit.attribute),
         skillExtras = extras,

@@ -1466,4 +1466,76 @@ function T.hitPassesWeaponContextAndEligibleSkills()
     if not ok then error(err, 0) end
 end
 
+local function withAttackPower(masterHunter, callback)
+    local original = Game.masterHunter
+    Game.masterHunter = masterHunter
+    local ok, err = pcall(callback)
+    Game.masterHunter = original
+    if not ok then error(err, 0) end
+end
+
+local function hunterWithAttack(read)
+    return function()
+        return { get_HunterStatus = function()
+            return { get_AttackPower = function()
+                return { call = function(_, signature)
+                    assert(signature == "get_CurrentAttackPower()", signature)
+                    return read()
+                end }
+            end }
+        end }
+    end
+end
+
+function T.attackPowerIsReadOncePerHitAtCalcTime()
+    local reads = 0
+    withAttackPower(hunterWithAttack(function()
+        reads = reads + 1
+        return 259.85
+    end), function()
+        withCapture(function(hits)
+            local info = hitInfo(101, 1)
+            HitCapture.handleStockDamageDetail(info)
+            assert(reads == 0, tostring(reads))
+            HitCapture.handleCalcStockDamage(fakeThis(meat(60), meat(45)), preCalc(1), { Hide = 1.0 })
+            assert(reads == 1, tostring(reads))
+            complete(info)
+            assert(reads == 1, tostring(reads))
+            assert(#hits == 1 and hits[1].attackPower == 259.85, tostring(hits[1].attackPower))
+        end)
+    end)
+end
+
+function T.failedAttackPowerReadLeavesNilAndKeepsTheHit()
+    local Log = require("MyHuntReport.Log")
+    local developerMode = Log.isDeveloperMode()
+    local cases = {
+        hunterWithAttack(function() error("boom") end),
+        hunterWithAttack(function() return "259" end),
+        hunterWithAttack(function() return nil end),
+        function() return nil end,
+    }
+    local ok, err = pcall(function()
+        for index, masterHunter in ipairs(cases) do
+            Log.setDeveloperMode(true)
+            Log.resetCounts()
+            withAttackPower(masterHunter, function()
+                withCapture(function(hits)
+                    local info = hitInfo(101, 1)
+                    HitCapture.handleStockDamageDetail(info)
+                    HitCapture.handleCalcStockDamage(fakeThis(meat(60), meat(45)), preCalc(1), { Hide = 1.0 })
+                    complete(info)
+                    assert(#hits == 1, "case " .. index)
+                    assert(hits[1].attackPower == nil, "case " .. index)
+                    assert(hits[1].baseHitzone == 45, "case " .. index)
+                    assert(Log.count("hit:attack") == 1, "case " .. index .. " count " .. Log.count("hit:attack"))
+                end)
+            end)
+        end
+    end)
+    Log.setDeveloperMode(developerMode)
+    Log.resetCounts()
+    if not ok then error(err, 0) end
+end
+
 return T

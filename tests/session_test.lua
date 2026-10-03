@@ -785,4 +785,29 @@ function T.relabelKeepsHigherHealSharesAfterSortedUptimeRows()
     assert(snapshot.skills[3].label.heal == "hastenRecovery" and snapshot.skills[4].label.heal == "superRecovery")
 end
 
+function T.attackAverageSkipsFixedZeroPhysicalAndUnreadHits()
+    Session.reset(0)
+    Session.addHit(hit({ attackPower = 260, physical = 80, baseHitzone = 45 }))
+    Session.addHit(hit({ attackPower = 300, physical = 80, baseHitzone = 45 }))
+    Session.addHit(hit({ attackPower = 280, physical = 80 }))
+    Session.addHit(hit({ attackPower = 999, physical = 80, fixed = true }))
+    Session.addHit(hit({ attackPower = 999, physical = 0, element = 10 }))
+    Session.addHit(hit({ physical = 80, baseHitzone = 45 }))
+    local st = Session.snapshot().stats
+    assert(st.avgAttack == 280, tostring(st.avgAttack))
+    assert(st.avgHitzone == 45, tostring(st.avgHitzone))
+end
+
+function T.attackAverageIsNilWithoutQualifyingHitsAndAfterReset()
+    Session.reset(0)
+    assert(Session.snapshot().stats.avgAttack == nil)
+    Session.addHit(hit({ attackPower = 999, physical = 80, fixed = true }))
+    Session.addHit(hit({ physical = 80 }))
+    assert(Session.snapshot().stats.avgAttack == nil)
+    Session.addHit(hit({ attackPower = 260, physical = 80 }))
+    assert(Session.snapshot().stats.avgAttack == 260)
+    Session.reset(1)
+    assert(Session.snapshot().stats.avgAttack == nil)
+end
+
 return T
