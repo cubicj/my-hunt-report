@@ -209,8 +209,9 @@ function T.updateDrawsTwoCellsPerSwatchWithTheConvertedColour()
             c.probe.update()
             assert(table.concat(events, " ") == "begin:My Hunt Report HDR Probe end", table.concat(events, " "))
             assert(#list.calls == #c.probe.SWATCHES * 2, #list.calls)
-            assert(list.calls[1][3] == c.probe.original("#ECE4D6"))
-            assert(list.calls[2][3] == c.probe.converted("#ECE4D6", 200, "srgb"))
+            assert(list.calls[1][3] == c.probe.converted("#ECE4D6", 200, "srgb"))
+            assert(list.calls[2][3] == c.probe.original("#ECE4D6"))
+            assert(list.calls[1][1][1] == 0 and list.calls[1][2][1] == 120, list.calls[1][1][1])
             assert(list.calls[2][1][1] == 128 and list.calls[2][2][1] == 248, list.calls[2][1][1])
         end)
         imgui.get_window_draw_list, imgui.begin_window, imgui.end_window = getList, beginWindow, endWindow
@@ -302,7 +303,7 @@ function T.controlsUpdateTheConversionAndLogTheChange()
         imgui.checkbox = function(label, value) return true, true end
         local ok, err = pcall(function()
             c.probe.update()
-            assert(sliderArgs[2] == 200 and sliderArgs[3] == 80 and sliderArgs[4] == 500)
+            assert(sliderArgs[2] == 200 and sliderArgs[3] == 40 and sliderArgs[4] == 1000)
             assert(c.probe.controls().nits == 320 and c.probe.controls().gamma == "2.2")
             local lines = hdrLines()
             assert(lines[#lines]:find("hdr control nits=320 gamma=2.2", 1, true), lines[#lines])
@@ -314,6 +315,23 @@ function T.controlsUpdateTheConversionAndLogTheChange()
         end)
         imgui.slider_int, imgui.checkbox = slider, checkbox
         if not ok then error(err, 0) end
+    end)
+end
+
+function T.updateLogsANanReadingOnceInsteadOfEveryFrame()
+    withProbe(function(c)
+        local nan = 0 / 0
+        c.values["app.OptionUtil.getOptionValueRate(app.Option.ID)#258"] = 0.5
+        c.probe.install()
+        c.values["app.OptionUtil.getOptionValueRate(app.Option.ID)#258"] = nan
+        c.probe.update()
+        c.probe.update()
+        c.probe.update()
+        local changes = 0
+        for _, line in ipairs(hdrLines()) do
+            if line:find("hdr change rate258", 1, true) then changes = changes + 1 end
+        end
+        assert(changes == 1, changes)
     end)
 end
 

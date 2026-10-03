@@ -34,8 +34,8 @@ HdrProbe.SWATCHES = {
     { "grey", "#808080" },
 }
 
-HdrProbe.NITS_MIN = 80
-HdrProbe.NITS_MAX = 500
+HdrProbe.NITS_MIN = 40
+HdrProbe.NITS_MAX = 1000
 
 local WINDOW_ID = "My Hunt Report HDR Probe"
 local CELL_WIDTH = 120
@@ -133,12 +133,17 @@ function HdrProbe.install()
     trace("snapshot at " .. tostring(Game.uptime()) .. " " .. HdrProbe.formatSnapshot(previous))
 end
 
+local function differs(a, b)
+    if a ~= a and b ~= b then return false end
+    return a ~= b
+end
+
 local function logChanges()
     local snapshot = HdrProbe.snapshot()
     local now = nil
     for _, source in ipairs(HdrProbe.SOURCES) do
         local field = source.field
-        if snapshot[field] ~= previous[field] then
+        if differs(snapshot[field], previous[field]) then
             now = now or tostring(Game.uptime())
             trace("change " .. field .. " " .. tostring(previous[field]) .. " -> " .. tostring(snapshot[field]) .. " at " .. now)
         end
@@ -157,14 +162,15 @@ local function drawControls()
 end
 
 local function drawSwatches()
-    imgui.text("original | converted")
+    imgui.text("converted | original")
     for _, swatch in ipairs(HdrProbe.SWATCHES) do
         local name, hex = swatch[1], swatch[2]
         local screen = imgui.get_cursor_screen_pos()
         imgui.invisible_button("##hdrswatch" .. name, { CELL_WIDTH * 2 + CELL_GAP, CELL_HEIGHT })
-        Draw.rect("hdrorig" .. name, screen.x, screen.y, CELL_WIDTH, CELL_HEIGHT, HdrProbe.original(hex), 0)
-        Draw.rect("hdrconv" .. name, screen.x + CELL_WIDTH + CELL_GAP, screen.y, CELL_WIDTH, CELL_HEIGHT,
+        Draw.rect("hdrconv" .. name, screen.x, screen.y, CELL_WIDTH, CELL_HEIGHT,
             HdrProbe.converted(hex, controls.nits, controls.gamma), 0)
+        Draw.rect("hdrorig" .. name, screen.x + CELL_WIDTH + CELL_GAP, screen.y, CELL_WIDTH, CELL_HEIGHT,
+            HdrProbe.original(hex), 0)
         imgui.same_line()
         imgui.text(name)
     end
