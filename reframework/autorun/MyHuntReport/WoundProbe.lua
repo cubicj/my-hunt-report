@@ -1,9 +1,14 @@
 local Game = require("MyHuntReport.Game")
 local Log = require("MyHuntReport.Log")
+local MotionNames = require("MyHuntReport.MotionNames")
 
 local WoundProbe = {}
 
 WoundProbe.COUNTER_ORDER = { "external", "scar", "windows", "hpChanges", "hitsInWindow" }
+WoundProbe.WATCH_SECONDS = 1.0
+
+local NULLABLE_KEY_TYPE = "System.Nullable`1<app.TARGET_ACCESS_KEY>"
+local HUNTER_CATEGORIES = { [0] = true, [5] = true }
 
 local counters = {}
 local owners = {}
@@ -47,6 +52,34 @@ local function managedArg(args, index)
     local ok, object = pcall(function() return sdk.to_managed_object(args[index]) end)
     if ok then return object end
     return nil
+end
+
+local function timeText(now)
+    return string.format("%.2f", now)
+end
+
+local function enemyIndex(stock)
+    local ok, index = pcall(function() return stock:get_Context():get_Em():get_UniqueIndex() end)
+    if ok then return index end
+    return nil
+end
+
+local function healthOf(index)
+    if index == nil then return nil, nil end
+    local owner = owners[index]
+    if owner == nil then return nil, nil end
+    local character = Game.componentOf(owner, "app.EnemyCharacter")
+    if not character then return nil, nil end
+    local okHealth, health = pcall(function() return character:get_HealthMgr():get_Health() end)
+    local okMaxHealth, maxHealth = pcall(function() return character:get_HealthMgr():get_MaxHealth() end)
+    if not okHealth then health = nil end
+    if not okMaxHealth then maxHealth = nil end
+    return health, maxHealth
+end
+
+local function hpText(index)
+    local health, maxHealth = healthOf(index)
+    return WoundProbe.formatValue(health) .. "/" .. WoundProbe.formatValue(maxHealth)
 end
 
 function WoundProbe.summaryLine(values)
@@ -96,6 +129,124 @@ local function onStockDamageDetailPre(args)
     if okIndex and index ~= nil then owners[index] = owner end
 end
 
+function WoundProbe.int32(value)
+    if type(value) ~= "number" then return nil end
+    local masked = math.tointeger(value) and (math.tointeger(value) & 0xFFFFFFFF) or nil
+    if masked == nil then return nil end
+    if masked >= 0x80000000 then return masked - 0x100000000 end
+    return masked
+end
+
+local function readControllerAction(hunter, getter)
+    local ok, action = pcall(function()
+        local controller = hunter:call(getter)
+        if not controller then return nil end
+        return controller:get_CurrentAction()
+    end)
+    if ok then return action end
+    return nil
+end
+
+local function actionText()
+    local hunter = Game.masterHunter()
+    if not hunter then return "base=nil/nil sub=nil" end
+    local baseClass, baseGuideId = MotionNames.describe(readControllerAction(hunter, "get_BaseActionController"))
+    local subClass = MotionNames.describe(readControllerAction(hunter, "get_SubActionController"))
+    return "base=" .. tostring(baseClass) .. "/" .. tostring(baseGuideId) .. " sub=" .. tostring(subClass)
+end
+
+local function keyTexts(pointer)
+    local okKey, nullable = pcall(function() return sdk.to_valuetype(pointer, NULLABLE_KEY_TYPE) end)
+    if not okKey or nullable == nil then return "?", "?", "?" end
+    local hasKey = readValue(function() return nullable._HasValue end)
+    local key = readValue(function() return nullable._Value.Category end) .. "/" .. readValue(function() return nullable._Value.UniqueIndex end)
+    local okMaster, master = pcall(function()
+        if nullable._HasValue ~= true then return nil end
+        local inner = nullable._Value
+        if not HUNTER_CATEGORIES[inner.Category] then return false end
+        local character = Game.callStatic("app.TargetAccessKeyUtil", "getHunterCharacter(app.TARGET_ACCESS_KEY)", inner)
+        if not character then return nil end
+        local gameObject = character:get_GameObject()
+        if not gameObject then return nil end
+        local masterAddress = Game.masterAddress()
+        if masterAddress == nil then return nil end
+        return gameObject:get_address() == masterAddress
+    end)
+    local masterText = "?"
+    if okMaster and master ~= nil then masterText = tostring(master) end
+    return hasKey, key, masterText
+end
+
+local function scarStateText(stock, scar)
+    return readValue(function() return stock:get_Context():get_Em().Scar._ScarParts:Get(scar):get_State() end)
+end
+
+local function openWatch(index, label, now)
+    local health = healthOf(index)
+    watches[index] = { index = index, label = label, startedAt = now, openHealth = health, lastHealth = health }
+    bump("windows")
+end
+
+local function markInvocation(fields)
+    pcall(function() thread.get_hook_storage().wb = fields end)
+end
+
+local function takeInvocation()
+    local ok, storage = pcall(thread.get_hook_storage)
+    if not ok or type(storage) ~= "table" then return nil end
+    local fields = storage.wb
+    storage.wb = nil
+    return fields
+end
+
+local function onExternalPre(args)
+    if not Log.isDeveloperMode() then return end
+    bump("external")
+    local now = Game.uptime()
+    local stock = managedArg(args, 2)
+    local index = stock and enemyIndex(stock) or nil
+    local value = readValue(function() return sdk.to_float(args[3]) end)
+    local hasKey, key, master = keyTexts(args[5])
+    trace("external t=" .. timeText(now) .. " em=" .. tostring(index) .. " value=" .. value
+        .. " hasKey=" .. hasKey .. " key=" .. key .. " master=" .. master
+        .. " hp=" .. hpText(index) .. " " .. actionText())
+    if index ~= nil then openWatch(index, "external:" .. value, now) end
+    markInvocation({ index = index })
+end
+
+local function onExternalPost()
+    local fields = takeInvocation()
+    if not fields then return end
+    trace("external-post em=" .. tostring(fields.index) .. " hp=" .. WoundProbe.formatValue((healthOf(fields.index))))
+end
+
+local function onScarPre(args)
+    if not Log.isDeveloperMode() then return end
+    bump("scar")
+    local now = Game.uptime()
+    local stock = managedArg(args, 2)
+    local index = stock and enemyIndex(stock) or nil
+    local okScar, scar = pcall(function() return WoundProbe.int32(sdk.to_int64(args[3])) end)
+    if not okScar then scar = nil end
+    local scarText = scar ~= nil and tostring(scar) or "?"
+    local value = readValue(function() return sdk.to_float(args[4]) end)
+    local hasKey, key, master = keyTexts(args[7])
+    local state = stock and scar ~= nil and scarStateText(stock, scar) or "?"
+    trace("scar t=" .. timeText(now) .. " em=" .. tostring(index) .. " scar=" .. scarText .. " value=" .. value
+        .. " hasKey=" .. hasKey .. " key=" .. key .. " master=" .. master .. " state=" .. state
+        .. " hp=" .. hpText(index) .. " " .. actionText())
+    if index ~= nil then openWatch(index, "scar:" .. value, now) end
+    markInvocation({ index = index, scar = scar, stock = stock })
+end
+
+local function onScarPost()
+    local fields = takeInvocation()
+    if not fields then return end
+    local state = fields.stock and fields.scar ~= nil and scarStateText(fields.stock, fields.scar) or "?"
+    trace("scar-post em=" .. tostring(fields.index) .. " scar=" .. (fields.scar ~= nil and tostring(fields.scar) or "?")
+        .. " state=" .. state .. " hp=" .. WoundProbe.formatValue((healthOf(fields.index))))
+end
+
 local function installFlowHooks()
     Game.hook("app.cQuestPlaying", "enter()", onQuestStart)
     Game.hook("app.cGUIQuestResultInfo", "execute()", nil, onResultPost)
@@ -103,6 +254,12 @@ end
 
 local function installDamageHooks()
     Game.hook("app.cEnemyStockDamage", "stockDamageDetail(app.HitInfo)", onStockDamageDetailPre)
+    Game.hook("app.cEnemyStockDamage",
+        "stockExternalDamage(System.Single, System.Boolean, System.Nullable`1<app.TARGET_ACCESS_KEY>, System.Boolean, System.Boolean)",
+        onExternalPre, onExternalPost)
+    Game.hook("app.cEnemyStockDamage",
+        "stockExternalDamageScar(System.Int32, System.Single, System.Boolean, System.Boolean, System.Nullable`1<app.TARGET_ACCESS_KEY>, System.Boolean)",
+        onScarPre, onScarPost)
 end
 
 function WoundProbe.install()

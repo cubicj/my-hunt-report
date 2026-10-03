@@ -11,6 +11,8 @@ local FLOW = {
 
 local HOOKS = {
     detail = "app.cEnemyStockDamage.stockDamageDetail(app.HitInfo)",
+    external = "app.cEnemyStockDamage.stockExternalDamage(System.Single, System.Boolean, System.Nullable`1<app.TARGET_ACCESS_KEY>, System.Boolean, System.Boolean)",
+    scar = "app.cEnemyStockDamage.stockExternalDamageScar(System.Int32, System.Single, System.Boolean, System.Boolean, System.Nullable`1<app.TARGET_ACCESS_KEY>, System.Boolean)",
 }
 
 local function raising()
@@ -181,6 +183,187 @@ function T.ownerCacheIgnoresUnreadableHits()
         local target = enemy(9, 500.0)
         c.hooks[HOOKS.detail].pre({ [3] = { get_DamageOwner = function() return target.owner end } })
         assert(c.probe.owner(9) == target.owner)
+    end)
+end
+
+local function masterHunterWith(baseAction, subAction)
+    return {
+        get_WeaponType = function() return 3 end,
+        get_GameObject = function() return { get_address = function() return 4096 end } end,
+        call = function(_, getter)
+            local action = getter == "get_BaseActionController" and baseAction or subAction
+            return { get_CurrentAction = function() return action end }
+        end,
+    }
+end
+
+local function action(className, guideId)
+    return {
+        get_type_definition = function() return { get_name = function() return className end } end,
+        _ActionGuideID = guideId,
+    }
+end
+
+local function nullableKey(hasValue, category, uniqueIndex)
+    return { _HasValue = hasValue, _Value = { Category = category, UniqueIndex = uniqueIndex } }
+end
+
+local function withKeyResolver(c)
+    Game.callStatic = function(typeName, signature, key)
+        if typeName == "app.TargetAccessKeyUtil" and signature == "getHunterCharacter(app.TARGET_ACCESS_KEY)" then
+            if key.Category == 0 and key.UniqueIndex == 0 then
+                return { get_GameObject = function() return { name = "MasterPlayer", get_address = function() return 4096 end } end }
+            end
+            if key.Category == 0 then
+                return { get_GameObject = function() return { name = "Player_Replica_" .. key.UniqueIndex, get_address = function() return 8192 end } end }
+            end
+        end
+        return nil
+    end
+end
+
+local function primed(c, index, health)
+    local target = enemy(index, health)
+    c.hooks[HOOKS.detail].pre({ [3] = { get_DamageOwner = function() return target.owner end } })
+    return target
+end
+
+function T.int32ArgDecodesMaskedNegatives()
+    withProbe(function(c)
+        assert(c.probe.int32(12) == 12)
+        assert(c.probe.int32(0xFFFFFFFF) == -1)
+        assert(c.probe.int32(0x1FFFFFFFF) == -1)
+        assert(c.probe.int32(nil) == nil)
+    end)
+end
+
+function T.externalPreLogsLineOpensWatchAndPostLogsHp()
+    withDeveloperProbe(function(c)
+        withKeyResolver(c)
+        Game.masterHunter = function() return masterHunterWith(action("cFocusStrike", 9328), nil) end
+        local target = primed(c, 7, 1000.0)
+        c.now = 12.25
+        c.hooks[HOOKS.external].pre({ [2] = target.stock, [3] = 142.5, [5] = nullableKey(true, 0, 0) })
+        local lines = wbLines()
+        assert(lines[1] == "[MyHuntReport] wb external t=12.25 em=7 value=142.5 hasKey=true key=0/0 master=true hp=1000.0/1000.0 base=cFocusStrike/9328 sub=nil", lines[1])
+        local watch = c.probe.watch(7)
+        assert(watch and watch.label == "external:142.5" and watch.startedAt == 12.25 and watch.openHealth == 1000.0 and watch.lastHealth == 1000.0, stubs.encode(watch))
+        assert(c.probe.counters().external == 1 and c.probe.counters().windows == 1)
+        target.state.health = 857.5
+        c.hooks[HOOKS.external].post(nil)
+        assert(wbLines()[2] == "[MyHuntReport] wb external-post em=7 hp=857.5", wbLines()[2])
+        assert(c.hooks.storage.wb == nil)
+    end)
+end
+
+function T.externalPostIsSilentWithoutPreMark()
+    withDeveloperProbe(function(c)
+        c.hooks[HOOKS.external].post(nil)
+        c.hooks[HOOKS.scar].post(nil)
+        assert(#wbLines() == 0)
+    end)
+    withProbe(function(c)
+        local target = primed(c, 7, 1000.0)
+        Log.setDeveloperMode(true)
+        c.hooks[HOOKS.external].pre({ [2] = target.stock, [3] = 30.0, [5] = nullableKey(false, 0, 0) })
+        Log.setDeveloperMode(false)
+        c.hooks[HOOKS.external].post(nil)
+        assert(#wbLines() == 1, #wbLines())
+        assert(c.hooks.storage.wb == nil)
+    end)
+end
+
+function T.externalPrePrintsQuestionMarksForUnreadableFields()
+    withDeveloperProbe(function(c)
+        c.now = 1.0
+        c.hooks[HOOKS.external].pre({ [2] = raising(), [3] = raising(), [5] = raising() })
+        assert(wbLines()[1] == "[MyHuntReport] wb external t=1.00 em=nil value=? hasKey=? key=?/? master=? hp=nil/nil base=nil/nil sub=nil", wbLines()[1])
+        assert(c.probe.counters().external == 1 and c.probe.counters().windows == 0)
+        sdk.to_valuetype = function() error("decode") end
+        c.hooks[HOOKS.external].pre({ [3] = 1.0, [5] = {} })
+        assert(wbLines()[2] == "[MyHuntReport] wb external t=1.00 em=nil value=1.0 hasKey=? key=? master=? hp=nil/nil base=nil/nil sub=nil", wbLines()[2])
+    end)
+end
+
+function T.masterResolutionCoversReplicaMissingKeyAndNonHunter()
+    withDeveloperProbe(function(c)
+        withKeyResolver(c)
+        Game.masterHunter = function() return masterHunterWith(nil, nil) end
+        local target = primed(c, 7, 1000.0)
+        c.now = 2.0
+        c.hooks[HOOKS.external].pre({ [2] = target.stock, [3] = 10.0, [5] = nullableKey(true, 0, 2) })
+        c.hooks[HOOKS.external].pre({ [2] = target.stock, [3] = 10.0, [5] = nullableKey(false, 0, 0) })
+        c.hooks[HOOKS.external].pre({ [2] = target.stock, [3] = 10.0, [5] = nullableKey(true, 2, 0) })
+        local lines = wbLines()
+        assert(lines[1]:find(" hasKey=true key=0/2 master=false ", 1, true), lines[1])
+        assert(lines[2]:find(" hasKey=false key=0/0 master=? ", 1, true), lines[2])
+        assert(lines[3]:find(" hasKey=true key=2/0 master=false ", 1, true), lines[3])
+        Game.callStatic = function() return nil end
+        c.hooks[HOOKS.external].pre({ [2] = target.stock, [3] = 10.0, [5] = nullableKey(true, 0, 0) })
+        assert(wbLines()[4]:find(" master=? ", 1, true), wbLines()[4])
+        withKeyResolver(c)
+        Game.masterHunter = function() return nil end
+        c.hooks[HOOKS.external].pre({ [2] = target.stock, [3] = 10.0, [5] = nullableKey(true, 0, 0) })
+        assert(wbLines()[5]:find(" master=? ", 1, true), wbLines()[5])
+    end)
+end
+
+function T.scarPreLogsScarStateAndPostLogsStateAndHp()
+    withDeveloperProbe(function(c)
+        withKeyResolver(c)
+        Game.masterHunter = function() return masterHunterWith(action("cFocusStrike", 9328), action("cSubAction", 1)) end
+        local target = primed(c, 7, 1000.0)
+        target.state.scarStates[12] = 1
+        c.now = 20.0
+        c.hooks[HOOKS.scar].pre({ [2] = target.stock, [3] = 12, [4] = 475.0, [7] = nullableKey(true, 0, 0) })
+        local lines = wbLines()
+        assert(lines[1] == "[MyHuntReport] wb scar t=20.00 em=7 scar=12 value=475.0 hasKey=true key=0/0 master=true state=1 hp=1000.0/1000.0 base=cFocusStrike/9328 sub=cSubAction", lines[1])
+        local watch = c.probe.watch(7)
+        assert(watch and watch.label == "scar:475.0", stubs.encode(watch))
+        assert(c.probe.counters().scar == 1 and c.probe.counters().windows == 1)
+        target.state.scarStates[12] = 2
+        target.state.health = 525.0
+        c.hooks[HOOKS.scar].post(nil)
+        assert(wbLines()[2] == "[MyHuntReport] wb scar-post em=7 scar=12 state=2 hp=525.0", wbLines()[2])
+        assert(c.hooks.storage.wb == nil)
+    end)
+    withDeveloperProbe(function(c)
+        c.now = 3.0
+        c.hooks[HOOKS.scar].pre({ [2] = raising(), [3] = raising(), [4] = raising(), [7] = raising() })
+        assert(wbLines()[1] == "[MyHuntReport] wb scar t=3.00 em=nil scar=? value=? hasKey=? key=?/? master=? state=? hp=nil/nil base=nil/nil sub=nil", wbLines()[1])
+        c.hooks[HOOKS.scar].post(nil)
+        assert(wbLines()[2] == "[MyHuntReport] wb scar-post em=nil scar=? state=? hp=nil", wbLines()[2])
+    end)
+end
+
+function T.secondCallOnSameEnemyReplacesTheWatch()
+    withDeveloperProbe(function(c)
+        local target = primed(c, 7, 1000.0)
+        c.now = 5.0
+        c.hooks[HOOKS.external].pre({ [2] = target.stock, [3] = 142.5, [5] = nullableKey(false, 0, 0) })
+        c.hooks[HOOKS.external].post(nil)
+        target.state.health = 900.0
+        c.now = 5.2
+        c.hooks[HOOKS.scar].pre({ [2] = target.stock, [3] = 12, [4] = 475.0, [7] = nullableKey(false, 0, 0) })
+        c.hooks[HOOKS.scar].post(nil)
+        local watch = c.probe.watch(7)
+        assert(watch.label == "scar:475.0" and watch.startedAt == 5.2 and watch.openHealth == 900.0, stubs.encode(watch))
+        assert(c.probe.counters().windows == 2)
+    end)
+end
+
+function T.healthReadsAreIndependent()
+    withDeveloperProbe(function(c)
+        local target = enemy(7, 1000.0)
+        target.owner.character.get_HealthMgr = function()
+            return {
+                get_Health = function() return 1000.0 end,
+                get_MaxHealth = function() error("unreadable max health") end,
+            }
+        end
+        c.hooks[HOOKS.detail].pre({ [3] = { get_DamageOwner = function() return target.owner end } })
+        c.hooks[HOOKS.external].pre({ [2] = target.stock, [3] = 10.0, [5] = nullableKey(false, 0, 0) })
+        assert(wbLines()[1]:find(" hp=1000.0/nil ", 1, true), wbLines()[1])
     end)
 end
 
