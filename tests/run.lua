@@ -23,6 +23,7 @@ local SUITES = {
     "shelltracker_test",
     "hitcapture_test",
     "attacklog_test",
+    "palicoprobe_test",
     "quest_test",
     "motionnames_test",
     "names_test",
