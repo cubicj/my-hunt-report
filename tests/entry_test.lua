@@ -185,4 +185,41 @@ function T.entryUpdatesAttackLogDirectlyAfterShellTracker()
     assert(updates == 1, updates)
 end
 
+function T.entryInstallsThePalicoCaptureAfterHitCaptureAndNotTheRetiredProbe()
+    local Session = require("MyHuntReport.Session")
+    local Names = require("MyHuntReport.Names")
+    local noop = function() end
+    local dummy = setmetatable({}, { __index = function() return noop end })
+    local calls, required = {}, {}
+    local modules = {
+        ["MyHuntReport.ReportWindow"] = ReportWindow,
+        ["MyHuntReport.Session"] = Session,
+        ["MyHuntReport.Names"] = Names,
+        ["MyHuntReport.HitCapture"] = { install = function() calls[#calls + 1] = "hitcapture" end, reset = noop },
+        ["MyHuntReport.Palico"] = { install = function() calls[#calls + 1] = "palico" end, reset = noop },
+        ["MyHuntReport.Settings"] = {
+            load = noop,
+            get = function() return { language = "en", fontSize = 18, developerMode = false, skillProcCapture = true } end,
+        },
+    }
+    local environment = setmetatable({
+        require = function(name)
+            required[name] = true
+            return modules[name] or dummy
+        end,
+        re = { on_draw_ui = noop, on_frame = noop, on_config_save = noop },
+    }, { __index = _G })
+    local ok, err = pcall(function()
+        assert(loadfile("reframework/autorun/my_hunt_report.lua", "t", environment))()
+        assert(table.concat(calls, ",") == "hitcapture,palico", table.concat(calls, ","))
+        assert(required["MyHuntReport.PalicoProbe"] == nil)
+        assert(loadfile("reframework/autorun/MyHuntReport/PalicoProbe.lua") == nil)
+        assert(loadfile("tests/palicoprobe_test.lua") == nil)
+    end)
+    ReportWindow.setRelabeler(nil)
+    ReportWindow.setSnapshotProvider(nil)
+    ReportWindow.hide()
+    if not ok then error(err, 0) end
+end
+
 return T

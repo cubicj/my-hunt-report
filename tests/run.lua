@@ -24,7 +24,6 @@ local SUITES = {
     "hitcapture_test",
     "palico_test",
     "attacklog_test",
-    "palicoprobe_test",
     "quest_test",
     "motionnames_test",
     "names_test",

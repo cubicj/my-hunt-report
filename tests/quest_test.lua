@@ -667,4 +667,37 @@ function T.installRegistersTheEndFlowHookInsteadOfRewardEnter()
     if not ok then error(err, 0) end
 end
 
+function T.questStartAndResetClearThePalicoCapture()
+    local Palico = require("MyHuntReport.Palico")
+    local reset, resets = Palico.reset, 0
+    Palico.reset = function() resets = resets + 1 end
+    local ok, err = pcall(function()
+        Quest.resetForTests()
+        assert(resets == 1)
+        Quest.handleQuestStart(100)
+        assert(resets == 2)
+    end)
+    Palico.reset = reset
+    Quest.resetForTests()
+    if not ok then error(err, 0) end
+end
+
+function T.resultStartLogsThePalicoSummaryForTheFinalSnapshot()
+    local Palico = require("MyHuntReport.Palico")
+    local logSummary, logged = Palico.logSummary, {}
+    Palico.logSummary = function(snapshot) logged[#logged + 1] = snapshot end
+    local ok, err = pcall(function()
+        playQuestWithOneHit()
+        Session.addPalicoHit(10)
+        Quest.handleResultStart()
+        assert(#logged == 1)
+        assert(logged[1].palico.damage == 10 and logged[1].palico.share == 0.5 and logged[1].damage.total == 10)
+    end)
+    Palico.logSummary = logSummary
+    Quest.resetForTests()
+    History.resetForTests()
+    ReportWindow.hide()
+    if not ok then error(err, 0) end
+end
+
 return T
