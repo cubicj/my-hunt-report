@@ -5,9 +5,10 @@ A post-quest combat report for Monster Hunter Wilds, built on [REFramework](http
 ## What the report shows
 
 - **Damage breakdown** as shares of your total: physical, elemental, fixed, and status.
-- **Stat tiles**: combat DPS (damage over the time you were actually fighting), crit and negative-crit rate, average hitzone, and one average elemental hitzone tile per element you used.
+- **Stat tiles**: combat DPS (damage over the time you were actually fighting), crit and negative-crit rate, average attack (your attack power at the moment each hit landed, with skills and buffs applied), average hitzone, and one average elemental hitzone tile per element you used.
 - **Skill uptime**: how much of your damage each equipped skill was active for, weighted by motion value and hitzone. Burst is split into its stages and Weakness Exploit gets a separate row for hits on wounds. Hunting Horn melodies and weapon buffs (Dual Blades Demon Boost, Long Sword red Spirit Gauge, Switch Axe Amped State and Power Axe, Charge Blade Sword Boost, Element Boost and Power Axe, Insect Glaive Triple Up) get rows too; buffs that only work in one weapon mode are measured against the hits of that mode.
-- **Damage by motion**: every move by name, including shells, ammo and coatings, kinsect hits, slinger shots, mounted attacks, Hunting Horn melodies and echo bubbles, and status procs (blast, poison, Flayer, Element Convert). Set-bonus damage such as Violent Strike, Mirror Blade, Incandescent Torrent, Rathalos's Flare, Lagiacrus's Fury, and Dark Knight is listed separately.
+- **Damage by motion**: every move by name, including shells, ammo and coatings, kinsect hits, slinger shots, mounted attacks, Hunting Horn melodies and echo bubbles, and wound break damage.
+- **Skill damage**: the share of your damage that came from Flayer, Element Convert, blast, poison, and set bonuses such as Violent Strike, Mirror Blade, Incandescent Torrent, Rathalos's Flare, Lagiacrus's Fury, and Dark Knight. Your own Palico's share of the damage is shown at the end of the line; other players' Palicos are never counted.
 - **Monsters** with tempered, arch-tempered, and frenzied variants named.
 - **History** of every finished quest, opened from the report window. Training-area sessions produce a report too but are not saved.
 
@@ -18,8 +19,10 @@ Works in solo and multiplayer.
 Settings live in the REFramework menu under **My Hunt Report**.
 
 - **F7** toggles the report window (rebindable).
-- Show the report automatically when a quest ends, and close it when the next quest starts.
+- Show the report automatically when a quest ends, and close it when the next quest starts or when the quest result screen closes.
 - Font size, and language (automatic, English, or Korean).
+- HDR color correction (automatic, on, or off), so the report colors look the same with HDR on as in SDR.
+- Record Flayer, Element Convert, wound-break, and poison damage, which can be turned off (turning it off needs a game restart).
 - Delete all history, with a confirmation step.
 - Developer Mode, which adds diagnostic lines to the report and the REFramework log.
 
