@@ -276,6 +276,32 @@ function T.blastAndPoisonKeepStatusAndProcRows()
     end
 end
 
+function T.woundBreakProcAddsFixedDamageAndProcRow()
+    Session.reset(0)
+    Session.addHit(hit())
+    assert(Session.addProc({ kind = "woundBreak", damage = 114 }) == true)
+    assert(Session.addProc({ kind = "woundBreak", damage = 190 }) == true)
+    assert(Session.addProc({ kind = "woundBreak", damage = 0 }) == false)
+    local s = Session.snapshot()
+    assert(s.damage.total == 404 and s.damage.fixed == 304 and s.damage.status == 0)
+    assert(s.damage.physical == 80 and s.damage.element == 20 and s.damage.hits == 1)
+    assert(#s.skillDamage == 0 and #s.procs == 1 and #s.motions == 2)
+    assert(s.procs[1].kind == "woundBreak" and s.procs[1].damage == 304 and s.procs[1].count == 2)
+    assert(stubs.encode(s.procs[1].label) == stubs.encode({ kind = "proc", proc = "woundBreak" }))
+    assert(s.motions[1].key == "proc:woundBreak" and s.motions[1].damage == 304 and s.motions[1].hits == 2)
+    assert(s.motions[1].share == 304 / 404)
+    assert(s.motions[2].key == "7:cShellFire" and s.motions[2].share == 100 / 404)
+end
+
+function T.woundBreakOnlySessionHasData()
+    Session.reset(0)
+    assert(Session.hasData() == false)
+    assert(Session.addProc({ kind = "woundBreak", damage = 30 }) == true)
+    assert(Session.hasData() == true)
+    local s = Session.snapshot()
+    assert(s.damage.total == 30 and s.damage.fixed == 30 and s.damage.status == 0 and #s.procs == 1)
+end
+
 function T.skillProcOnlySessionHasDataUntilReset()
     for _, kind in ipairs({ "flayer", "elementConvert" }) do
         Session.reset(0)

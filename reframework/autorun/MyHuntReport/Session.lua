@@ -5,6 +5,7 @@ local Session = {}
 
 local SKILL_DAMAGE_KINDS = { "flare", "fury", "violent", "ryukiExplosion", "darkWave", "mirrorBlade", "flayer", "elementConvert" }
 local SKILL_PROC_KINDS = { flayer = true, elementConvert = true }
+local FIXED_PROC_KINDS = { woundBreak = true }
 local HEAL_KINDS = { "hastenRecovery", "superRecovery" }
 local HEAL_KIND_SET = { hastenRecovery = true, superRecovery = true }
 
@@ -173,7 +174,12 @@ function Session.addProc(proc)
         state.skillDamage[proc.kind] = (state.skillDamage[proc.kind] or 0) + damage
         return true
     end
-    state.status = state.status + damage
+    if FIXED_PROC_KINDS[proc.kind] then
+        state.total = state.total + damage
+        state.fixed = state.fixed + damage
+    else
+        state.status = state.status + damage
+    end
     local row = state.procs[proc.kind]
     if not row then
         row = { kind = proc.kind, label = { kind = "proc", proc = proc.kind }, damage = 0, count = 0 }
