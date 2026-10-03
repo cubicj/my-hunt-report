@@ -228,7 +228,10 @@ local function withHdrStubs(callback)
         state.settings[#state.settings + 1] = setting
         return state.nits
     end
-    Theme.apply = function(nits) state.applied[#state.applied + 1] = nits end
+    Theme.apply = function(nits)
+        state.applied[#state.applied + 1] = nits
+        if state.onApply then state.onApply() end
+    end
     local ok, err = pcall(callback, state)
     Hdr.targetNits, Theme.apply = targetNits, apply
     if not ok then error(err, 0) end
@@ -239,10 +242,24 @@ function T.settingsPanelAppliesTheHdrTargetBeforeDrawing()
         local Settings = require("MyHuntReport.Settings")
         withHdrStubs(function(state)
             Settings.set("hdrCorrection", "on")
+            local drawnAtApply
+            state.onApply = function() drawnAtApply = #ui.events end
             ui.draw()
             assert(#state.settings == 1 and state.settings[1] == "on", tostring(state.settings[1]))
             assert(#state.applied == 1 and state.applied[1] == 455)
+            assert(drawnAtApply == 0 and #ui.events > 0, tostring(drawnAtApply))
             Settings.set("hdrCorrection", "auto")
+        end)
+    end)
+end
+
+function T.settingsPanelReadsNoHdrStateWhileTheTreeIsCollapsed()
+    withClearPanel(function(ui)
+        withHdrStubs(function(state)
+            ui.opened = false
+            ui.draw()
+            assert(#state.settings == 0 and #state.applied == 0)
+            assert(#ui.events == 0)
         end)
     end)
 end

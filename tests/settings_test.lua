@@ -19,9 +19,12 @@ function T.defaultsWhenFileMissing()
 end
 
 function T.hdrCorrectionAcceptsOnlyTheThreeValues()
+    local previous = { auto = "off", on = "auto", off = "on" }
     for _, value in ipairs({ "auto", "on", "off" }) do
         stubs.jsonFiles[Settings.FILE] = { hdrCorrection = value }
         assert(Settings.load().hdrCorrection == value, value)
+        stubs.jsonFiles[Settings.FILE] = { hdrCorrection = previous[value] }
+        assert(Settings.load().hdrCorrection == previous[value], value)
         assert(Settings.set("hdrCorrection", value) and Settings.get().hdrCorrection == value)
         assert(stubs.jsonFiles[Settings.FILE].hdrCorrection == value)
     end
@@ -31,6 +34,7 @@ function T.hdrCorrectionAcceptsOnlyTheThreeValues()
     end
     Settings.load()
     Settings.set("hdrCorrection", "on")
+    assert(Settings.get().hdrCorrection == "on")
     Settings.set("hdrCorrection", "bogus")
     assert(Settings.get().hdrCorrection == "auto")
 end

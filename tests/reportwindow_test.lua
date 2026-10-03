@@ -2030,6 +2030,7 @@ function T.drawAppliesTheHdrTargetForTheCurrentSettingOnlyWhileOpen()
     local Theme = require("MyHuntReport.Theme")
     local targetNits, apply, originalImgui = Hdr.targetNits, Theme.apply, imgui
     local settingsSeen, applied = {}, {}
+    local began, beganAtApply = false, nil
     Settings.load()
     Settings.set("hdrCorrection", "on")
     ReportWindow.show(snapshot("clear"))
@@ -2038,11 +2039,20 @@ function T.drawAppliesTheHdrTargetForTheCurrentSettingOnlyWhileOpen()
             settingsSeen[#settingsSeen + 1] = setting
             return 455
         end
-        Theme.apply = function(nits) applied[#applied + 1] = nits end
-        imgui = setmetatable({ begin_window = function() return true end }, { __index = originalImgui })
+        Theme.apply = function(nits)
+            applied[#applied + 1] = nits
+            beganAtApply = began
+        end
+        imgui = setmetatable({
+            begin_window = function()
+                began = true
+                return true
+            end,
+        }, { __index = originalImgui })
         ReportWindow.draw()
         assert(#settingsSeen == 1 and settingsSeen[1] == "on", tostring(settingsSeen[1]))
         assert(#applied == 1 and applied[1] == 455)
+        assert(beganAtApply == false and began == true)
         ReportWindow.hide()
         ReportWindow.draw()
         assert(#settingsSeen == 1 and #applied == 1)
