@@ -81,6 +81,11 @@ local function attributedToMaster(bracket)
     return invokerIsMaster(bracket)
 end
 
+local function holdPalicoProc(bracket, key, value)
+    if bracket.palicoDamage ~= nil or value ~= value or value >= math.huge then return end
+    if Palico.isOwnKey(key) then bracket.palicoDamage = value end
+end
+
 local function onSetParam(args)
     local bracket = brackets[#brackets]
     if not bracket or (bracket.kind ~= "blast" and bracket.kind ~= "elementConvert") then return end
@@ -100,10 +105,7 @@ local function onSetParam(args)
         Session.addProc({ kind = bracket.kind, damage = value, time = Game.uptime() })
         return
     end
-    if bracket.kind ~= "blast" or not Palico.isOwnKey(key) then return end
-    if not Session.addPalicoProc("blast", value) then return end
-    bracket.recorded = true
-    Log.debug("palico blast value=" .. tostring(value), "palico:blast")
+    if bracket.kind == "blast" then holdPalicoProc(bracket, key, value) end
 end
 
 local function diagnosticValue(read)
@@ -137,7 +139,12 @@ local function enterBracket(kind, args)
 end
 
 local function leaveBracket()
+    local bracket = brackets[#brackets]
     brackets[#brackets] = nil
+    if not bracket or bracket.recorded or bracket.palicoDamage == nil then return end
+    if Session.addPalicoProc(bracket.kind, bracket.palicoDamage) then
+        Log.debug("palico " .. bracket.kind .. " value=" .. tostring(bracket.palicoDamage), "palico:" .. bracket.kind)
+    end
 end
 
 local function onWoundBreakDamage(args)
@@ -173,10 +180,7 @@ local function onExternalDamage(args)
         Session.addProc({ kind = bracket.kind, damage = value, time = Game.uptime() })
         return
     end
-    if bracket.kind ~= "poison" or not Palico.isOwnKey(readInvoker(bracket)) then return end
-    if not Session.addPalicoProc("poison", value) then return end
-    bracket.recorded = true
-    Log.debug("palico poison value=" .. tostring(value), "palico:poison")
+    if bracket.kind == "poison" then holdPalicoProc(bracket, readInvoker(bracket), value) end
 end
 
 local function onActivatePacket(kind)

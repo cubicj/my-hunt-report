@@ -40,32 +40,70 @@ local function noteSeen(gameObject, mine)
     Log.trace("palico seen name=" .. tostring(name) .. " mine=" .. tostring(mine))
 end
 
+local function readAddress(object)
+    local ok, address = pcall(function() return object:get_address() end)
+    if ok then return address end
+    return nil
+end
+
+local function enemyIndex(em)
+    local ok, index = pcall(function() return em:get_UniqueIndex() end)
+    if ok then return index end
+    return nil
+end
+
 function Palico.handleStockDamageDetail(hitInfo)
     if not hitInfo then return end
-    local okAddress, address = pcall(function() return hitInfo:get_address() end)
-    if not okAddress or address == nil then return end
-    pending[address] = nil
+    local address = readAddress(hitInfo)
+    if address == nil then
+        pending = {}
+        return
+    end
     local okOwner, owner = pcall(function() return hitInfo:getActualAttackOwner() end)
-    if not okOwner or owner == nil then return end
-    local mine, otomo = Palico.isOwnObject(owner)
-    if not otomo then return end
-    noteSeen(owner, mine)
-    if not mine then return end
+    local mine, otomo = false, nil
+    if okOwner and owner ~= nil then mine, otomo = Palico.isOwnObject(owner) end
+    if otomo then noteSeen(owner, mine) end
+    if not mine then
+        pending[address] = nil
+        return
+    end
     local okTarget, target = pcall(function() return hitInfo:get_DamageOwner() end)
-    if not okTarget then return end
-    local em = Game.enemyContext(target)
-    if not em then return end
+    local em = okTarget and Game.enemyContext(target) or nil
+    local index = em and enemyIndex(em) or nil
+    if index == nil then
+        pending[address] = nil
+        return
+    end
+    local targets = pending[address]
+    if targets then
+        targets[index] = nil
+        if next(targets) == nil then pending[address] = nil end
+    end
     local okBoss, isBoss = pcall(function() return em:get_IsBoss() end)
     if not okBoss or isBoss ~= true then return end
     if Game.enemyIsDead(target) then return end
-    pending[address] = true
+    local ownerAddress = readAddress(owner)
+    if ownerAddress == nil then return end
+    targets = pending[address] or {}
+    targets[index] = ownerAddress
+    pending[address] = targets
 end
 
 function Palico.handleHitMark(calc, hitInfo)
     if not hitInfo then return end
-    local okAddress, address = pcall(function() return hitInfo:get_address() end)
-    if not okAddress or address == nil or not pending[address] then return end
-    pending[address] = nil
+    local address = readAddress(hitInfo)
+    local targets = address ~= nil and pending[address] or nil
+    if not targets then return end
+    local okTarget, target = pcall(function() return hitInfo:get_DamageOwner() end)
+    local em = okTarget and Game.enemyContext(target) or nil
+    local index = em and enemyIndex(em) or nil
+    if index == nil or targets[index] == nil then return end
+    local registeredOwner = targets[index]
+    targets[index] = nil
+    if next(targets) == nil then pending[address] = nil end
+    local okOwner, owner = pcall(function() return hitInfo:getActualAttackOwner() end)
+    if not okOwner or owner == nil or readAddress(owner) ~= registeredOwner then return end
+    if not Palico.isOwnObject(owner) then return end
     local okDamage, finalDamage = pcall(function() return calc.FinalDamage end)
     if not okDamage or not Session.addPalicoHit(finalDamage) then return end
     if not Log.isDeveloperMode() then return end

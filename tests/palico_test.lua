@@ -22,8 +22,11 @@ local function gameObject(name, address, mine)
     return object
 end
 
-local function enemy(isBoss, dead)
-    return { dead = dead == true, em = { get_IsBoss = function() return isBoss end } }
+local function enemy(isBoss, dead, index)
+    return {
+        dead = dead == true,
+        em = { get_IsBoss = function() return isBoss end, get_UniqueIndex = function() return index or 7 end },
+    }
 end
 
 local function hitInfo(address, attacker, target, attackObjName)
@@ -153,7 +156,11 @@ function T.everythingElseIsNotCounted()
         c.hit(hitInfo(103, mine, enemy(true, true), "Otomo_00"), 20)
         c.hit(hitInfo(104, mine, enemy(true), "Sh200_004"), 0)
         c.hit(hitInfo(105, mine, enemy(true), "Otomo_00"), "broken")
-        c.hit(hitInfo(106, mine, { em = { get_IsBoss = function() error("no boss flag") end } }, "Otomo_00"), 20)
+        c.hit(hitInfo(106, mine, { em = { get_IsBoss = function() error("no boss flag") end, get_UniqueIndex = function() return 7 end } }, "Otomo_00"), 20)
+        c.hit(hitInfo(110, mine, { em = { get_IsBoss = function() return true end, get_UniqueIndex = function() error("no index") end } }, "Otomo_00"), 20)
+        c.hit(hitInfo(111, mine, { em = { get_IsBoss = function() return true end, get_UniqueIndex = function() return nil end } }, "Otomo_00"), 20)
+        local addressless = gameObject("Otomo_00", nil, true)
+        c.hit(hitInfo(112, addressless, enemy(true), "Otomo_00"), 20)
         c.hit(hitInfo(107, mine, nil, "Otomo_00"), 20)
         c.hit(hitInfo(nil, mine, enemy(true), "Otomo_00"), 20)
         Palico.handleStockDamageDetail(nil)
@@ -201,6 +208,88 @@ function T.aReusedHitInfoAddressNeverCarriesAnEarlierOwnership()
         end
         local totals = Session.palicoTotals()
         assert(totals.hits == 0 and totals.direct == 0)
+    end)
+end
+
+function T.aFailedDetailAddressReadDropsEveryPendingHit()
+    withPalico(function()
+        local mine = gameObject("Otomo_00", 1, true)
+        local other = gameObject("Otomo_46", 2, false)
+        local boss = enemy(true)
+        for _, broken in ipairs({ "raise", "nil" }) do
+            Palico.handleStockDamageDetail(hitInfo(100, mine, boss, "Otomo_00"))
+            local foreign = hitInfo(100, other, boss, "Otomo_46")
+            local read = foreign.get_address
+            foreign.get_address = function()
+                if broken == "raise" then error("no address") end
+                return nil
+            end
+            Palico.handleStockDamageDetail(foreign)
+            foreign.get_address = read
+            Palico.handleHitMark({ FinalDamage = 75 }, foreign)
+            Palico.handleHitMark({ FinalDamage = 75 }, hitInfo(100, mine, boss, "Otomo_00"))
+        end
+        local totals = Session.palicoTotals()
+        assert(totals.hits == 0 and totals.direct == 0)
+    end)
+end
+
+function T.aMarkMustMatchTheRegisteredOwnerAndTarget()
+    withPalico(function()
+        local mine = gameObject("Otomo_00", 1, true)
+        local other = gameObject("Otomo_46", 2, false)
+        local impostor = gameObject("Otomo_00", 9, true)
+        local boss, secondBoss = enemy(true, false, 7), enemy(true, false, 8)
+        Palico.handleStockDamageDetail(hitInfo(100, mine, boss, "Otomo_00"))
+        Palico.handleHitMark({ FinalDamage = 40 }, hitInfo(100, mine, secondBoss, "Otomo_00"))
+        assert(Session.palicoTotals().hits == 0, "another target must not consume the registration")
+        Palico.handleHitMark({ FinalDamage = 40 }, hitInfo(100, other, boss, "Otomo_46"))
+        Palico.handleHitMark({ FinalDamage = 40 }, hitInfo(100, mine, boss, "Otomo_00"))
+        assert(Session.palicoTotals().hits == 0, "a mark from another owner consumes the registration without counting")
+        Palico.handleStockDamageDetail(hitInfo(100, mine, boss, "Otomo_00"))
+        Palico.handleHitMark({ FinalDamage = 40 }, hitInfo(100, impostor, boss, "Otomo_00"))
+        assert(Session.palicoTotals().hits == 0)
+        Palico.handleStockDamageDetail(hitInfo(100, mine, boss, "Otomo_00"))
+        local turned = hitInfo(100, mine, boss, "Otomo_00")
+        mine.otomo.get_IsMasterMyOtomo = function() return false end
+        Palico.handleHitMark({ FinalDamage = 40 }, turned)
+        assert(Session.palicoTotals().hits == 0)
+    end)
+end
+
+function T.targetsSharingOneHitInfoAddressAreCorrelatedByEnemy()
+    withPalico(function()
+        local mine = gameObject("Otomo_00", 1, true)
+        local small, boss, secondBoss = enemy(false, false, 5), enemy(true, false, 7), enemy(true, false, 8)
+        local function info(target) return hitInfo(100, mine, target, "Sh200_007") end
+        Palico.handleStockDamageDetail(info(small))
+        Palico.handleStockDamageDetail(info(boss))
+        Palico.handleHitMark({ FinalDamage = 20 }, info(small))
+        Palico.handleHitMark({ FinalDamage = 50 }, info(boss))
+        assert(Session.palicoTotals().hits == 1 and Session.palicoTotals().direct == 50)
+        Palico.handleStockDamageDetail(info(boss))
+        Palico.handleStockDamageDetail(info(small))
+        Palico.handleHitMark({ FinalDamage = 50 }, info(boss))
+        Palico.handleHitMark({ FinalDamage = 20 }, info(small))
+        assert(Session.palicoTotals().hits == 2 and Session.palicoTotals().direct == 100)
+        Palico.handleStockDamageDetail(info(boss))
+        Palico.handleStockDamageDetail(info(secondBoss))
+        Palico.handleHitMark({ FinalDamage = 30 }, info(secondBoss))
+        Palico.handleHitMark({ FinalDamage = 30 }, info(boss))
+        Palico.handleHitMark({ FinalDamage = 30 }, info(boss))
+        assert(Session.palicoTotals().hits == 4 and Session.palicoTotals().direct == 160)
+    end)
+end
+
+function T.aKillingBlowIsCountedBecauseTheDeadCheckRunsAtTheDetailCall()
+    withPalico(function()
+        local mine = gameObject("Otomo_00", 1, true)
+        local boss = enemy(true)
+        local info = hitInfo(100, mine, boss, "Otomo_00")
+        Palico.handleStockDamageDetail(info)
+        boss.dead = true
+        Palico.handleHitMark({ FinalDamage = 35.4 }, info)
+        assert(Session.palicoTotals().hits == 1 and Session.palicoTotals().direct == 35.4)
     end)
 end
 
