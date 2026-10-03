@@ -579,4 +579,59 @@ function T.questStartAndResetForTestsResetTheHealTracker()
     if not ok then error(err, 0) end
 end
 
+local function showClearReport()
+    ReportWindow.show({ version = 2, quest = { result = "clear" }, damage = { total = 1, hits = 1 },
+        stats = {}, monsters = {}, skills = {}, motions = {}, procs = {}, skillDamage = {} })
+end
+
+function T.resultCloseHidesReportWhenSettingIsOn()
+    playQuestWithOneHit()
+    Quest.handleQuestEnd(150)
+    Quest.handleResultStart()
+    Quest.handleResultInfo({ endType = 2, clearTimeMs = 50000 }, 160)
+    showClearReport()
+    Settings.set("closeOnResultClose", true)
+    Quest.handleResultClose(170)
+    assert(ReportWindow.isOpen() == false)
+    assert(#History.readAll() == 1)
+    Settings.set("closeOnResultClose", false)
+end
+
+function T.resultCloseLeavesReportOpenWhenSettingIsOff()
+    playQuestWithOneHit()
+    Quest.handleQuestEnd(150)
+    Quest.handleResultStart()
+    Quest.handleResultInfo({ endType = 2, clearTimeMs = 50000 }, 160)
+    showClearReport()
+    assert(Settings.get().closeOnResultClose == false)
+    Quest.handleResultClose(170)
+    assert(ReportWindow.isOpen() == true)
+    assert(#History.readAll() == 1)
+end
+
+function T.resultCloseWithClosedWindowIsHarmless()
+    playQuestWithOneHit()
+    Settings.set("closeOnResultClose", true)
+    ReportWindow.hide()
+    Quest.handleResultClose(170)
+    assert(ReportWindow.isOpen() == false)
+    Settings.set("closeOnResultClose", false)
+end
+
+function T.installRegistersTheRewardEnterHook()
+    local hook = Game.hook
+    local names = {}
+    local ok, err = pcall(function()
+        Game.hook = function(typeName, signature) names[#names + 1] = typeName .. "." .. signature end
+        Quest.install()
+        local found = false
+        for _, name in ipairs(names) do
+            if name == "app.cQuestReward.enter()" then found = true end
+        end
+        assert(found, table.concat(names, ","))
+    end)
+    Game.hook = hook
+    if not ok then error(err, 0) end
+end
+
 return T

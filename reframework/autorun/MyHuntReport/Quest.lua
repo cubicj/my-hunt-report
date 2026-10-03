@@ -196,6 +196,11 @@ function Quest.handleResultInfo(fields, now)
     Log.debug("quest result " .. snapshot.quest.result .. " at " .. tostring(now))
 end
 
+function Quest.handleResultClose(now)
+    Log.debug("quest result close at " .. tostring(now))
+    if Settings.get().closeOnResultClose then ReportWindow.hide() end
+end
+
 function Quest.currentSnapshot(now)
     if phase == "result" and finalSnapshot then return Session.relabel(finalSnapshot, Names.resolve) end
     local result = "unknown"
@@ -294,6 +299,9 @@ function Quest.install()
     end)
     Game.hook("app.cQuestResult", "enter()", function()
         Quest.handleResultStart()
+    end)
+    Game.hook("app.cQuestReward", "enter()", function()
+        Quest.handleResultClose(Game.uptime())
     end)
     Game.hook("app.cGUIQuestResultInfo", "execute()", function(args)
         thread.get_hook_storage()[STORAGE_KEY] = sdk.to_managed_object(args[2])
