@@ -108,9 +108,11 @@ function Palico.handleHitMark(calc, hitInfo)
     if not okDamage or not Session.addPalicoHit(finalDamage) then return end
     if not Log.isDeveloperMode() then return end
     local okName, name = pcall(function() return hitInfo:get_AttackObj():get_Name() end)
+    local okOwnerName, ownerName = pcall(function() return owner:get_Name() end)
     local totals = Session.palicoTotals()
-    Log.trace(string.format("palico hit #%d dmg=%.1f obj=%s total=%.1f",
-        totals.hits, finalDamage, okName and tostring(name) or "?", totals.direct))
+    Log.trace(string.format("palico hit #%d dmg=%.1f obj=%s owner=%s total=%.1f",
+        totals.hits, finalDamage, okName and tostring(name) or "?",
+        okOwnerName and tostring(ownerName) or "?", totals.direct))
 end
 
 function Palico.logSummary(snapshot)
