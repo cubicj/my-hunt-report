@@ -1,6 +1,7 @@
 local Game = require("MyHuntReport.Game")
 local Log = require("MyHuntReport.Log")
 local Session = require("MyHuntReport.Session")
+local Palico = require("MyHuntReport.Palico")
 
 local Procs = {}
 
@@ -84,17 +85,25 @@ local function onSetParam(args)
     local bracket = brackets[#brackets]
     if not bracket or (bracket.kind ~= "blast" and bracket.kind ~= "elementConvert") then return end
     local ok, value = pcall(sdk.to_float, args[3])
-    local isMaster
+    local isMaster, key
     if bracket.kind == "blast" then
-        isMaster = Procs.attackerIsMaster(decodeKey(args[4]))
+        key = decodeKey(args[4])
+        isMaster = Procs.attackerIsMaster(key)
     else
         isMaster = attributedToMaster(bracket)
     end
     Log.debug("proc " .. bracket.kind .. " setParam value=" .. (ok and tostring(value) or "?")
         .. " master=" .. tostring(isMaster), "proc:" .. bracket.kind .. ":setParam")
-    if not ok or type(value) ~= "number" or value <= 0 or bracket.recorded or not isMaster then return end
+    if not ok or type(value) ~= "number" or value <= 0 or bracket.recorded then return end
+    if isMaster then
+        bracket.recorded = true
+        Session.addProc({ kind = bracket.kind, damage = value, time = Game.uptime() })
+        return
+    end
+    if bracket.kind ~= "blast" or not Palico.isOwnKey(key) then return end
+    if not Session.addPalicoProc("blast", value) then return end
     bracket.recorded = true
-    Session.addProc({ kind = bracket.kind, damage = value, time = Game.uptime() })
+    Log.debug("palico blast value=" .. tostring(value), "palico:blast")
 end
 
 local function diagnosticValue(read)
@@ -158,9 +167,16 @@ local function onExternalDamage(args)
             .. " _HasValue=" .. hasValue, "proc:" .. bracket.kind .. ":external")
     end
     if bracket.kind ~= "poison" and bracket.kind ~= "flayer" and bracket.kind ~= "elementConvert" then return end
-    if not ok or type(value) ~= "number" or value <= 0 or bracket.recorded or not attributedToMaster(bracket) then return end
+    if not ok or type(value) ~= "number" or value <= 0 or bracket.recorded then return end
+    if attributedToMaster(bracket) then
+        bracket.recorded = true
+        Session.addProc({ kind = bracket.kind, damage = value, time = Game.uptime() })
+        return
+    end
+    if bracket.kind ~= "poison" or not Palico.isOwnKey(readInvoker(bracket)) then return end
+    if not Session.addPalicoProc("poison", value) then return end
     bracket.recorded = true
-    Session.addProc({ kind = bracket.kind, damage = value, time = Game.uptime() })
+    Log.debug("palico poison value=" .. tostring(value), "palico:poison")
 end
 
 local function onActivatePacket(kind)

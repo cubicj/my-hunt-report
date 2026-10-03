@@ -2,6 +2,7 @@ local stubs = require("stubs")
 local Game = require("MyHuntReport.Game")
 local Log = require("MyHuntReport.Log")
 local Session = require("MyHuntReport.Session")
+local Palico = require("MyHuntReport.Palico")
 
 local T = {}
 
@@ -28,6 +29,9 @@ local function withProcs(callback)
     local callStatic, isMasterGameObject, masterHunter = Game.callStatic, Game.isMasterGameObject, Game.masterHunter
     local toManaged, toFloat, toValue = sdk.to_managed_object, sdk.to_float, sdk.to_valuetype
     local developerMode = Log.isDeveloperMode()
+    local addPalicoProc, isOwnKey = Session.addPalicoProc, Palico.isOwnKey
+    local palicoRecorded, palicoKeys = {}, {}
+    local ownPalico = { Category = 2, UniqueIndex = 0 }
     local hooks, recorded = {}, {}
     local c_callStaticCalls = {}
     local master = { Category = 0, UniqueIndex = 7 }
@@ -52,6 +56,15 @@ local function withProcs(callback)
         Game.isMasterGameObject = function(object) return object == masterObject end
         Game.masterHunter = function() return { get_HunterSkill = function() return masterSkill end } end
         Session.addProc = function(proc) recorded[#recorded + 1] = proc end
+        Session.addPalicoProc = function(kind, damage)
+            if damage ~= damage or damage == math.huge then return false end
+            palicoRecorded[#palicoRecorded + 1] = { kind = kind, damage = damage }
+            return true
+        end
+        Palico.isOwnKey = function(key)
+            palicoKeys[#palicoKeys + 1] = key
+            return key == ownPalico
+        end
         sdk.to_managed_object = function(value) return value end
         sdk.to_float = function(value) return value end
         sdk.to_valuetype = function(value, typeName)
@@ -62,6 +75,7 @@ local function withProcs(callback)
         procs.install()
         procs.installSkillProcs()
         local context = { procs = procs, hooks = hooks, recorded = recorded, master = master, other = other, callStaticCalls = c_callStaticCalls }
+        context.palicoRecorded, context.palicoKeys, context.ownPalico = palicoRecorded, palicoKeys, ownPalico
         function context.enter(kind, key)
             hooks[BRACKETS[kind]].pre({ [2] = { _Invoker = key } })
         end
@@ -73,6 +87,7 @@ local function withProcs(callback)
         callback(context)
     end)
     Game.hook, Session.addProc, Game.uptime = hook, addProc, uptime
+    Session.addPalicoProc, Palico.isOwnKey = addPalicoProc, isOwnKey
     Game.callStatic, Game.isMasterGameObject, Game.masterHunter = callStatic, isMasterGameObject, masterHunter
     sdk.to_managed_object, sdk.to_float, sdk.to_valuetype = toManaged, toFloat, toValue
     Log.setDeveloperMode(developerMode)
@@ -739,6 +754,121 @@ function T.packetDiagnosticsAreGatedAndKeyed()
         c.packet("elementConvert", 1.0)
         assert(stubs.logLines[2] == "[MyHuntReport] proc elementConvert packet damage=?", stubs.logLines[2])
         Log.setDeveloperMode(false)
+    end)
+end
+
+function T.palicoKeyedBlastGoesToThePalicoAndNotToTheOwnProcs()
+    withProcs(function(c)
+        local otherPalico = { Category = 2, UniqueIndex = 1 }
+        c.enter("blast", c.ownPalico)
+        c.setParam(100, c.ownPalico)
+        c.setParam(100, c.ownPalico)
+        c.leave("blast")
+        c.enter("blast", otherPalico)
+        c.setParam(100, otherPalico)
+        c.leave("blast")
+        assert(#c.recorded == 0)
+        assert(#c.palicoRecorded == 1, #c.palicoRecorded)
+        assert(c.palicoRecorded[1].kind == "blast" and c.palicoRecorded[1].damage == 100)
+        c.enter("blast", c.ownPalico)
+        c.setParam(100, c.master)
+        c.setParam(100, c.ownPalico)
+        c.leave("blast")
+        assert(#c.recorded == 1 and c.recorded[1].kind == "blast" and #c.palicoRecorded == 1)
+    end)
+end
+
+function T.palicoInvokedPoisonGoesToThePalicoOncePerBracket()
+    withProcs(function(c)
+        local otherPalico = { Category = 2, UniqueIndex = 1 }
+        for _ = 1, 3 do
+            c.enter("poison", c.ownPalico)
+            c.external(15)
+            c.external(15)
+            c.leave("poison")
+        end
+        c.enter("poison", otherPalico)
+        c.external(15)
+        c.leave("poison")
+        c.enter("poison", c.master)
+        c.external(15)
+        c.leave("poison")
+        assert(#c.palicoRecorded == 3)
+        for _, entry in ipairs(c.palicoRecorded) do assert(entry.kind == "poison" and entry.damage == 15) end
+        assert(#c.recorded == 1 and c.recorded[1].kind == "poison")
+    end)
+end
+
+function T.palicoAttributionIsLimitedToBlastAndPoisonWithValidDamage()
+    withProcs(function(c)
+        for _, kind in ipairs({ "flayer", "elementConvert" }) do
+            c.enter(kind, c.ownPalico)
+            c.external(160)
+            c.setParam(160, c.ownPalico)
+            c.leave(kind)
+        end
+        c.enter("blast", c.ownPalico)
+        c.setParam(0, c.ownPalico)
+        c.setParam(-5, c.ownPalico)
+        c.setParam("x", c.ownPalico)
+        c.external(15)
+        c.leave("blast")
+        c.enter("poison", c.ownPalico)
+        c.external(0)
+        c.setParam(15, c.ownPalico)
+        c.leave("poison")
+        c.external(15, { _HasValue = true, _Value = c.ownPalico })
+        assert(#c.palicoRecorded == 0 and #c.recorded == 0)
+        c.enter("blast", c.ownPalico)
+        c.setParam(0, c.ownPalico)
+        c.setParam(100, c.ownPalico)
+        c.leave("blast")
+        assert(#c.palicoRecorded == 1)
+    end)
+end
+
+function T.rejectedPalicoDamageDoesNotConsumeTheBracketOrLog()
+    withProcs(function(c)
+        Log.setDeveloperMode(true)
+        c.enter("blast", c.ownPalico)
+        c.setParam(0 / 0, c.ownPalico)
+        c.setParam(math.huge, c.ownPalico)
+        assert(#c.palicoRecorded == 0 and Log.count("palico:blast") == 0)
+        c.setParam(100, c.ownPalico)
+        c.setParam(100, c.ownPalico)
+        c.leave("blast")
+        c.enter("poison", c.ownPalico)
+        c.external(0 / 0)
+        c.external(math.huge)
+        assert(#c.palicoRecorded == 1 and Log.count("palico:poison") == 0)
+        c.external(15)
+        c.external(15)
+        c.leave("poison")
+        assert(#c.palicoRecorded == 2 and #c.recorded == 0)
+        assert(c.palicoRecorded[1].kind == "blast" and c.palicoRecorded[1].damage == 100)
+        assert(c.palicoRecorded[2].kind == "poison" and c.palicoRecorded[2].damage == 15)
+        assert(Log.count("palico:blast") == 1 and Log.count("palico:poison") == 1)
+    end)
+end
+
+function T.palicoProcDiagnosticsAreGatedAndKeyed()
+    withProcs(function(c)
+        stubs.reset()
+        c.enter("blast", c.ownPalico)
+        c.setParam(100, c.ownPalico)
+        c.leave("blast")
+        assert(#stubs.logLines == 0)
+        Log.setDeveloperMode(true)
+        c.enter("blast", c.ownPalico)
+        c.setParam(100, c.ownPalico)
+        c.leave("blast")
+        c.enter("poison", c.ownPalico)
+        c.external(15)
+        c.leave("poison")
+        assert(Log.count("palico:blast") == 1 and Log.count("palico:poison") == 1)
+        local seen = table.concat(stubs.logLines, "\n")
+        assert(seen:find("[MyHuntReport] palico blast value=100", 1, true))
+        assert(seen:find("[MyHuntReport] palico poison value=15", 1, true))
     end)
 end
 
