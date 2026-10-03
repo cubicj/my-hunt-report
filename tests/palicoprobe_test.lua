@@ -11,6 +11,10 @@ local HOOKS = {
     resultInfo = "app.cGUIQuestResultInfo.execute()",
     detail = "app.cEnemyStockDamage.stockDamageDetail(app.HitInfo)",
     hitMark = "app.cEnemyStockDamage.mcEnemyHitMarkManager.playHitMarkEffect(app.cEnemyStockDamage.cCalcDamage, app.HitInfo)",
+    blast = "app.cEnemyBadConditionBlast.onActivate",
+    setParam = "app.cEnemyStockDamage.cBadConditionDamageInfo.setParam(System.Single, app.TARGET_ACCESS_KEY, System.Boolean)",
+    poison = "app.cEnemyBadConditionPoison.onUpdateActive",
+    external = "app.cEnemyStockDamage.stockExternalDamage(System.Single, System.Boolean, System.Nullable`1<app.TARGET_ACCESS_KEY>, System.Boolean, System.Boolean)",
 }
 
 local touched = 0
@@ -80,6 +84,10 @@ local function hitInfo(attacker, enemy, attackObjName, dataType)
     }
 end
 
+local function condition(enemyIndex, invoker)
+    return { _This = { Category = 1, UniqueIndex = enemyIndex }, _Invoker = invoker }
+end
+
 local function withProbe(callback)
     local hook, callStatic, singleton = Game.hook, Game.callStatic, Game.singleton
     local componentOf, enemyContext, masterAddress, uptime = Game.componentOf, Game.enemyContext, Game.masterAddress, Game.uptime
@@ -130,7 +138,7 @@ local function withProbe(callback)
         end
         thread = { get_hook_storage = function() return c.storage end }
         c.probe = assert(loadfile(MODULE_PATH))()
-        c.probe.install()
+        c.probe.install(true)
         function c.pre(name, args)
             c.storage = hooks[HOOKS[name]].storage
             hooks[HOOKS[name]].pre(args)
@@ -196,11 +204,21 @@ function T.summaryLinesComeFromPlainState()
     end)
 end
 
-function T.installsTheFlowAndHitHooks()
+function T.installsTheHooksAndSkipsPoisonHooksWhenAskedTo()
     withProbe(function(c)
-        for _, name in ipairs({ "playing", "resultInfo", "detail", "hitMark" }) do
+        for _, name in ipairs({ "playing", "resultInfo", "detail", "hitMark", "blast", "setParam", "poison", "external" }) do
             assert(c.hooks[HOOKS[name]], name)
         end
+        local hook = Game.hook
+        local seen = {}
+        Game.hook = function(typeName, signature)
+            seen[typeName .. "." .. signature] = true
+            return true
+        end
+        assert(loadfile(MODULE_PATH))().install(false)
+        Game.hook = hook
+        assert(seen[HOOKS.detail] and seen[HOOKS.blast] and seen[HOOKS.setParam])
+        assert(seen[HOOKS.poison] == nil and seen[HOOKS.external] == nil)
     end)
 end
 
@@ -259,6 +277,62 @@ function T.identityFallsBackToTheHolderContextAndMarksFailedReads()
     end)
 end
 
+function T.blastLinesAppearOnlyInsideABlastBracketAndCreditThePalico()
+    withDeveloperProbe(function(c)
+        local mine = palico("Otomo_00", 0x3000, MASTER, { mine = true })
+        c.characters["2/0"] = mine
+        c.characters["0/0"] = MASTER
+        local palicoKey = { Category = 2, UniqueIndex = 0 }
+        c.pre("setParam", { nil, nil, 4.0, palicoKey })
+        assert(#ppLines() == 0)
+        c.pre("blast", { nil, condition(7, palicoKey) })
+        assert(c.probe.bracketDepth() == 1)
+        c.pre("setParam", { nil, nil, 100.0, palicoKey })
+        c.pre("setParam", { nil, nil, 100.0, { Category = 0, UniqueIndex = 0 } })
+        c.pre("setParam", { nil, nil, 50.0, { Category = 2, UniqueIndex = 9 } })
+        c.post("blast")
+        assert(c.probe.bracketDepth() == 0)
+        c.pre("setParam", { nil, nil, 100.0, palicoKey })
+        local lines = ppLines()
+        assert(#lines == 4, #lines)
+        assert(lines[1]:find("pp identity t=100.00 id=Otomo_00@3000 ", 1, true), lines[1])
+        assert(lines[2]:find("pp blast t=100.00 em=7 value=100.0 key=2/0 master=false id=Otomo_00@3000 name=Otomo_00 ", 1, true), lines[2])
+        assert(lines[3] == "[MyHuntReport] pp blast t=100.00 em=7 value=100.0 key=0/0 master=true", lines[3])
+        assert(lines[4] == "[MyHuntReport] pp blast t=100.00 em=7 value=50.0 key=2/9 master=false id=?", lines[4])
+        local entry = c.probe.entry(0x3000)
+        assert(entry.blast == 100.0 and entry.blastCount == 1 and entry.mark == 0)
+        local counters = c.probe.counters()
+        assert(counters.blastLines == 3 and counters.unresolved == 1)
+    end)
+end
+
+function T.poisonLinesAppearOnlyInsideAPoisonBracketAndUseTheInvoker()
+    withDeveloperProbe(function(c)
+        local mine = palico("Otomo_00", 0x3000, MASTER, { mine = true })
+        c.characters["2/0"] = mine
+        c.characters["0/0"] = MASTER
+        local nullable = { _HasValue = false, _Value = { Category = 0, UniqueIndex = 0 } }
+        c.pre("external", { nil, nil, 15.0, nil, nullable })
+        c.pre("blast", { nil, condition(7, { Category = 2, UniqueIndex = 0 }) })
+        c.pre("external", { nil, nil, 15.0, nil, nullable })
+        c.post("blast")
+        assert(#ppLines() == 0)
+        c.pre("poison", { nil, condition(7, { Category = 2, UniqueIndex = 0 }) })
+        c.pre("external", { nil, nil, 15.0, nil, nullable })
+        c.post("poison")
+        c.pre("poison", { nil, condition(7, { Category = 0, UniqueIndex = 0 }) })
+        c.pre("external", { nil, nil, 15.0, nil, nullable })
+        c.post("poison")
+        local lines = ppLines()
+        assert(#lines == 3, #lines)
+        assert(lines[2]:find("pp poison t=100.00 em=7 value=15.0 invoker=2/0 hasKey=false key=0/0 master=false id=Otomo_00@3000 ", 1, true), lines[2])
+        assert(lines[3] == "[MyHuntReport] pp poison t=100.00 em=7 value=15.0 invoker=0/0 hasKey=false key=0/0 master=true", lines[3])
+        local entry = c.probe.entry(0x3000)
+        assert(entry.poison == 15.0 and entry.poisonCount == 1)
+        assert(c.probe.counters().poisonLines == 2 and c.probe.bracketDepth() == 0)
+    end)
+end
+
 function T.failedReadsPrintAQuestionMarkInsteadOfADefiniteValue()
     withDeveloperProbe(function(c)
         local mine = palico("Otomo_00", 0x3000, MASTER, { mine = true })
@@ -289,13 +363,77 @@ function T.failedReadsPrintAQuestionMarkInsteadOfADefiniteValue()
     end)
 end
 
+function T.aFailedEnemyIndexReadPrintsAQuestionMarkInStatusLines()
+    withDeveloperProbe(function(c)
+        c.characters["0/0"] = MASTER
+        local masterKey = { Category = 0, UniqueIndex = 0 }
+        local broken = { _Invoker = masterKey }
+        setmetatable(broken, { __index = function(_, key) error("no " .. tostring(key)) end })
+        c.pre("blast", { nil, broken })
+        c.pre("setParam", { nil, nil, 100.0, masterKey })
+        c.post("blast")
+        c.pre("poison", { nil, broken })
+        c.pre("external", { nil, nil, 15.0, nil, { _HasValue = false, _Value = masterKey } })
+        c.post("poison")
+        local lines = ppLines()
+        assert(lines[1] == "[MyHuntReport] pp blast t=100.00 em=? value=100.0 key=0/0 master=true", lines[1])
+        assert(lines[2] == "[MyHuntReport] pp poison t=100.00 em=? value=15.0 invoker=0/0 hasKey=false key=0/0 master=true", lines[2])
+        assert(c.probe.bracketDepth() == 0)
+    end)
+end
+
+function T.aBracketIsNotOpenedWhenTheInvocationCannotBeMarked()
+    withDeveloperProbe(function(c)
+        c.characters["0/0"] = MASTER
+        local masterKey = { Category = 0, UniqueIndex = 0 }
+        local working = thread.get_hook_storage
+        thread.get_hook_storage = function() error("no hook storage") end
+        c.pre("blast", { nil, condition(7, masterKey) })
+        assert(c.probe.bracketDepth() == 0)
+        c.pre("setParam", { nil, nil, 100.0, masterKey })
+        thread.get_hook_storage = working
+        c.post("blast")
+        c.pre("setParam", { nil, nil, 100.0, masterKey })
+        assert(#ppLines() == 0 and c.probe.bracketDepth() == 0)
+        assert(c.probe.counters().blastLines == 0)
+    end)
+end
+
+function T.hitsAndStatusDamageForOnePalicoShareOneEntry()
+    withDeveloperProbe(function(c)
+        local mine = palico("Otomo_00", 0x3000, MASTER, { mine = true })
+        c.characters["2/0"] = mine
+        local palicoKey = { Category = 2, UniqueIndex = 0 }
+        c.hit(mine, 12.5)
+        c.pre("blast", { nil, condition(7, palicoKey) })
+        c.pre("setParam", { nil, nil, 100.0, palicoKey })
+        c.post("blast")
+        c.pre("poison", { nil, condition(7, palicoKey) })
+        c.pre("external", { nil, nil, 15.0, nil, { _HasValue = false, _Value = { Category = 0, UniqueIndex = 0 } } })
+        c.post("poison")
+        local entry = c.probe.entry(0x3000)
+        assert(entry.mark == 1 and entry.damage == 12.5)
+        assert(entry.blast == 100.0 and entry.blastCount == 1 and entry.poison == 15.0 and entry.poisonCount == 1)
+        local lines = ppLines()
+        assert(#lines == 4, #lines)
+        for index = 2, 4 do assert(lines[index]:find(" id=Otomo_00@3000 ", 1, true), lines[index]) end
+        stubs.logLines = {}
+        c.post("resultInfo")
+        lines = ppLines()
+        assert(#lines == 2, #lines)
+        assert(lines[1]:find("detail=1 mark=1 damage=12.5 blast=100.0 blastCount=1 poison=15.0 poisonCount=1", 1, true), lines[1])
+        assert(lines[2] == "[MyHuntReport] pp summary-end palicos=1 hits=1 blastLines=1 poisonLines=1 unresolved=0", lines[2])
+    end)
+end
+
 function T.questStartResetsStateAndLogsTheHostRead()
     withDeveloperProbe(function(c)
         local mine = palico("Otomo_00", 0x3000, MASTER, { mine = true })
         c.hit(mine, 5)
+        c.pre("blast", { nil, condition(7, { Category = 0, UniqueIndex = 0 }) })
         stubs.logLines = {}
         c.pre("playing", raising())
-        assert(c.probe.entry(0x3000) == nil and c.probe.counters().hits == 0)
+        assert(c.probe.entry(0x3000) == nil and c.probe.counters().hits == 0 and c.probe.bracketDepth() == 0)
         assert(ppLines()[1] == "[MyHuntReport] pp state host=true", ppLines()[1])
         sdk.find_type_definition = function() return nil end
         stubs.logLines = {}
@@ -325,14 +463,30 @@ end
 
 function T.nothingIsReadOrLoggedWhenDeveloperModeIsOff()
     withProbe(function(c)
-        for _, name in ipairs({ "detail", "hitMark" }) do
+        for _, name in ipairs({ "detail", "hitMark", "blast", "setParam", "poison", "external" }) do
             c.pre(name, raising())
         end
+        c.post("blast")
+        c.post("poison")
         c.post("resultInfo")
         c.pre("playing", raising())
         assert(#ppLines() == 0)
         assert(touched == 0, touched)
+        assert(c.probe.bracketDepth() == 0)
         for _, name in ipairs(c.probe.COUNTER_ORDER) do assert(c.probe.counters()[name] == 0, name) end
+    end)
+end
+
+function T.aBracketOpenedWithDeveloperModeOffIsNotClosedTwice()
+    withDeveloperProbe(function(c)
+        c.pre("blast", { nil, condition(7, { Category = 0, UniqueIndex = 0 }) })
+        Log.setDeveloperMode(false)
+        c.pre("poison", raising())
+        c.post("poison")
+        assert(c.probe.bracketDepth() == 1)
+        Log.setDeveloperMode(true)
+        c.post("blast")
+        assert(c.probe.bracketDepth() == 0)
     end)
 end
 

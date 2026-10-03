@@ -9,15 +9,22 @@ PalicoProbe.IDENTITY_ORDER = {
     "npc", "partnerNpc", "ctxVia", "stableIndex", "masterOtomo",
 }
 
+local KEY_TYPE = "app.TARGET_ACCESS_KEY"
+local NULLABLE_KEY_TYPE = "System.Nullable`1<app.TARGET_ACCESS_KEY>"
+local OTOMO_CATEGORY = 2
+local HUNTER_CATEGORIES = { [0] = true, [5] = true }
+
 local counters = {}
 local palicos = {}
 local order = {}
+local brackets = {}
 local installed = false
 
 local function resetQuestState()
     for _, name in ipairs(PalicoProbe.COUNTER_ORDER) do counters[name] = 0 end
     palicos = {}
     order = {}
+    brackets = {}
 end
 
 resetQuestState()
@@ -93,6 +100,10 @@ end
 
 function PalicoProbe.entry(address)
     return palicos[address]
+end
+
+function PalicoProbe.bracketDepth()
+    return #brackets
 end
 
 local function addressIsMaster(gameObject)
@@ -171,6 +182,61 @@ local function enemyIndexText(hitInfo)
     return readValue(function() return Game.enemyContext(hitInfo:get_DamageOwner()):get_UniqueIndex() end)
 end
 
+local function keyIsMaster(key)
+    local ok, master = pcall(function()
+        if not HUNTER_CATEGORIES[key.Category] then return false end
+        local character = Game.callStatic("app.TargetAccessKeyUtil", "getHunterCharacter(app.TARGET_ACCESS_KEY)", key)
+        return addressIsMaster(character:get_GameObject())
+    end)
+    if ok then return tostring(master) end
+    return "?"
+end
+
+local function keyText(key)
+    return readValue(function() return key.Category end) .. "/" .. readValue(function() return key.UniqueIndex end)
+end
+
+local function resolvePalico(key)
+    local ok, gameObject = pcall(function()
+        local character = Game.callStatic("app.TargetAccessKeyUtil", "getCharacter(app.TARGET_ACCESS_KEY)", key)
+        return character:get_GameObject()
+    end)
+    if not ok or gameObject == nil then return nil, nil end
+    local otomo = Game.componentOf(gameObject, "app.OtomoCharacter")
+    if not otomo then return nil, nil end
+    return gameObject, otomo
+end
+
+local function palicoSuffix(key, field, countField, value, now)
+    local okCategory, category = pcall(function() return key.Category end)
+    if not okCategory or category ~= OTOMO_CATEGORY then return "" end
+    local gameObject, otomo = resolvePalico(key)
+    local entry = gameObject and ensureEntry(gameObject) or nil
+    if not entry then
+        bump("unresolved")
+        return " id=?"
+    end
+    refreshIdentity(entry, gameObject, otomo, now)
+    if type(value) == "number" then
+        entry[field] = entry[field] + value
+        entry[countField] = entry[countField] + 1
+    end
+    return " id=" .. entry.id .. " " .. entry.identityText
+end
+
+local function markInvocation()
+    local ok = pcall(function() thread.get_hook_storage().pp = true end)
+    return ok
+end
+
+local function takeInvocation()
+    local ok, storage = pcall(thread.get_hook_storage)
+    if not ok or type(storage) ~= "table" then return false end
+    local marked = storage.pp == true
+    storage.pp = nil
+    return marked
+end
+
 local function hostText()
     return readValue(function()
         return sdk.find_type_definition("app.OtomoUtil"):get_method("isMultiplayHost"):call(nil)
@@ -224,6 +290,54 @@ local function onHitMarkPre(args)
         .. " mine=" .. tostring(entry.identity.isMasterMyOtomo))
 end
 
+local function enterBracket(kind, args)
+    if not Log.isDeveloperMode() then return end
+    local this = managedArg(args, 2)
+    local bracket = { kind = kind, em = readValue(function() return this._This.UniqueIndex end), invoker = nil }
+    pcall(function() bracket.invoker = this._Invoker end)
+    if markInvocation() then brackets[#brackets + 1] = bracket end
+end
+
+local function leaveBracket()
+    if takeInvocation() then brackets[#brackets] = nil end
+end
+
+local function onSetParamPre(args)
+    if not Log.isDeveloperMode() then return end
+    local bracket = brackets[#brackets]
+    if not bracket or bracket.kind ~= "blast" then return end
+    local now = Game.uptime()
+    local okValue, value = pcall(sdk.to_float, args[3])
+    if not okValue then value = nil end
+    local okKey, key = pcall(sdk.to_valuetype, args[4], KEY_TYPE)
+    if not okKey then key = nil end
+    bump("blastLines")
+    trace("blast t=" .. timeText(now) .. " em=" .. bracket.em
+        .. " value=" .. (okValue and PalicoProbe.formatValue(value) or "?")
+        .. " key=" .. keyText(key) .. " master=" .. keyIsMaster(key)
+        .. palicoSuffix(key, "blast", "blastCount", value, now))
+end
+
+local function onExternalPre(args)
+    if not Log.isDeveloperMode() then return end
+    local bracket = brackets[#brackets]
+    if not bracket or bracket.kind ~= "poison" then return end
+    local now = Game.uptime()
+    local okValue, value = pcall(sdk.to_float, args[3])
+    if not okValue then value = nil end
+    local okNullable, nullable = pcall(sdk.to_valuetype, args[5], NULLABLE_KEY_TYPE)
+    if not okNullable then nullable = nil end
+    bump("poisonLines")
+    trace("poison t=" .. timeText(now) .. " em=" .. bracket.em
+        .. " value=" .. (okValue and PalicoProbe.formatValue(value) or "?")
+        .. " invoker=" .. keyText(bracket.invoker)
+        .. " hasKey=" .. readValue(function() return nullable._HasValue end)
+        .. " key=" .. readValue(function() return nullable._Value.Category end)
+        .. "/" .. readValue(function() return nullable._Value.UniqueIndex end)
+        .. " master=" .. keyIsMaster(bracket.invoker)
+        .. palicoSuffix(bracket.invoker, "poison", "poisonCount", value, now))
+end
+
 local function installFlowHooks()
     Game.hook("app.cQuestPlaying", "enter()", onQuestStart)
     Game.hook("app.cGUIQuestResultInfo", "execute()", nil, onResultPost)
@@ -236,11 +350,26 @@ local function installHitHooks()
         onHitMarkPre)
 end
 
-function PalicoProbe.install()
+local function installBlastHooks()
+    Game.hook("app.cEnemyBadConditionBlast", "onActivate", function(args) enterBracket("blast", args) end, leaveBracket)
+    Game.hook("app.cEnemyStockDamage.cBadConditionDamageInfo",
+        "setParam(System.Single, app.TARGET_ACCESS_KEY, System.Boolean)", onSetParamPre)
+end
+
+local function installPoisonHooks()
+    Game.hook("app.cEnemyBadConditionPoison", "onUpdateActive", function(args) enterBracket("poison", args) end, leaveBracket)
+    Game.hook("app.cEnemyStockDamage",
+        "stockExternalDamage(System.Single, System.Boolean, System.Nullable`1<app.TARGET_ACCESS_KEY>, System.Boolean, System.Boolean)",
+        onExternalPre)
+end
+
+function PalicoProbe.install(withPoison)
     if installed then return end
     installed = true
     installFlowHooks()
     installHitHooks()
+    installBlastHooks()
+    if withPoison then installPoisonHooks() end
 end
 
 return PalicoProbe
