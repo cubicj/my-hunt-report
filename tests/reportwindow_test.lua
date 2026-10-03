@@ -2125,4 +2125,62 @@ function T.drawAppliesTheHdrTargetForTheCurrentSettingOnlyWhileOpen()
     if not ok then error(err, 0) end
 end
 
+local function skillDamageLineWithPalico(skillDamage, palico, nameWidth)
+    local names = {}
+    withNavigation(function(ui)
+        Locale.resolve("en")
+        local shown = snapshot("clear")
+        shown.skillDamage = skillDamage
+        shown.palico = palico
+        local tracked = { ["Flayer"] = true, ["Blast"] = true, ["Palico"] = true }
+        local text = imgui.text
+        local sameLine = false
+        local drawn = {}
+        imgui.calc_text_size = function(value) return { x = tracked[value] and nameWidth or 40, y = 18 } end
+        imgui.same_line = function() sameLine = true end
+        imgui.text = function(value)
+            if tracked[value] then names[#names + 1] = { name = value, newLine = not sameLine, index = #drawn + 1 } end
+            drawn[#drawn + 1] = value
+            sameLine = false
+            text(value)
+        end
+        ReportWindow.show(shown)
+        ui.draw()
+        for _, entry in ipairs(names) do entry.value = drawn[entry.index + 1] end
+    end)
+    return names
+end
+
+function T.palicoShareIsTheLastItemOfTheSkillDamageLine()
+    local names = skillDamageLineWithPalico(
+        { { kind = "flayer", share = 0.02 }, { kind = "blast", share = 0.01 } },
+        { damage = 100, share = 0.046 }, 50)
+    assert(#names == 3, #names)
+    assert(names[1].name == "Flayer" and names[2].name == "Blast" and names[3].name == "Palico")
+    assert(names[3].value == "4.6%" and names[3].newLine == false, names[3].value)
+end
+
+function T.palicoShareIsDrawnAloneWhenThereIsNoSkillDamage()
+    local names = skillDamageLineWithPalico({}, { damage = 100, share = 0.046 }, 50)
+    assert(#names == 1 and names[1].name == "Palico" and names[1].value == "4.6%" and names[1].newLine == true)
+    names = skillDamageLineWithPalico(nil, { damage = 100, share = 0.046 }, 50)
+    assert(#names == 1 and names[1].name == "Palico")
+end
+
+function T.palicoShareIsOmittedWithoutPalicoDamage()
+    for _, palico in ipairs({ false, { damage = 0, share = 0 }, { damage = 5 }, { share = "x" } }) do
+        local names = skillDamageLineWithPalico({ { kind = "flayer", share = 0.02 } }, palico or nil, 50)
+        assert(#names == 1 and names[1].name == "Flayer")
+    end
+    assert(#skillDamageLineWithPalico({}, nil, 50) == 0)
+end
+
+function T.palicoShareWrapsAsAWholeItem()
+    local names = skillDamageLineWithPalico(
+        { { kind = "flayer", share = 0.02 }, { kind = "blast", share = 0.01 } },
+        { damage = 100, share = 0.046 }, 250)
+    assert(names[1].newLine == true and names[2].newLine == false and names[3].newLine == true)
+    assert(names[3].name == "Palico" and names[3].value == "4.6%")
+end
+
 return T

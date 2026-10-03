@@ -348,4 +348,13 @@ function T.avgAttackTextsResolve()
     assert(Locale.text("avg_attack") == "평균 공격력")
 end
 
+function T.palicoShareLabelExistsInBothLanguages()
+    local previous = Locale.current()
+    Locale.resolve("en")
+    assert(Locale.text("palico_share") == "Palico")
+    Locale.resolve("ko")
+    assert(Locale.text("palico_share") == "아이루")
+    Locale.resolve(previous)
+end
+
 return T

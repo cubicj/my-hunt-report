@@ -523,12 +523,18 @@ local function drawLegend(damage, ctx)
 end
 
 local function drawSkillDamage(snapshot, ctx)
-    local rows = snapshot.skillDamage
-    if type(rows) ~= "table" or #rows == 0 then return end
     local items, widths, measured = {}, {}, true
-    for index, row in ipairs(rows) do
-        local item = { name = ReportWindow.skillDamageName(row.kind), value = Format.percent(row.share) }
-        items[index] = item
+    if type(snapshot.skillDamage) == "table" then
+        for index, row in ipairs(snapshot.skillDamage) do
+            items[index] = { name = ReportWindow.skillDamageName(row.kind), value = Format.percent(row.share) }
+        end
+    end
+    local palico = snapshot.palico
+    if type(palico) == "table" and type(palico.share) == "number" and palico.share > 0 then
+        items[#items + 1] = { name = L("palico_share"), value = Format.percent(palico.share) }
+    end
+    if #items == 0 then return end
+    for index, item in ipairs(items) do
         local pushed = Fonts.push(ctx.fonts.body)
         local nameWidth = textWidth(item.name)
         Fonts.pop(pushed)
