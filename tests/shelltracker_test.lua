@@ -170,6 +170,89 @@ function T.shellLongSwordParentLabelPrecedesHelmbreakerFlag()
     end)
 end
 
+local function assertFocusStrikeEntry(tracker, object)
+    local key, label, hitTime = tracker.nameForAttackObject(object)
+    assert(stubs.encode({ key = key, label = label, hitTime = hitTime }) == stubs.encode({
+        key = "cWeakHitSlashDir",
+        label = { kind = "motion", className = "cWeakHitSlashDir", guideId = -1840683648, weaponType = 3 },
+    }))
+end
+
+function T.shellLongSwordFocusStrikeDelayedShellsIgnoreCurrentAction()
+    withShellTracker(function(tracker, hooks, hunter)
+        hunter.weaponType = 3
+        hunter.sub = fakeAction("cNothing", -1)
+        hunter.handling = { _IsWeakPointBreakDelayReserve = true }
+        for _, action in ipairs({
+            { "cSlash1", -1997082496 }, { "cWeakHitSlashDir", -1840683648 }, { "cIaiWpOff", -1559988736 }, { "cKijinSlash1", 100 },
+        }) do
+            hunter.base = fakeAction(action[1], action[2])
+            local object = shell(1689179270, nil, 1689179270)
+            hooks.doOnSetUp({ [2] = object })
+            assertFocusStrikeEntry(tracker, object)
+        end
+    end)
+end
+
+function T.shellLongSwordWithoutFocusStrikeFlagKeepsCurrentAction()
+    withShellTracker(function(tracker, hooks, hunter)
+        hunter.weaponType = 3
+        hunter.sub = fakeAction("cNothing", -1)
+        hunter.base = fakeAction("cSlash1", -1997082496)
+        for _, handling in ipairs({
+            { _IsWeakPointBreakDelayReserve = false },
+            {},
+            setmetatable({}, { __index = function() error("field unavailable") end }),
+        }) do
+            hunter.handling = handling
+            local object = shell(1689179270, nil, 1689179270)
+            hooks.doOnSetUp({ [2] = object })
+            local key, label = tracker.nameForAttackObject(object)
+            assert(key == "cSlash1" and label.guideId == -1997082496 and label.weaponType == 3)
+        end
+    end)
+end
+
+function T.shellLongSwordHelmbreakerFlagPrecedesFocusStrikeFlag()
+    withShellTracker(function(tracker, hooks, hunter)
+        hunter.weaponType = 3
+        hunter.sub = fakeAction("cNothing", -1)
+        hunter.base = fakeAction("cSlash1", -1997082496)
+        hunter.handling = { _IsKabutowariDelayHitSetup = true, _IsWeakPointBreakDelayReserve = true }
+        local object = shell(1689179270, nil, 1689179270)
+        hooks.doOnSetUp({ [2] = object })
+        assertHelmbreakerEntry(tracker, object)
+    end)
+end
+
+function T.shellLongSwordFocusStrikeFlagOnOtherWeaponsKeepsExistingRules()
+    withShellTracker(function(tracker, hooks, hunter)
+        hunter.weaponType = 7
+        hunter.sub = fakeAction("cNothing", -1)
+        hunter.handling = { _IsWeakPointBreakDelayReserve = true }
+        local object = shell(1689179270, nil, 1689179270)
+        hooks.doOnSetUp({ [2] = object })
+        local key, label = tracker.nameForAttackObject(object)
+        assert(key == "cActBase" and label.guideId == 100 and label.weaponType == 7)
+    end)
+end
+
+function T.shellLongSwordParentLabelPrecedesFocusStrikeFlag()
+    withShellTracker(function(tracker, hooks, hunter)
+        hunter.weaponType = 3
+        hunter.sub = fakeAction("cNothing", -1)
+        hunter.handling = { _IsWeakPointBreakDelayReserve = false }
+        hunter.base = fakeAction("cRenkiReleaseSlash", -1093563648)
+        local parent = shell(1)
+        hooks.doOnSetUp({ [2] = parent })
+        hunter.handling._IsWeakPointBreakDelayReserve = true
+        local child = shell(2, parent, 1689179270)
+        hooks.doOnSetUp({ [2] = child })
+        local key, label = tracker.nameForAttackObject(child)
+        assert(key == "cRenkiReleaseSlash" and label.guideId == -1093563648)
+    end)
+end
+
 function T.shellGlaiveMarkShotHashesOnOtherWeaponsKeepExistingRules()
     withShellTracker(function(tracker, hooks, hunter)
         hunter.weaponType = 7
