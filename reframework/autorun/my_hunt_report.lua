@@ -75,6 +75,7 @@ SettingsPanel.register({ quest = Quest })
 
 re.on_frame(function()
     ShellTracker.update()
+    WoundProbe.update()
     Pulse.tick()
     local event = Hotkey.update(function(code)
         local ok, down = pcall(reframework.is_key_down, reframework, code)

@@ -247,6 +247,52 @@ local function onScarPost()
         .. " state=" .. state .. " hp=" .. WoundProbe.formatValue((healthOf(fields.index))))
 end
 
+local function onHitMarkPre(args)
+    if not Log.isDeveloperMode() or next(watches) == nil then return end
+    local hitInfo = managedArg(args, 3)
+    if not hitInfo then return end
+    local okOwner, owner = pcall(function() return hitInfo:get_DamageOwner() end)
+    if not okOwner or owner == nil then return end
+    local em = Game.enemyContext(owner)
+    if not em then return end
+    local okIndex, index = pcall(function() return em:get_UniqueIndex() end)
+    if not okIndex or index == nil then return end
+    local watch = watches[index]
+    if watch == nil then return end
+    local now = Game.uptime()
+    if now - watch.startedAt >= WoundProbe.WATCH_SECONDS then return end
+    bump("hitsInWindow")
+    local calc = managedArg(args, 2)
+    trace("hit t=" .. timeText(now) .. " em=" .. tostring(index)
+        .. " final=" .. readValue(function() return calc.FinalDamage end)
+        .. " hp=" .. WoundProbe.formatValue((healthOf(index))))
+end
+
+function WoundProbe.update()
+    if not Log.isDeveloperMode() then
+        watches = {}
+        return
+    end
+    if next(watches) == nil then return end
+    local now = Game.uptime()
+    for index, watch in pairs(watches) do
+        local health = healthOf(index)
+        if health ~= nil and watch.lastHealth ~= nil and health ~= watch.lastHealth then
+            bump("hpChanges")
+            trace(string.format("hp t=%s em=%s after=%s dt=%.3f hp=%s delta=%s",
+                timeText(now), tostring(index), watch.label, now - watch.startedAt,
+                WoundProbe.formatValue(health), WoundProbe.formatValue(watch.lastHealth - health)))
+        end
+        if health ~= nil then watch.lastHealth = health end
+        if now - watch.startedAt >= WoundProbe.WATCH_SECONDS then
+            local drop = nil
+            if watch.openHealth ~= nil and health ~= nil then drop = watch.openHealth - health end
+            trace("watch-end em=" .. tostring(index) .. " after=" .. watch.label .. " drop=" .. WoundProbe.formatValue(drop))
+            watches[index] = nil
+        end
+    end
+end
+
 local function installFlowHooks()
     Game.hook("app.cQuestPlaying", "enter()", onQuestStart)
     Game.hook("app.cGUIQuestResultInfo", "execute()", nil, onResultPost)
@@ -260,6 +306,9 @@ local function installDamageHooks()
     Game.hook("app.cEnemyStockDamage",
         "stockExternalDamageScar(System.Int32, System.Single, System.Boolean, System.Boolean, System.Nullable`1<app.TARGET_ACCESS_KEY>, System.Boolean)",
         onScarPre, onScarPost)
+    Game.hook("app.cEnemyStockDamage.mcEnemyHitMarkManager",
+        "playHitMarkEffect(app.cEnemyStockDamage.cCalcDamage, app.HitInfo)",
+        onHitMarkPre)
 end
 
 function WoundProbe.install()
