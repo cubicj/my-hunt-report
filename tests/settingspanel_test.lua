@@ -200,7 +200,7 @@ function T.settingsPanelClearButtonPrecedesSkillProcAndDeveloperMode()
             local _, font = ui.find("Font size (px)")
             local _, language = ui.find("Language")
             local button, clear = ui.find("Delete all history")
-            local skillProc, skill = ui.find("Record Flayer, Element Convert, and wound-break damage")
+            local skillProc, skill = ui.find("Record Flayer, Element Convert, wound-break, and poison damage")
             local crashHint, crash = ui.find("If the game crashes, try turning this off (turning it off needs a game restart)")
             local _, developer = ui.find("Developer Mode")
             assert(button.kind == "button" and skillProc.kind == "checkbox")
@@ -238,7 +238,7 @@ function T.settingsPanelSkillProcHintShowsOnlyWhileDisabledButInstalled()
             Settings.set("skillProcCapture", false)
             ui.draw()
             local hint, hintIndex = ui.find("Takes effect after a game restart")
-            local _, skill = ui.find("Record Flayer, Element Convert, and wound-break damage")
+            local _, skill = ui.find("Record Flayer, Element Convert, wound-break, and poison damage")
             local _, crash = ui.find("If the game crashes, try turning this off (turning it off needs a game restart)")
             local _, developer = ui.find("Developer Mode")
             assert(hint and hint.kind == "text" and hint.colors[0] == Theme.colors.textMuted)
@@ -262,7 +262,7 @@ function T.settingsPanelSkillProcEnableInstallsHooksImmediately()
             assert(state.installs == 0)
             local checkbox = imgui.checkbox
             imgui.checkbox = function(label, value)
-                if label == "Record Flayer, Element Convert, and wound-break damage" then return true, true end
+                if label == "Record Flayer, Element Convert, wound-break, and poison damage" then return true, true end
                 return checkbox(label, value)
             end
             ui.draw()
@@ -282,7 +282,7 @@ function T.settingsPanelSkillProcDisableIsSavedAndShowsHint()
         withSkillProcStubs(function(state)
             local checkbox = imgui.checkbox
             imgui.checkbox = function(label, value)
-                if label == "Record Flayer, Element Convert, and wound-break damage" then return true, false end
+                if label == "Record Flayer, Element Convert, wound-break, and poison damage" then return true, false end
                 return checkbox(label, value)
             end
             ui.draw()

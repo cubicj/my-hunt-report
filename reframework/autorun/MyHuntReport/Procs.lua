@@ -12,7 +12,6 @@ local PACKET_TTL_SECONDS = 1.0
 local brackets = {}
 local installed = false
 local skillProcsInstalled = false
-local extendedInstalled = false
 local packetDamage = {}
 
 function Procs.reset()
@@ -224,15 +223,6 @@ function Procs.installSkillProcs()
     Game.hook("app.cEnemyBadConditionSkillRyuki",
         "receiveActivatePacket(app.net_packet.cEmSkillActivateRyuki)",
         onActivatePacket("elementConvert"))
-end
-
-function Procs.skillProcsInstalled()
-    return skillProcsInstalled
-end
-
-function Procs.installExtended()
-    if extendedInstalled then return end
-    extendedInstalled = true
     Game.hook("app.cEnemyBadConditionPoison", "onUpdateActive", function(args)
         enterBracket("poison", args)
     end, leaveBracket)
@@ -242,6 +232,10 @@ function Procs.installExtended()
     Game.hook("app.cHunterSkill", "getSkillRyukiAddDamage(app.cEnemyContextHolder, System.Single, System.Single)", function(args)
         onGetter("elementConvert", args)
     end)
+end
+
+function Procs.skillProcsInstalled()
+    return skillProcsInstalled
 end
 
 return Procs
