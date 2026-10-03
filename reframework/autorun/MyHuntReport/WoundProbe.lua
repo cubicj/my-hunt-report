@@ -249,7 +249,7 @@ end
 
 local function onHitMarkPre(args)
     if not Log.isDeveloperMode() or next(watches) == nil then return end
-    local hitInfo = managedArg(args, 3)
+    local hitInfo = managedArg(args, 4)
     if not hitInfo then return end
     local okOwner, owner = pcall(function() return hitInfo:get_DamageOwner() end)
     if not okOwner or owner == nil then return end
@@ -261,7 +261,7 @@ local function onHitMarkPre(args)
     if watch == nil then return end
     local now = Game.uptime()
     bump("hitsInWindow")
-    local calc = managedArg(args, 2)
+    local calc = managedArg(args, 3)
     trace("hit t=" .. timeText(now) .. " em=" .. tostring(index)
         .. " final=" .. readValue(function() return calc.FinalDamage end)
         .. " hp=" .. WoundProbe.formatValue((healthOf(index))))

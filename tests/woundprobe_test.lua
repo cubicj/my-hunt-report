@@ -444,11 +444,11 @@ function T.hitInsideWindowLogsFinalAndHp()
         openExternal(c, target, 142.5, 10.0)
         c.now = 10.1
         target.state.health = 950.0
-        c.hooks[HOOKS.hitMark].pre({ [2] = { FinalDamage = 50.0 }, [3] = { get_DamageOwner = function() return target.owner end } })
+        c.hooks[HOOKS.hitMark].pre({ [3] = { FinalDamage = 50.0 }, [4] = { get_DamageOwner = function() return target.owner end } })
         assert(wbLines()[3] == "[MyHuntReport] wb hit t=10.10 em=7 final=50.0 hp=950.0", wbLines()[3])
-        c.hooks[HOOKS.hitMark].pre({ [2] = raising(), [3] = { get_DamageOwner = function() return other.owner end } })
+        c.hooks[HOOKS.hitMark].pre({ [3] = raising(), [4] = { get_DamageOwner = function() return other.owner end } })
         assert(#wbLines() == 3, #wbLines())
-        c.hooks[HOOKS.hitMark].pre({ [2] = raising(), [3] = { get_DamageOwner = function() return target.owner end } })
+        c.hooks[HOOKS.hitMark].pre({ [3] = raising(), [4] = { get_DamageOwner = function() return target.owner end } })
         assert(wbLines()[4] == "[MyHuntReport] wb hit t=10.10 em=7 final=? hp=950.0", wbLines()[4])
         assert(c.probe.counters().hitsInWindow == 2)
     end)
@@ -467,7 +467,7 @@ function T.hitAfterDeadlineBeforeNextUpdateIsStillCounted()
         openExternal(c, target, 142.5, 10.0)
         target.state.health = 900.0
         c.now = 11.05
-        c.hooks[HOOKS.hitMark].pre({ [2] = { FinalDamage = 100.0 }, [3] = { get_DamageOwner = function() return target.owner end } })
+        c.hooks[HOOKS.hitMark].pre({ [3] = { FinalDamage = 100.0 }, [4] = { get_DamageOwner = function() return target.owner end } })
         assert(wbLines()[3] == "[MyHuntReport] wb hit t=11.05 em=7 final=100.0 hp=900.0", wbLines()[3])
         assert(c.probe.counters().hitsInWindow == 1)
         c.probe.update()
