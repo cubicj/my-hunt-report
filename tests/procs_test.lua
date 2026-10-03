@@ -849,7 +849,9 @@ function T.rejectedPalicoDamageDoesNotConsumeTheBracketOrLog()
         c.setParam(0 / 0, c.ownPalico)
         c.leave("blast")
         assert(#c.palicoRecorded == 2)
-        assert(Log.count("palico:blast") == 1 and Log.count("palico:poison") == 1)
+        local seen = table.concat(stubs.logLines, "\n")
+        assert(select(2, seen:gsub("%] palico blast value=", "")) == 1, seen)
+        assert(select(2, seen:gsub("%] palico poison value=", "")) == 1, seen)
     end)
 end
 
@@ -889,16 +891,30 @@ function T.palicoProcDiagnosticsAreGatedAndKeyed()
         c.leave("blast")
         assert(#stubs.logLines == 0)
         Log.setDeveloperMode(true)
-        c.enter("blast", c.ownPalico)
-        c.setParam(100, c.ownPalico)
-        c.leave("blast")
-        c.enter("poison", c.ownPalico)
-        c.external(15)
-        c.leave("poison")
-        assert(Log.count("palico:blast") == 1 and Log.count("palico:poison") == 1)
+        local palicoTotals = Session.palicoTotals
+        local totals = { blast = 0, poison = 0 }
+        Session.palicoTotals = function()
+            totals.blast, totals.poison = 0, 0
+            for _, entry in ipairs(c.palicoRecorded) do totals[entry.kind] = totals[entry.kind] + entry.damage end
+            return totals
+        end
+        local ok, err = pcall(function()
+            c.enter("blast", c.ownPalico)
+            c.setParam(100, c.ownPalico)
+            c.leave("blast")
+            for _ = 1, 7 do
+                c.enter("poison", c.ownPalico)
+                c.external(15)
+                c.leave("poison")
+            end
+        end)
+        Session.palicoTotals = palicoTotals
+        assert(ok, err)
         local seen = table.concat(stubs.logLines, "\n")
-        assert(seen:find("[MyHuntReport] palico blast value=100", 1, true))
-        assert(seen:find("[MyHuntReport] palico poison value=15", 1, true))
+        assert(seen:find("[MyHuntReport] palico blast value=100.0 total=200.0", 1, true), seen)
+        assert(seen:find("[MyHuntReport] palico poison value=15.0 total=15.0", 1, true), seen)
+        assert(seen:find("[MyHuntReport] palico poison value=15.0 total=105.0", 1, true), seen)
+        assert(select(2, seen:gsub("%] palico poison value=", "")) == 7, seen)
     end)
 end
 

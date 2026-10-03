@@ -142,9 +142,9 @@ local function leaveBracket()
     local bracket = brackets[#brackets]
     brackets[#brackets] = nil
     if not bracket or bracket.recorded or bracket.palicoDamage == nil then return end
-    if Session.addPalicoProc(bracket.kind, bracket.palicoDamage) then
-        Log.debug("palico " .. bracket.kind .. " value=" .. tostring(bracket.palicoDamage), "palico:" .. bracket.kind)
-    end
+    if not Session.addPalicoProc(bracket.kind, bracket.palicoDamage) or not Log.isDeveloperMode() then return end
+    Log.trace(string.format("palico %s value=%.1f total=%.1f",
+        bracket.kind, bracket.palicoDamage, Session.palicoTotals()[bracket.kind]))
 end
 
 local function onWoundBreakDamage(args)
