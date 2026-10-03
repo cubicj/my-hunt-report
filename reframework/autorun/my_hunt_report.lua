@@ -26,6 +26,7 @@ local Quest = tryRequire("MyHuntReport.Quest")
 local SkillState = tryRequire("MyHuntReport.SkillState")
 local Session = tryRequire("MyHuntReport.Session")
 local Names = tryRequire("MyHuntReport.Names")
+local PalicoProbe = tryRequire("MyHuntReport.PalicoProbe")
 
 if #loadErrors > 0 then
     for _, err in ipairs(loadErrors) do
@@ -61,6 +62,7 @@ if Settings.get().skillProcCapture then Procs.installSkillProcs() end
 SkillExtras.install()
 HealTracker.install()
 Quest.install()
+PalicoProbe.install(Settings.get().skillProcCapture)
 SkillState.install()
 Quest.adoptCurrentState(Game.uptime())
 ReportWindow.setRelabeler(function(snapshot)
