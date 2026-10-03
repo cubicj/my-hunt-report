@@ -270,6 +270,31 @@ function ReportWindow.statTiles(snapshot)
     return tiles
 end
 
+function ReportWindow.tileLayout(widths, totalWidth, minGap)
+    local layout = {}
+    local row, rowWidth, rowCount = 1, 0, 0
+    local gaps = {}
+    for index, width in ipairs(widths) do
+        if rowCount > 0 and rowWidth + width + minGap * (rowCount + 1) > totalWidth then
+            gaps[row] = math.max(0, math.floor((totalWidth - rowWidth) / rowCount))
+            row = row + 1
+            rowWidth, rowCount = 0, 0
+        end
+        layout[index] = { row = row, x = rowWidth }
+        rowWidth, rowCount = rowWidth + width, rowCount + 1
+    end
+    if #layout == 0 then return layout end
+    gaps[row] = math.max(0, math.floor((totalWidth - rowWidth) / rowCount))
+    local offset, previousRow = 0, 1
+    for _, position in ipairs(layout) do
+        if position.row ~= previousRow then offset = 0 end
+        position.x = math.floor(position.x + offset)
+        offset = offset + math.min(gaps[1], gaps[position.row])
+        previousRow = position.row
+    end
+    return layout
+end
+
 local function resultLabel(result)
     if result == "training" then return L("result_training"), Theme.colors.accent end
     return L("result_quest"), Theme.colors.accent
@@ -395,16 +420,43 @@ end
 local function drawStats(snapshot, ctx)
     verticalGap(Theme.metrics.sectionGap)
     local tiles = ReportWindow.statTiles(snapshot)
-    local tileWidth = math.floor(ctx.width / #tiles)
-    local origin = imgui.get_cursor_pos()
+    local widths, measured = {}, true
     for index, tile in ipairs(tiles) do
-        imgui.set_cursor_pos(Vector2f.new(origin.x + tileWidth * (index - 1), origin.y))
-        textIn(ctx.fonts.small, tile.label, Theme.colors.textMuted)
+        local pushed = Fonts.push(ctx.fonts.small)
+        local labelWidth = textWidth(tile.label)
+        Fonts.pop(pushed)
+        pushed = Fonts.push(ctx.fonts.header)
+        local valueWidth = textWidth(tile.value)
+        Fonts.pop(pushed)
+        if labelWidth and valueWidth then
+            widths[index] = math.ceil(math.max(labelWidth, valueWidth))
+        else
+            measured = false
+        end
     end
-    local valueY = imgui.get_cursor_pos().y
-    for index, tile in ipairs(tiles) do
-        imgui.set_cursor_pos(Vector2f.new(origin.x + tileWidth * (index - 1), valueY))
-        textIn(ctx.fonts.header, tile.value)
+    local minGap = math.floor(Theme.metrics.tileGap * ctx.scale)
+    if not measured then
+        for index = 1, #tiles do widths[index] = math.floor(ctx.width / #tiles) end
+        minGap = 0
+    end
+    local layout = ReportWindow.tileLayout(widths, ctx.width, minGap)
+    local origin = imgui.get_cursor_pos()
+    local first = 1
+    while first <= #tiles do
+        if first > 1 then verticalGap(Theme.metrics.sectionGap) end
+        local labelY = imgui.get_cursor_pos().y
+        local last = first
+        while last < #tiles and layout[last + 1].row == layout[first].row do last = last + 1 end
+        for index = first, last do
+            imgui.set_cursor_pos(Vector2f.new(origin.x + layout[index].x, labelY))
+            textIn(ctx.fonts.small, tiles[index].label, Theme.colors.textMuted)
+        end
+        local valueY = imgui.get_cursor_pos().y
+        for index = first, last do
+            imgui.set_cursor_pos(Vector2f.new(origin.x + layout[index].x, valueY))
+            textIn(ctx.fonts.header, tiles[index].value)
+        end
+        first = last + 1
     end
 end
 

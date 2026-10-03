@@ -239,7 +239,7 @@ function T.historyRowsDrawFourColumnsOverATransparentButton()
             if afterRow and event.kind == "text" then texts[#texts + 1] = event.value end
         end
         assert(table.concat(texts, "|") == "2026-09-23 21:36|★5|조충곤|아자라칸", table.concat(texts, "|"))
-        local columns = ReportWindow.historyColumns(680, 1, false)
+        local columns = ReportWindow.historyColumns(720, 1, false)
         local xs = {}
         for _, pos in ipairs(ui.positions) do xs[pos.x or pos[1]] = true end
         assert(xs[18 + columns.time.x] and xs[18 + columns.stars.x] and xs[18 + columns.weapons.x] and xs[18 + columns.monsters.x])
@@ -347,8 +347,8 @@ function T.topBarPositionsButtonsAndTitlesInSeparateRows()
             if view == "selected" then ui.draw("##history1") end
             ui.draw()
             local expected = (view == "history" or view == "selected")
-                and { ["<##back"] = 24, ["X##close"] = 676 }
-                or { ["기록"] = 596, ["X##close"] = 676 }
+                and { ["<##back"] = 24, ["X##close"] = 716 }
+                or { ["기록"] = 636, ["X##close"] = 716 }
             local title = view == "history" and Locale.text("history_title")
                 or view == "empty" and Locale.text("report_title") or "태도"
             local buttons, titles = 0, 0
@@ -640,7 +640,7 @@ local function checkRowStripes(fontSize, scrolls, fallback, count)
             local getScreen, setScreen = imgui.get_cursor_screen_pos, imgui.set_cursor_screen_pos
             local text, sameLine, button = imgui.text, imgui.same_line, imgui.button
             local stride = fontSize + 9
-            local width = math.floor((math.floor(680 * fontSize / 18) - 32) / 2) - (scrolls and 14 or 0)
+            local width = math.floor((math.floor(720 * fontSize / 18) - 32) / 2) - (scrolls and 14 or 0)
             imgui.begin_child_window = function(name, size)
                 child = { name = name, x = name == "skill##rows" and 100 or 500, y = 200, texts = 0, stripes = {} }
                 children[#children + 1] = child
@@ -785,7 +785,7 @@ function T.historyRowsUseTransparentHoverStyle()
             assert(colors[22] == Theme.colors.accentDim and colors[23] == Theme.colors.accentDim)
             assert(vars[13] == 0 and vars[12] == 4)
             assert(vars[14].x == 0 and vars[14].y == 0)
-            assert(size[1] == 680 and size[2] == 36)
+            assert(size[1] == 720 and size[2] == 36)
             checked = true
         end
         ReportWindow.showHistory()
@@ -976,7 +976,7 @@ function T.sectionRulesMeasureWithSmallFontAndSpanTheRemainingWidth()
                 if call.name == "add_line" and call[3] == require("MyHuntReport.Theme").colors.rule then lines[#lines + 1] = call end
             end
             assert(#lines == 3)
-            for index, width in ipairs({ 680, 324, 324 }) do
+            for index, width in ipairs({ 720, 344, 344 }) do
                 local ruleWidth = width - 40 - 12
                 assert(reservations[index].pos.x == 18 + 40 + 12)
                 assert(reservations[index].size[1] == ruleWidth and reservations[index].size[2] == 18)
@@ -1659,8 +1659,8 @@ function T.fontSizeFlowsToReportFontsAndLayout()
             ui.draw()
             assert(ReportWindow.isOpen())
             assert(requested.header == 24 and requested.body == 24 and requested.meta == 24 and requested.small == 24)
-            assert(children["skill##rows"][1] == 437)
-            assert(children["motion##rows"][1] == 437)
+            assert(children["skill##rows"][1] == 464)
+            assert(children["motion##rows"][1] == 464)
             assert(children["skill##rows"][2] == 37)
             assert(children["motion##rows"][2] == 37)
         end)
@@ -1729,6 +1729,114 @@ function T.elementTilesUseListOrderAndSuppressLegacyTileWhenListExists()
     stats.attributeHitzones = nil
     tiles = ReportWindow.statTiles({ stats = stats })
     assert(#tiles == 6 and tiles[6].label == "Fire hitzone" and tiles[6].value == "99.0")
+end
+
+function T.tileLayoutMatchesContentWidthCases()
+    local cases = {
+        { { 100, 100, 100 }, 600, 20, { { 1, 0 }, { 1, 200 }, { 1, 400 } } },
+        { { 200, 200, 200, 200 }, 600, 20, { { 1, 0 }, { 1, 300 }, { 2, 0 }, { 2, 300 } } },
+        { { 700 }, 600, 20, { { 1, 0 } } },
+        { { 170, 170, 170, 170 }, 680, 0, { { 1, 0 }, { 1, 170 }, { 1, 340 }, { 1, 510 } } },
+        { {}, 600, 20, {} },
+        { { 100, 100, 550, 100 }, 720, 16, { { 1, 0 }, { 1, 360 }, { 2, 0 }, { 2, 585 } } },
+        { { 300, 300, 100, 100, 100 }, 720, 16, { { 1, 0 }, { 1, 360 }, { 2, 0 }, { 2, 160 }, { 2, 320 } } },
+    }
+    for index, case in ipairs(cases) do
+        local layout = ReportWindow.tileLayout(case[1], case[2], case[3])
+        assert(#layout == #case[4], "case " .. index)
+        local rowCounts = {}
+        for _, position in ipairs(layout) do
+            rowCounts[position.row] = (rowCounts[position.row] or 0) + 1
+        end
+        for tile, expected in ipairs(case[4]) do
+            assert(layout[tile].row == expected[1] and layout[tile].x == expected[2], "case " .. index .. " tile " .. tile)
+            assert(math.type(layout[tile].x) == "integer")
+            assert(rowCounts[layout[tile].row] == 1 or layout[tile].x + case[1][tile] <= case[2],
+                "case " .. index .. " tile " .. tile .. " exceeds row width")
+        end
+    end
+end
+
+local function checkStatTileDrawing(failMeasurement)
+    local Fonts = require("MyHuntReport.Fonts")
+    local small, header = Fonts.small, Fonts.header
+    local ok, err = pcall(function()
+        Fonts.small = function() return { handle = "tile-small", size = 18 } end
+        Fonts.header = function() return { handle = "tile-header", size = 26 } end
+        withNavigation(function(ui)
+            Locale.resolve("en")
+            local shown = snapshot("clear")
+            shown.stats = { combatDps = 101.1, critRate = 0.123, negativeCritRate = 0.045,
+                avgAttack = 333.3, avgHitzone = 55.5, attributeHitzones = {
+                    { attribute = 3, avgHitzone = 22.26, hits = 3 },
+                    { attribute = 1, avgHitzone = 15.75, hits = 2 },
+                } }
+            local tiles = ReportWindow.statTiles(shown)
+            local widths, expectedFonts, measured, drawn, stack = {}, {}, {}, {}, {}
+            for _, tile in ipairs(tiles) do
+                widths[tile.label] = 95.2
+                widths[tile.value] = tile.value == "333.3" and 110.2 or 80.4
+                expectedFonts[tile.label], expectedFonts[tile.value] = "tile-small", "tile-header"
+            end
+            local cursor = { x = 18, y = 20 }
+            local text, setCursor = imgui.text, imgui.set_cursor_pos
+            imgui.push_font = function(font) stack[#stack + 1] = font end
+            imgui.pop_font = function() assert(table.remove(stack)) end
+            imgui.get_cursor_pos = function() return { x = cursor.x, y = cursor.y } end
+            imgui.set_cursor_pos = function(pos)
+                cursor = { x = pos.x or pos[1], y = pos.y or pos[2] }
+                setCursor(pos)
+            end
+            imgui.calc_text_size = function(value)
+                if expectedFonts[value] then measured[value] = stack[#stack] end
+                if failMeasurement and value == "333.3" then return nil end
+                return { x = widths[value] or 0, y = 18 }
+            end
+            imgui.text = function(value)
+                drawn[value] = { x = cursor.x, y = cursor.y }
+                text(value)
+                cursor = { x = 18, y = cursor.y + (stack[#stack] == "tile-header" and 26 or 18) + 10 }
+            end
+            ReportWindow.show(shown)
+            ui.draw()
+            assert(ReportWindow.isOpen() and #stack == 0)
+            local first = assert(drawn[tiles[1].label])
+            if failMeasurement then
+                for index, tile in ipairs(tiles) do
+                    local label, value = drawn[tile.label], drawn[tile.value]
+                    assert(label.x == first.x + (index - 1) * math.floor(720 / #tiles) and label.y == first.y)
+                    assert(value.x == label.x and value.y == first.y + 28)
+                end
+            else
+                assert(drawn[tiles[#tiles].label].y > first.y, "last tile must wrap to a second row")
+                for index, tile in ipairs(tiles) do
+                    assert(measured[tile.label] == "tile-small" and measured[tile.value] == "tile-header", "wrong measurement font")
+                    local label, value = drawn[tile.label], drawn[tile.value]
+                    assert(value.x == label.x and value.y == label.y + 28)
+                    if index < #tiles then assert(label.y == first.y) end
+                    if index > 1 then
+                        local previous = tiles[index - 1]
+                        local previousLabel = drawn[previous.label]
+                        if label.y == previousLabel.y then
+                            assert(label.x >= previousLabel.x + math.ceil(math.max(widths[previous.label], widths[previous.value])))
+                        else
+                            assert(label.x == first.x and label.y == drawn[previous.value].y + 36 + 16)
+                        end
+                    end
+                end
+            end
+        end)
+    end)
+    Fonts.small, Fonts.header = small, header
+    if not ok then error(err, 0) end
+end
+
+function T.reportWrapsStatTilesWithoutOverlap()
+    checkStatTileDrawing(false)
+end
+
+function T.reportFallsBackToEqualStatColumnsWhenMeasurementFails()
+    checkStatTileDrawing(true)
 end
 
 function T.reportDrawsTwoElementTilesInSnapshotOrder()
