@@ -88,6 +88,21 @@ function T.applySkipsTheRewriteWhenTheValueIsUnchanged()
     if not ok then error(err, 0) end
 end
 
+function T.applyRetriesAfterAFailedConversion()
+    local Hdr = require("MyHuntReport.Hdr")
+    local convert = Hdr.convert
+    local ok, err = pcall(function()
+        Hdr.convert = function() error("boom") end
+        assert(not pcall(Theme.apply, 455))
+        Hdr.convert = convert
+        assert(Theme.apply(455) == true)
+        assert(Theme.colors.text == convert("#ECE4D6", 1, 455))
+    end)
+    Hdr.convert = convert
+    Theme.apply(nil)
+    if not ok then error(err, 0) end
+end
+
 local function withStyleRecorder(callback)
     local original = imgui
     local colors, vars = {}, {}

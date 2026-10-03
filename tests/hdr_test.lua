@@ -78,6 +78,18 @@ function T.referenceWhiteReturnsTheEngineValueOrTheFallback()
     end)
 end
 
+function T.referenceWhiteRejectsValuesOutsideThePqRange()
+    assert(Hdr.MAX_NITS == 10000)
+    withReadings({ ["get_WhitePaperNitsForOverlay()"] = 10000 }, function()
+        assert(Hdr.referenceWhite() == 10000)
+    end)
+    for _, bad in ipairs({ 10000.5, 20000, math.huge, -math.huge }) do
+        withReadings({ ["get_WhitePaperNitsForOverlay()"] = bad }, function()
+            assert(Hdr.referenceWhite() == 200, tostring(bad))
+        end)
+    end
+end
+
 function T.targetNitsFollowsTheSettingAndTheHdrState()
     local on = { ["get_HDRMode()"] = true, ["get_WhitePaperNitsForOverlay()"] = 455.0 }
     local off = { ["get_HDRMode()"] = false, ["get_WhitePaperNitsForOverlay()"] = 455.0 }

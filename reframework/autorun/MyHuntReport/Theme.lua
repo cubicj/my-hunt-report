@@ -48,8 +48,8 @@ fill(nil)
 
 function Theme.apply(nits)
     if nits == appliedNits then return false end
-    appliedNits = nits
     fill(nits)
+    appliedNits = nits
     return true
 end
 

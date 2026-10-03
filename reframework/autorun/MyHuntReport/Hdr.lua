@@ -3,6 +3,7 @@ local Game = require("MyHuntReport.Game")
 local Hdr = {}
 
 Hdr.FALLBACK_NITS = 200
+Hdr.MAX_NITS = 10000
 
 local DISPLAY = "via.render.DisplaySettings"
 
@@ -32,7 +33,7 @@ end
 
 function Hdr.referenceWhite()
     local nits = Game.callStatic(DISPLAY, "get_WhitePaperNitsForOverlay()")
-    if type(nits) == "number" and nits > 0 then return nits end
+    if type(nits) == "number" and nits > 0 and nits <= Hdr.MAX_NITS then return nits end
     return Hdr.FALLBACK_NITS
 end
 
