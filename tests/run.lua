@@ -22,6 +22,7 @@ local SUITES = {
     "procs_test",
     "shelltracker_test",
     "hitcapture_test",
+    "palico_test",
     "attacklog_test",
     "palicoprobe_test",
     "quest_test",
