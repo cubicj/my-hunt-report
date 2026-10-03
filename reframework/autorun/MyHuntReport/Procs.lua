@@ -5,6 +5,7 @@ local Session = require("MyHuntReport.Session")
 local Procs = {}
 
 local KEY_TYPE = "app.TARGET_ACCESS_KEY"
+local NULLABLE_KEY_TYPE = "System.Nullable`1<app.TARGET_ACCESS_KEY>"
 local HUNTER_CATEGORIES = { [0] = true, [5] = true }
 local PACKET_TTL_SECONDS = 1.0
 
@@ -131,13 +132,27 @@ local function leaveBracket()
     brackets[#brackets] = nil
 end
 
+local function onWoundBreakDamage(args)
+    local okKey, hasValue, key = pcall(function()
+        local nullable = sdk.to_valuetype(args[5], NULLABLE_KEY_TYPE)
+        return nullable._HasValue, nullable._Value
+    end)
+    if not okKey or hasValue ~= true or key == nil then return end
+    local okValue, value = pcall(sdk.to_float, args[3])
+    if not okValue or type(value) ~= "number" or value <= 0 then return end
+    local isMaster = Procs.attackerIsMaster(key)
+    Log.debug("proc woundBreak external value=" .. tostring(value) .. " master=" .. tostring(isMaster), "proc:woundBreak:external")
+    if not isMaster then return end
+    Session.addProc({ kind = "woundBreak", damage = value, time = Game.uptime() })
+end
+
 local function onExternalDamage(args)
     local bracket = brackets[#brackets]
-    if not bracket then return end
+    if not bracket then return onWoundBreakDamage(args) end
     local ok, value = pcall(sdk.to_float, args[3])
     if Log.isDeveloperMode() then
         local hasValue = diagnosticValue(function()
-            local key = sdk.to_valuetype(args[5], "System.Nullable`1<app.TARGET_ACCESS_KEY>")
+            local key = sdk.to_valuetype(args[5], NULLABLE_KEY_TYPE)
             return key._HasValue
         end)
         Log.debug("proc " .. bracket.kind .. " external value=" .. (ok and tostring(value) or "?")

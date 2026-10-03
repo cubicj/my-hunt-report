@@ -130,10 +130,44 @@ function T.externalDamageRejectsOtherInvokerDespiteMasterNullableKey()
     end)
 end
 
-function T.externalDamageOutsideBracketIsIgnored()
+function T.masterKeyedExternalDamageOutsideBracketRecordsWoundBreak()
     withProcs(function(c)
-        c.external(30, { _HasValue = true, _Value = c.master })
-        assert(#c.recorded == 0)
+        c.external(114, { _HasValue = true, _Value = c.master })
+        c.external(190, { _HasValue = true, _Value = c.master })
+        assert(#c.recorded == 2, #c.recorded)
+        assert(stubs.encode(c.recorded[1]) == stubs.encode({ kind = "woundBreak", damage = 114, time = 12.5 }), stubs.encode(c.recorded[1]))
+        assert(c.recorded[2].kind == "woundBreak" and c.recorded[2].damage == 190)
+        assert(#stubs.logLines == 0, stubs.encode(stubs.logLines))
+    end)
+end
+
+function T.externalDamageOutsideBracketWithoutMasterKeyIsIgnored()
+    withProcs(function(c)
+        c.external(30, { _HasValue = false, _Value = { Category = 0, UniqueIndex = 0 } })
+        c.external(30, { _HasValue = true, _Value = c.other })
+        c.external(30, { _HasValue = true, _Value = { Category = 2, UniqueIndex = 0 } })
+        c.external(0, { _HasValue = true, _Value = c.master })
+        c.external(-5, { _HasValue = true, _Value = c.master })
+        c.external(30, nil)
+        c.external(30, setmetatable({}, { __index = function() error("unreadable") end }))
+        c.external(setmetatable({}, { __index = function() error("unreadable") end }), { _HasValue = true, _Value = c.master })
+        assert(#c.recorded == 0, stubs.encode(c.recorded))
+    end)
+end
+
+function T.woundBreakDebugLineOnlyInDeveloperMode()
+    withProcs(function(c)
+        Log.setDeveloperMode(true)
+        c.external(114, { _HasValue = true, _Value = c.master })
+        c.external(30, { _HasValue = true, _Value = c.other })
+        local lines = {}
+        for _, line in ipairs(stubs.logLines) do
+            if line:find("proc woundBreak external", 1, true) then lines[#lines + 1] = line end
+        end
+        assert(#lines == 2, stubs.encode(stubs.logLines))
+        assert(lines[1]:find("proc woundBreak external value=114 master=true", 1, true), lines[1])
+        assert(lines[2]:find("proc woundBreak external value=30 master=false", 1, true), lines[2])
+        assert(#c.recorded == 1)
     end)
 end
 

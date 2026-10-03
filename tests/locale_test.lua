@@ -298,4 +298,14 @@ function T.pendingAutoRestoresTheEffectiveUiLanguageAfterAForcedInterval()
     assert(Locale.textKey() == "auto:11" and Locale.current() == "en")
 end
 
+function T.woundBreakTextsResolve()
+    Locale.init({ gameLanguage = function() return "en" end })
+    assert(Locale.resolve("en") == "en")
+    assert(Locale.text("proc_woundBreak") == "Wound break")
+    assert(Locale.text("settings_skill_proc_capture") == "Record Flayer, Element Convert, and wound-break damage")
+    assert(Locale.resolve("ko") == "ko")
+    assert(Locale.text("proc_woundBreak") == "상처 파괴")
+    assert(Locale.text("settings_skill_proc_capture") == "쇄인자격·속성 변환·상처 파괴 대미지 집계")
+end
+
 return T
