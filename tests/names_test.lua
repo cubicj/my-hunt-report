@@ -50,7 +50,7 @@ function T.resolvesEveryLabelKind()
         Locale.resolve("ko")
         assert(Names.resolve({ kind = "kinsect" }) == "조충 공격")
         assert(Names.resolve({ kind = "slinger" }) == "슬링어")
-        assert(Names.resolve({ kind = "proc", proc = "blast" }) == "폭파")
+        assert(Names.resolve({ kind = "proc", proc = "blast" }) == "상태 이상: 폭파")
     end)
 end
 
