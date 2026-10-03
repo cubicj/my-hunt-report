@@ -146,4 +146,43 @@ function T.entryDoesNotLoadTheAttackProbe()
     if not ok then error(err, 0) end
 end
 
+function T.entryUpdatesAttackLogDirectlyAfterShellTracker()
+    local noop = function() end
+    local calls, required = {}, {}
+    local frame
+    local function module(name)
+        return setmetatable({}, { __index = function(_, method)
+            return function() calls[#calls + 1] = name .. "." .. method end
+        end })
+    end
+    local modules = {
+        ["MyHuntReport.Settings"] = {
+            load = noop,
+            get = function() return { language = "en", fontSize = 18, developerMode = false, skillProcCapture = false } end,
+        },
+        ["MyHuntReport.AttackLog"] = {
+            update = function() calls[#calls + 1] = "MyHuntReport.AttackLog.update" end,
+        },
+    }
+    local environment = setmetatable({
+        require = function(name)
+            required[name] = true
+            return modules[name] or module(name)
+        end,
+        re = { on_draw_ui = noop, on_frame = function(callback) frame = callback end, on_config_save = noop },
+    }, { __index = _G })
+    assert(loadfile("reframework/autorun/my_hunt_report.lua", "t", environment))()
+    assert(required["MyHuntReport.AttackLog"] == true)
+    assert(type(frame) == "function")
+    calls = {}
+    frame()
+    assert(calls[1] == "MyHuntReport.ShellTracker.update", table.concat(calls, ","))
+    assert(calls[2] == "MyHuntReport.AttackLog.update", table.concat(calls, ","))
+    local updates = 0
+    for _, call in ipairs(calls) do
+        if call == "MyHuntReport.AttackLog.update" then updates = updates + 1 end
+    end
+    assert(updates == 1, updates)
+end
+
 return T

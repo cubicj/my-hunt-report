@@ -373,11 +373,11 @@ local function traceHit(hit, finalDamage, physical, element)
         local _, nameSource = MotionNames.nameFor(hit.motionLabel.className, hit.motionLabel.guideId)
         source = nameSource
     end
-    Log.trace(string.format("hit #%d dmg=%s(%s/%s) wp=%s act=%s mv=%s obj=%s base=%s/%s sub=%s row=%s via=%s name=%s mon=%s",
+    Log.trace(string.format("hit #%d dmg=%s(%s/%s) wp=%s act=%s mv=%s obj=%s base=%s/%s sub=%s row=%s via=%s name=%s mon=%s atk=%s",
         Session.hitCount() + 1, tostring(finalDamage), tostring(physical), tostring(element),
         tostring(hit.weaponType), tostring(hit.actionType), tostring(hit.motionValue), hit.objectName or "-",
         hit.baseClass or "-", tostring(hit.baseGuideId or -1), hit.subClass or "-", name,
-        hit.path, source, tostring(hit.monsterLabel.emId)))
+        hit.path, source, tostring(hit.monsterLabel.emId), tostring(hit.attackPower)))
 end
 
 function HitCapture.handlePlayHitMarkEffect(calc, hitInfo)

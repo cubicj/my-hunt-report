@@ -1232,7 +1232,7 @@ function T.ledgerUsesCapturedFieldsAndCompletedHitNumber()
         assert(hits[1].motionKey == "7:cSlash" and hits[1].motionLabel.guideId == 100)
         local lines = ledgerLines()
         assert(#lines == 1)
-        assert(lines[1] == "[MyHuntReport] hit #1 dmg=90(70/20) wp=7 act=1 mv=12.5 obj=weapon base=cSlash/100 sub=cCharge row=Slash via=action name=guide mon=26", lines[1])
+        assert(lines[1] == "[MyHuntReport] hit #1 dmg=90(70/20) wp=7 act=1 mv=12.5 obj=weapon base=cSlash/100 sub=cCharge row=Slash via=action name=guide mon=26 atk=nil", lines[1])
         for _ = 1, 6 do
             local nextHit = hitInfo(#hits + 1, 1, {}, nil, object)
             HitCapture.handleStockDamageDetail(nextHit)
@@ -1536,6 +1536,28 @@ function T.failedAttackPowerReadLeavesNilAndKeepsTheHit()
     Log.setDeveloperMode(developerMode)
     Log.resetCounts()
     if not ok then error(err, 0) end
+end
+
+local function checkAttackTrace(read, suffix)
+    withAuditCapture(function(state, hits, object)
+        local info = hitInfo(101, 1, {}, nil, object)
+        HitCapture.handleStockDamageDetail(info)
+        withAttackPower(hunterWithAttack(read), function()
+            HitCapture.handleCalcStockDamage(fakeThis(meat(60), meat(45)), preCalc(1), { Hide = 1.0 })
+        end)
+        complete(info)
+        local lines = ledgerLines()
+        assert(#hits == 1 and #lines == 1)
+        assert(lines[1]:sub(-#suffix) == suffix, lines[1])
+    end)
+end
+
+function T.ledgerEndsWithCapturedAttackPower()
+    checkAttackTrace(function() return 259.85 end, " atk=259.85")
+end
+
+function T.ledgerEndsWithNilWhenAttackPowerReadFails()
+    checkAttackTrace(function() error("boom") end, " atk=nil")
 end
 
 return T
