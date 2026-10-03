@@ -106,7 +106,31 @@ function T.sourcesCoverTheConfirmedGettersAndTheOptionPairs()
         local fields = {}
         for index, source in ipairs(c.probe.SOURCES) do fields[index] = source.field end
         assert(table.concat(fields, " ") == "hdrMode hdrEnable colorSpace rendererColorSpace "
-            .. "opt154 rate154 opt253 rate253 opt254 rate254 opt257 rate257 opt258 rate258", table.concat(fields, " "))
+            .. "opt154 rate154 opt253 rate253 opt254 rate254 opt257 rate257 opt258 rate258 "
+            .. "overlayNits useOverlayNits whitePaperNits systemWhitePaperNits displayMaxNits displayMinNits systemDisplayMaxNits "
+            .. "gammaForOverlay gammaForHDR gamma overlayBrightness overlaySaturation saturationForHDR hdrOverlayAdjust "
+            .. "useSdrBrightnessForOverlay overlayLowerLimit overlayUpperLimit", table.concat(fields, " "))
+        local bySignature = {}
+        for _, source in ipairs(c.probe.SOURCES) do
+            if source.type == "via.render.DisplaySettings" then bySignature[source.field] = source.signature end
+        end
+        assert(bySignature.overlayNits == "get_WhitePaperNitsForOverlay()")
+        assert(bySignature.useOverlayNits == "get_UseWhitePaperNitsForOverlay()")
+        assert(bySignature.whitePaperNits == "get_WhitePaperNits()")
+        assert(bySignature.systemWhitePaperNits == "get_SystemWhitePaperNits()")
+        assert(bySignature.displayMaxNits == "get_DisplayMaxNits()")
+        assert(bySignature.displayMinNits == "get_DisplayMinNits()")
+        assert(bySignature.systemDisplayMaxNits == "get_SystemDisplayMaxNits()")
+        assert(bySignature.gammaForOverlay == "get_GammaForOverlay()")
+        assert(bySignature.gammaForHDR == "get_GammaForHDR()")
+        assert(bySignature.gamma == "get_Gamma()")
+        assert(bySignature.overlayBrightness == "get_BrightnessAdjustmentForOverlay()")
+        assert(bySignature.overlaySaturation == "get_SaturateAdjustmentForOverlay()")
+        assert(bySignature.saturationForHDR == "get_SaturationForHDR()")
+        assert(bySignature.hdrOverlayAdjust == "get_HDRAdjustmentForOverlay()")
+        assert(bySignature.useSdrBrightnessForOverlay == "get_UseSDRBrightnessOptionForOverlay()")
+        assert(bySignature.overlayLowerLimit == "get_OutputLowerLimitForOverlay()")
+        assert(bySignature.overlayUpperLimit == "get_OutputUpperLimitForOverlay()")
         assert(c.probe.SOURCES[1].type == "via.render.DisplaySettings" and c.probe.SOURCES[1].signature == "get_HDRMode()")
         assert(c.probe.SOURCES[2].signature == "get_HDRDisplayModeEnable()")
         assert(c.probe.SOURCES[3].type == "via.render.DisplaySettings" and c.probe.SOURCES[3].signature == "get_ColorSpace()")
@@ -314,6 +338,25 @@ function T.controlsUpdateTheConversionAndLogTheChange()
             assert(hdrLines()[#hdrLines()]:find("hdr control nits=320 gamma=srgb", 1, true))
         end)
         imgui.slider_int, imgui.checkbox = slider, checkbox
+        if not ok then error(err, 0) end
+    end)
+end
+
+function T.windowShowsTheEngineOverlayNits()
+    withProbe(function(c)
+        local text = imgui.text
+        local shown = {}
+        imgui.text = function(value) shown[#shown + 1] = value end
+        local ok, err = pcall(function()
+            c.values["via.render.DisplaySettings.get_WhitePaperNitsForOverlay()"] = 312.5
+            c.probe.update()
+            assert(shown[1] == "engine overlay nits: 312.5", tostring(shown[1]))
+            c.values["via.render.DisplaySettings.get_WhitePaperNitsForOverlay()"] = nil
+            shown = {}
+            c.probe.update()
+            assert(shown[1] == "engine overlay nits: ?", tostring(shown[1]))
+        end)
+        imgui.text = text
         if not ok then error(err, 0) end
     end)
 end

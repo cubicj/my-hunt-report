@@ -21,6 +21,30 @@ for _, id in ipairs(HdrProbe.OPTION_IDS) do
     HdrProbe.SOURCES[#HdrProbe.SOURCES + 1] = { field = "rate" .. id, type = OPTION, signature = "getOptionValueRate(app.Option.ID)", arg = id }
 end
 
+local DISPLAY_GETTERS = {
+    { "overlayNits", "get_WhitePaperNitsForOverlay()" },
+    { "useOverlayNits", "get_UseWhitePaperNitsForOverlay()" },
+    { "whitePaperNits", "get_WhitePaperNits()" },
+    { "systemWhitePaperNits", "get_SystemWhitePaperNits()" },
+    { "displayMaxNits", "get_DisplayMaxNits()" },
+    { "displayMinNits", "get_DisplayMinNits()" },
+    { "systemDisplayMaxNits", "get_SystemDisplayMaxNits()" },
+    { "gammaForOverlay", "get_GammaForOverlay()" },
+    { "gammaForHDR", "get_GammaForHDR()" },
+    { "gamma", "get_Gamma()" },
+    { "overlayBrightness", "get_BrightnessAdjustmentForOverlay()" },
+    { "overlaySaturation", "get_SaturateAdjustmentForOverlay()" },
+    { "saturationForHDR", "get_SaturationForHDR()" },
+    { "hdrOverlayAdjust", "get_HDRAdjustmentForOverlay()" },
+    { "useSdrBrightnessForOverlay", "get_UseSDRBrightnessOptionForOverlay()" },
+    { "overlayLowerLimit", "get_OutputLowerLimitForOverlay()" },
+    { "overlayUpperLimit", "get_OutputUpperLimitForOverlay()" },
+}
+
+for _, getter in ipairs(DISPLAY_GETTERS) do
+    HdrProbe.SOURCES[#HdrProbe.SOURCES + 1] = { field = getter[1], type = DISPLAY, signature = getter[2] }
+end
+
 HdrProbe.SWATCHES = {
     { "text", "#ECE4D6" },
     { "textMuted", "#9A9083" },
@@ -152,6 +176,7 @@ local function logChanges()
 end
 
 local function drawControls()
+    imgui.text("engine overlay nits: " .. tostring(previous.overlayNits))
     local changedNits, nits = imgui.slider_int("Reference white (nits)", controls.nits, HdrProbe.NITS_MIN, HdrProbe.NITS_MAX)
     local changedGamma, pure = imgui.checkbox("Pure gamma 2.2 decode", controls.gamma == "2.2")
     if changedNits then controls.nits = nits end
