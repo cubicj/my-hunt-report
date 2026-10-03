@@ -125,7 +125,6 @@ local function drawHdrCorrection(s, L)
     local labels = { L("settings_hdr_auto"), L("settings_hdr_on"), L("settings_hdr_off") }
     local changed, value = imgui.combo(L("settings_hdr_correction"), hdrIndex(s.hdrCorrection), labels)
     if changed then Settings.set("hdrCorrection", HDR_OPTIONS[value]) end
-    drawMutedHint(L("settings_hdr_hint"), "hdr")
 end
 
 local function drawDeveloperBlock(L)

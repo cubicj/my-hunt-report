@@ -118,11 +118,9 @@ function T.hdrCorrectionStringsMatchTheDesign()
     Locale.resolve("en")
     assert(Locale.text("settings_hdr_correction") == "HDR color correction")
     assert(Locale.text("settings_hdr_auto") == "Auto" and Locale.text("settings_hdr_on") == "On" and Locale.text("settings_hdr_off") == "Off")
-    assert(Locale.text("settings_hdr_hint") == "Auto follows the game's HDR setting. Use On only if the game runs in HDR and the report still looks oversaturated")
     Locale.resolve("ko")
     assert(Locale.text("settings_hdr_correction") == "HDR 색 보정")
     assert(Locale.text("settings_hdr_auto") == "자동" and Locale.text("settings_hdr_on") == "켬" and Locale.text("settings_hdr_off") == "끔")
-    assert(Locale.text("settings_hdr_hint") == "자동은 게임의 HDR 설정을 따릅니다. 게임이 HDR인데도 리포트 색이 과하게 보일 때만 켬으로 두세요")
     Locale.resolve("en")
 end
 
