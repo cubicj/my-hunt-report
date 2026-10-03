@@ -611,6 +611,8 @@ end
 
 function T.resultCloseWithClosedWindowIsHarmless()
     playQuestWithOneHit()
+    Quest.handleQuestEnd(150)
+    Quest.handleResultStart()
     Settings.set("closeOnResultClose", true)
     ReportWindow.hide()
     Quest.handleResultClose(170)
@@ -618,17 +620,48 @@ function T.resultCloseWithClosedWindowIsHarmless()
     Settings.set("closeOnResultClose", false)
 end
 
-function T.installRegistersTheRewardEnterHook()
+function T.resultCloseOutsideResultPhaseIsIgnored()
+    playQuestWithOneHit()
+    showClearReport()
+    Settings.set("closeOnResultClose", true)
+    Quest.handleResultClose(140)
+    assert(ReportWindow.isOpen() == true)
+    Settings.set("closeOnResultClose", false)
+end
+
+function T.resultCloseActsOncePerResult()
+    playQuestWithOneHit()
+    Quest.handleQuestEnd(150)
+    Quest.handleResultStart()
+    Settings.set("closeOnResultClose", true)
+    Quest.handleResultClose(170)
+    assert(ReportWindow.isOpen() == false)
+    showClearReport()
+    Quest.handleResultClose(171)
+    assert(ReportWindow.isOpen() == true)
+    Quest.handleQuestStart(300)
+    Session.addHit({ monsterId = 1, monsterLabel = { kind = "monster", emId = 26 }, finalDamage = 10, physical = 10, element = 0, weight = 1,
+        motionKey = "7:x", motionLabel = { kind = "motion", className = "x", guideId = -1 }, activeSkills = {}, time = 330 })
+    Quest.handleQuestEnd(350)
+    Quest.handleResultStart()
+    showClearReport()
+    Quest.handleResultClose(370)
+    assert(ReportWindow.isOpen() == false)
+    Settings.set("closeOnResultClose", false)
+end
+
+function T.installRegistersTheEndFlowHookInsteadOfRewardEnter()
     local hook = Game.hook
     local names = {}
     local ok, err = pcall(function()
         Game.hook = function(typeName, signature) names[#names + 1] = typeName .. "." .. signature end
         Quest.install()
-        local found = false
+        local endFlow, rewardEnter = false, false
         for _, name in ipairs(names) do
-            if name == "app.cQuestReward.enter()" then found = true end
+            if name == "app.cQuestDirector.endFlow()" then endFlow = true end
+            if name == "app.cQuestReward.enter()" then rewardEnter = true end
         end
-        assert(found, table.concat(names, ","))
+        assert(endFlow and not rewardEnter, table.concat(names, ","))
     end)
     Game.hook = hook
     if not ok then error(err, 0) end

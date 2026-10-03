@@ -26,6 +26,7 @@ local endedElapsed = nil
 local saved = false
 local pendingSnapshot = nil
 local finalSnapshot = nil
+local resultClosed = false
 local installed = false
 
 function Quest.resultFromEndType(endType)
@@ -160,6 +161,7 @@ function Quest.handleResultStart()
     })
     finalSnapshot = pendingSnapshot
     phase = "result"
+    resultClosed = false
     if Settings.get().autoPopup and Session.hasData() then
         ReportWindow.show(pendingSnapshot)
     end
@@ -197,7 +199,9 @@ function Quest.handleResultInfo(fields, now)
 end
 
 function Quest.handleResultClose(now)
-    Log.debug("quest result close at " .. tostring(now))
+    Log.debug("quest result close at " .. tostring(now) .. " phase=" .. phase .. " closed=" .. tostring(resultClosed))
+    if phase ~= "result" or resultClosed then return end
+    resultClosed = true
     if Settings.get().closeOnResultClose then ReportWindow.hide() end
 end
 
@@ -300,7 +304,7 @@ function Quest.install()
     Game.hook("app.cQuestResult", "enter()", function()
         Quest.handleResultStart()
     end)
-    Game.hook("app.cQuestReward", "enter()", function()
+    Game.hook("app.cQuestDirector", "endFlow()", function()
         Quest.handleResultClose(Game.uptime())
     end)
     Game.hook("app.cGUIQuestResultInfo", "execute()", function(args)
@@ -342,6 +346,7 @@ function Quest.resetForTests()
     pendingSnapshot = nil
     Session.reset(0)
     finalSnapshot = nil
+    resultClosed = false
     HitCapture.reset()
     ShellTracker.reset()
     Procs.reset()
