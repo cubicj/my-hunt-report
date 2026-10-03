@@ -308,6 +308,20 @@ function T.pendingAutoRestoresTheEffectiveUiLanguageAfterAForcedInterval()
     assert(Locale.textKey() == "auto:11" and Locale.current() == "en")
 end
 
+function T.statusDamageTextsResolve()
+    Locale.init({ gameLanguage = function() return "en" end })
+    assert(Locale.resolve("en") == "en")
+    assert(Locale.text("proc_blast") == "Blast")
+    assert(Locale.text("proc_poison") == "Poison")
+    assert(Locale.text("skill_damage_blast") == "Blast")
+    assert(Locale.text("skill_damage_poison") == "Poison")
+    assert(Locale.resolve("ko") == "ko")
+    assert(Locale.text("proc_blast") == "폭파")
+    assert(Locale.text("proc_poison") == "독")
+    assert(Locale.text("skill_damage_blast") == "폭파")
+    assert(Locale.text("skill_damage_poison") == "독")
+end
+
 function T.woundBreakTextsResolve()
     Locale.init({ gameLanguage = function() return "en" end })
     assert(Locale.resolve("en") == "en")

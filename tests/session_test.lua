@@ -135,13 +135,13 @@ function T.motionRowsIncludeProcs()
     Session.addHit(hit({ motionKey = "7:cShellFire", motionLabel = { kind = "motion", className = "cShellFire", guideId = -1 }, finalDamage = 60 }))
     Session.addHit(hit({ motionKey = "7:cSlash", motionLabel = { kind = "motion", className = "cSlash", guideId = -1 }, finalDamage = 20 }))
     Session.addHit(hit({ motionKey = "7:cShellFire", motionLabel = { kind = "motion", className = "cShellFire", guideId = -1 }, finalDamage = 20 }))
-    Session.addProc({ kind = "blast", damage = 100, time = 1 })
+    Session.addProc({ kind = "woundBreak", damage = 100, time = 1 })
     local s = Session.snapshot()
     assert(#s.motions == 3)
-    assert(s.motions[1].key == "proc:blast" and s.motions[1].damage == 100 and s.motions[1].hits == 1)
+    assert(s.motions[1].key == "proc:woundBreak" and s.motions[1].damage == 100 and s.motions[1].hits == 1)
     assert(s.motions[2].key == "7:cShellFire" and s.motions[2].hits == 2)
     assert(math.abs(s.motions[2].share - 0.4) < 1e-9)
-    assert(#s.procs == 1 and s.procs[1].kind == "blast" and s.procs[1].count == 1)
+    assert(#s.procs == 1 and s.procs[1].kind == "woundBreak" and s.procs[1].count == 1)
 end
 
 function T.diagnosticsCount()
@@ -262,18 +262,29 @@ function T.elementConvertProcAddsFixedSkillDamageWithoutMotionRow()
     assertSkillProcDamage("elementConvert")
 end
 
-function T.blastAndPoisonKeepStatusAndProcRows()
+function T.blastAndPoisonGoToTheSkillDamageLine()
     for _, kind in ipairs({ "blast", "poison" }) do
         Session.reset(0)
-        Session.addHit(hit())
-        assert(Session.addProc({ kind = kind, damage = 160 }) == true)
+        Session.addHit(hit({ finalDamage = 100 }))
+        assert(Session.addProc({ kind = kind, damage = 50 }) == true)
+        assert(Session.addProc({ kind = kind, damage = 50 }) == true)
         local s = Session.snapshot()
-        assert(s.damage.total == 260 and s.damage.fixed == 0 and s.damage.status == 160)
-        assert(#s.skillDamage == 0 and #s.procs == 1 and #s.motions == 2)
-        assert(s.procs[1].kind == kind and s.procs[1].damage == 160 and s.procs[1].count == 1)
-        assert(s.motions[1].key == "proc:" .. kind and s.motions[1].damage == 160)
-        assert(s.motions[1].share == 160 / 260 and s.motions[1].hits == 1)
+        assert(s.damage.total == 200 and s.damage.fixed == 0 and s.damage.status == 100)
+        assert(#s.skillDamage == 1 and #s.procs == 0 and #s.motions == 1)
+        for _, row in ipairs(s.motions) do assert(row.key:sub(1, 5) ~= "proc:") end
+        assert(stubs.encode(s.skillDamage) == stubs.encode({ { kind = kind, damage = 100, share = 0.5 } }))
     end
+end
+
+function T.woundBreakStillGetsAMotionRow()
+    Session.reset(0)
+    Session.addHit(hit())
+    Session.addProc({ kind = "woundBreak", damage = 30 })
+    local s = Session.snapshot()
+    assert(#s.motions == 2)
+    assert(s.motions[2].key == "proc:woundBreak" and s.motions[2].hits == 1)
+    assert(#s.procs == 1 and s.procs[1].kind == "woundBreak")
+    assert(#s.skillDamage == 0)
 end
 
 function T.woundBreakProcAddsFixedDamageAndProcRow()
@@ -300,6 +311,17 @@ function T.woundBreakOnlySessionHasData()
     assert(Session.hasData() == true)
     local s = Session.snapshot()
     assert(s.damage.total == 30 and s.damage.fixed == 30 and s.damage.status == 0 and #s.procs == 1)
+end
+
+function T.statusOnlySessionHasData()
+    Session.reset(0)
+    assert(Session.hasData() == false)
+    Session.addProc({ kind = "poison", damage = 15 })
+    assert(Session.hasData() == true)
+    assert(Session.snapshot().damage.total == 15)
+    assert(Session.snapshotHasData(Session.snapshot()) == true)
+    Session.reset(1)
+    assert(Session.hasData() == false)
 end
 
 function T.skillProcOnlySessionHasDataUntilReset()
@@ -350,10 +372,11 @@ function T.skillAndStatusProcsAccumulateWithoutDoubleCounting()
     local s = Session.snapshot()
     assert(s.damage.total == 350 and s.damage.fixed == 200 and s.damage.status == 50)
     assert(s.damage.physical + s.damage.element + s.damage.fixed + s.damage.status == s.damage.total)
-    assert(#s.procs == 1 and s.procs[1].kind == "blast" and #s.motions == 2)
+    assert(#s.procs == 0 and #s.motions == 1)
     assert(stubs.encode(s.skillDamage) == stubs.encode({
         { kind = "elementConvert", damage = 100, share = 100 / 350 },
         { kind = "flayer", damage = 100, share = 100 / 350 },
+        { kind = "blast", damage = 50, share = 50 / 350 },
     }))
 end
 
@@ -458,7 +481,7 @@ end
 function T.snapshotCarriesLabelsAndResolvesEveryRow()
     Session.reset(0)
     Session.addHit(hit({ activeSkills = { ["burst:stage2"] = true } }))
-    Session.addProc({ kind = "blast", damage = 20 })
+    Session.addProc({ kind = "woundBreak", damage = 20 })
     local s = Session.snapshot({
         weapon = { type = 7 }, weapons = { { type = 7 }, { type = 13 } },
         equippedSkills = { { id = "burst:stage2" }, { id = 29 } },
@@ -467,8 +490,8 @@ function T.snapshotCarriesLabelsAndResolvesEveryRow()
     assert(s.monsters[1].label.kind == "monster" and s.monsters[1].label.emId == 26)
     assert(s.motions[1].label.kind == "motion" and s.motions[1].label.className == "cShellFire")
     assert(s.motions[1].label.guideId == -1)
-    assert(s.motions[2].label.kind == "proc" and s.motions[2].label.proc == "blast")
-    assert(s.procs[1].label.proc == "blast")
+    assert(s.motions[2].label.kind == "proc" and s.motions[2].label.proc == "woundBreak")
+    assert(s.procs[1].label.proc == "woundBreak")
     assert(s.skills[1].label.kind == "skill" and s.skills[1].label.id == "burst:stage2")
     assert(s.quest.weapon.label.kind == "weapon" and s.quest.weapon.label.type == 7)
     assert(s.quest.weapons[2].label.type == 13)
@@ -483,7 +506,7 @@ function T.relabelMutatesNamesAndResortsTies()
         activeSkills = { [29] = true, [63] = true } }))
     Session.addHit(hit({ motionKey = "b", motionLabel = { kind = "motion", className = "b", guideId = 2 },
         activeSkills = { [29] = true, [63] = true } }))
-    Session.addProc({ kind = "blast", damage = 1 })
+    Session.addProc({ kind = "woundBreak", damage = 1 })
     local s = Session.snapshot({ weapon = { type = 7 }, weapons = { { type = 13 } } })
     local rows = { s.monsters[1], s.motions[1], s.motions[2], s.motions[3], s.procs[1],
         s.skills[1], s.skills[2], s.quest.weapon, s.quest.weapons[1] }
@@ -523,7 +546,7 @@ function T.relabelMergedSnapshotIsIdempotent()
     Session.reset(0)
     Session.addHit(hit({ finalDamage = 60 }))
     Session.addHit(hit({ motionKey = "7:cSlash", motionLabel = { kind = "motion", className = "cSlash" }, finalDamage = 20 }))
-    Session.addProc({ kind = "blast", damage = 20 })
+    Session.addProc({ kind = "woundBreak", damage = 20 })
     local s = Session.snapshot()
     local function resolve(label)
         if label.kind == "motion" or label.kind == "proc" then return "Shared name" end

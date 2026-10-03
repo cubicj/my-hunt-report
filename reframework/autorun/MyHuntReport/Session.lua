@@ -3,8 +3,9 @@ local MotionNames = require("MyHuntReport.MotionNames")
 
 local Session = {}
 
-local SKILL_DAMAGE_KINDS = { "flare", "fury", "violent", "ryukiExplosion", "darkWave", "mirrorBlade", "flayer", "elementConvert" }
+local SKILL_DAMAGE_KINDS = { "flare", "fury", "violent", "ryukiExplosion", "darkWave", "mirrorBlade", "flayer", "elementConvert", "blast", "poison" }
 local SKILL_PROC_KINDS = { flayer = true, elementConvert = true }
+local STATUS_PROC_KINDS = { blast = true, poison = true }
 local FIXED_PROC_KINDS = { woundBreak = true }
 local HEAL_KINDS = { "hastenRecovery", "superRecovery" }
 local HEAL_KIND_SET = { hastenRecovery = true, superRecovery = true }
@@ -180,6 +181,11 @@ function Session.addProc(proc)
         state.skillDamage[proc.kind] = (state.skillDamage[proc.kind] or 0) + damage
         return true
     end
+    if STATUS_PROC_KINDS[proc.kind] then
+        state.status = state.status + damage
+        state.skillDamage[proc.kind] = (state.skillDamage[proc.kind] or 0) + damage
+        return true
+    end
     if FIXED_PROC_KINDS[proc.kind] then
         state.total = state.total + damage
         state.fixed = state.fixed + damage
@@ -232,7 +238,7 @@ function Session.lastHitTime()
 end
 
 function Session.hasData()
-    return state.hits > 0 or #state.procOrder > 0 or state.total > 0
+    return state.hits > 0 or #state.procOrder > 0 or state.total > 0 or state.status > 0
 end
 
 function Session.snapshotHasData(snapshot)
