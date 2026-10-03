@@ -1,3 +1,5 @@
+local Hdr = require("MyHuntReport.Hdr")
+
 local Theme = {}
 
 function Theme.rgb(hex, alpha)
@@ -9,24 +11,47 @@ end
 
 local rgb = Theme.rgb
 
-Theme.colors = {
-    windowBg = rgb("#1B1815", 0.95),
-    rule = rgb("#35302A"),
-    barTrack = rgb("#2A2520"),
-    rowStripe = rgb("#FFFFFF", 0.04),
-    text = rgb("#ECE4D6"),
-    textMuted = rgb("#9A9083"),
-    accent = rgb("#D8B46B"),
-    accentDim = rgb("#4A3F2A"),
-    physical = rgb("#D8B46B"),
-    element = rgb("#5BB8A5"),
-    fixed = rgb("#E08A45"),
-    status = rgb("#A88BD6"),
-    warning = rgb("#D9695A"),
-    childBg = rgb("#000000", 0),
-    scrollbarBg = rgb("#000000", 0),
-    transparent = rgb("#000000", 0),
+Theme.PALETTE = {
+    windowBg = { "#1B1815", 0.95 },
+    rule = { "#35302A", 1 },
+    barTrack = { "#2A2520", 1 },
+    rowStripe = { "#FFFFFF", 0.04 },
+    text = { "#ECE4D6", 1 },
+    textMuted = { "#9A9083", 1 },
+    accent = { "#D8B46B", 1 },
+    accentDim = { "#4A3F2A", 1 },
+    physical = { "#D8B46B", 1 },
+    element = { "#5BB8A5", 1 },
+    fixed = { "#E08A45", 1 },
+    status = { "#A88BD6", 1 },
+    warning = { "#D9695A", 1 },
+    childBg = { "#000000", 0 },
+    scrollbarBg = { "#000000", 0 },
+    transparent = { "#000000", 0 },
 }
+
+Theme.colors = {}
+
+local appliedNits = nil
+
+local function fill(nits)
+    for name, source in pairs(Theme.PALETTE) do
+        if nits then
+            Theme.colors[name] = Hdr.convert(source[1], source[2], nits)
+        else
+            Theme.colors[name] = rgb(source[1], source[2])
+        end
+    end
+end
+
+fill(nil)
+
+function Theme.apply(nits)
+    if nits == appliedNits then return false end
+    appliedNits = nits
+    fill(nits)
+    return true
+end
 
 Theme.metrics = {
     padding = 24,

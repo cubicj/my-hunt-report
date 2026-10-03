@@ -41,6 +41,53 @@ function T.rowStripeMatchesTheSpec()
     assert(Theme.metrics.stripeRounding == 3)
 end
 
+function T.paletteSourceCoversEveryColour()
+    local count = 0
+    for name, source in pairs(Theme.PALETTE) do
+        count = count + 1
+        assert(Theme.colors[name] == Theme.rgb(source[1], source[2]), name)
+    end
+    assert(count == 16, count)
+    for name in pairs(Theme.colors) do assert(Theme.PALETTE[name] ~= nil, name) end
+    assert(Theme.PALETTE.windowBg[1] == "#1B1815" and Theme.PALETTE.windowBg[2] == 0.95)
+    assert(Theme.PALETTE.rowStripe[1] == "#FFFFFF" and Theme.PALETTE.rowStripe[2] == 0.04)
+end
+
+function T.applyRewritesTheSameTableForHdrAndRestoresSdr()
+    local Hdr = require("MyHuntReport.Hdr")
+    local colors = Theme.colors
+    local ok, err = pcall(function()
+        assert(Theme.apply(455) == true)
+        assert(Theme.colors == colors)
+        for name, source in pairs(Theme.PALETTE) do
+            assert(colors[name] == Hdr.convert(source[1], source[2], 455), name)
+        end
+        assert(colors.text ~= Theme.rgb("#ECE4D6") and colors.windowBg >> 24 == 0xF2 and colors.transparent == 0)
+        assert(Theme.apply(455) == false)
+        assert(Theme.apply(200) == true)
+        assert(colors.text == Hdr.convert("#ECE4D6", 1, 200))
+        assert(Theme.apply(nil) == true)
+        assert(Theme.colors == colors)
+        for name, source in pairs(Theme.PALETTE) do
+            assert(colors[name] == Theme.rgb(source[1], source[2]), name)
+        end
+        assert(Theme.apply(nil) == false)
+    end)
+    Theme.apply(nil)
+    if not ok then error(err, 0) end
+end
+
+function T.applySkipsTheRewriteWhenTheValueIsUnchanged()
+    local ok, err = pcall(function()
+        Theme.apply(455)
+        Theme.colors.text = 1
+        assert(Theme.apply(455) == false and Theme.colors.text == 1)
+        assert(Theme.apply(nil) == true and Theme.colors.text == Theme.rgb("#ECE4D6"))
+    end)
+    Theme.apply(nil)
+    if not ok then error(err, 0) end
+end
+
 local function withStyleRecorder(callback)
     local original = imgui
     local colors, vars = {}, {}
