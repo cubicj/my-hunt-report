@@ -17,10 +17,10 @@ AttackProbe.CALC = { "app.cEnemyStockDamage",
     "calcStockDamage(app.cEnemyStockDamage.cCalcDamage, app.cEnemyStockDamage.cPreCalcDamage, app.cEnemyStockDamage.cDamageRate, System.Boolean)" }
 
 local UP_TIMER = "get_AttackUpTimer()"
+local STORAGE_KEY = "MyHuntReport.AttackProbe.onHit"
 
 local installed = false
 local previous = {}
-local pendingOnHit = nil
 local lastOnHit = nil
 local onHitCalls = 0
 local pendingHit = nil
@@ -31,7 +31,6 @@ end
 
 local function enabled()
     if Log.isDeveloperMode() then return true end
-    pendingOnHit = nil
     lastOnHit = nil
     onHitCalls = 0
     pendingHit = nil
@@ -53,7 +52,7 @@ end
 
 local function readGetter(power, signature)
     if not power then return "?" end
-    local ok, value = pcall(power.call, power, signature)
+    local ok, value = pcall(function() return power:call(signature) end)
     if ok and value ~= nil then return value end
     return "?"
 end
@@ -102,20 +101,23 @@ end
 local function beforeOnHit(args)
     if not enabled() then return end
     local okBase, base = pcall(sdk.to_float, args[4])
-    pendingOnHit = {
+    local okHit, hitAddress = pcall(sdk.to_int64, args[3])
+    thread.get_hook_storage()[STORAGE_KEY] = {
         master = isMasterHunter(args[5]),
         base = okBase and base or "?",
         flags = boolArg(args[6]) .. boolArg(args[7]) .. boolArg(args[8]),
+        hit = okHit and hitAddress or nil,
     }
 end
 
 local function afterOnHit(retval)
     if not enabled() then return end
-    local call = pendingOnHit
-    pendingOnHit = nil
+    local storage = thread.get_hook_storage()
+    local call = storage[STORAGE_KEY]
+    storage[STORAGE_KEY] = nil
     if not call or not call.master then return end
     local ok, value = pcall(sdk.to_float, retval)
-    lastOnHit = { value = ok and value or "?", base = call.base, flags = call.flags }
+    lastOnHit = { value = ok and value or "?", base = call.base, flags = call.flags, hit = call.hit, at = Game.uptime() }
     onHitCalls = onHitCalls + 1
 end
 
@@ -127,6 +129,7 @@ local function captureHit(args)
         local attackData = hitInfo:get_AttackData()
         if not attackData then return nil end
         return {
+            address = sdk.to_int64(args[3]),
             mv = readField(attackData, "_OriginalAttackAdjust"),
             crit = readField(attackData, "_CriticaType"),
             nocrit = readField(attackData, "_IsNoCritical"),
@@ -143,8 +146,14 @@ local function logHit(args)
     local preCalc = derefObject(args[4])
     local snapshot, power = AttackProbe.snapshot()
     local onHit = lastOnHit or {}
+    local now = Game.uptime()
+    local age, same = nil, nil
+    if lastOnHit then
+        age = now - lastOnHit.at
+        same = (lastOnHit.hit ~= nil and lastOnHit.hit == hit.address) and "T" or "F"
+    end
     local parts = {
-        "hit at " .. tostring(Game.uptime()),
+        "hit at " .. tostring(now),
         "mv=" .. tostring(hit.mv),
         "crit=" .. tostring(hit.crit),
         "nocrit=" .. tostring(hit.nocrit),
@@ -161,6 +170,8 @@ local function logHit(args)
     parts[#parts + 1] = "onhitBase=" .. tostring(onHit.base)
     parts[#parts + 1] = "onhitFlags=" .. tostring(onHit.flags)
     parts[#parts + 1] = "onhitCalls=" .. tostring(onHitCalls)
+    parts[#parts + 1] = "onhitAge=" .. tostring(age)
+    parts[#parts + 1] = "onhitSame=" .. tostring(same)
     trace(table.concat(parts, " "))
     lastOnHit = nil
     onHitCalls = 0
@@ -191,7 +202,6 @@ end
 function AttackProbe.resetForTests()
     installed = false
     previous = {}
-    pendingOnHit = nil
     lastOnHit = nil
     onHitCalls = 0
     pendingHit = nil

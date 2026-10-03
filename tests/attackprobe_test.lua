@@ -18,7 +18,7 @@ end
 
 local function withProbe(callback)
     local hook, masterHunter, isMasterGameObject, uptime = Game.hook, Game.masterHunter, Game.isMasterGameObject, Game.uptime
-    local originalSdk = sdk
+    local originalSdk, originalThread = sdk, thread
     local c = { hooks = {}, names = {}, now = 100.0, reads = 0, lookups = 0, conversions = 0, values = {}, masterObject = { name = "MasterPlayer" } }
     c.power = {
         call = function(self, signature)
@@ -70,11 +70,12 @@ local function withProbe(callback)
                 return { get_field = function() return pointer end }
             end,
         }, { __index = originalSdk })
+        thread = { get_hook_storage = function() return c.storage end }
         c.probe = assert(loadfile("reframework/autorun/MyHuntReport/AttackProbe.lua"))()
         callback(c)
     end)
     Game.hook, Game.masterHunter, Game.isMasterGameObject, Game.uptime = hook, masterHunter, isMasterGameObject, uptime
-    sdk = originalSdk
+    sdk, thread = originalSdk, originalThread
     Log.setDeveloperMode(false)
     if not ok then error(err, 0) end
 end
@@ -94,13 +95,17 @@ local function hitInfo(owner, attackData)
     }
 end
 
-local function onHit(c, hunter, base, ret, b1, b2, b3)
-    c.hooks[ON_HIT].pre({ nil, c.power, {}, base, hunter, b1, b2, b3 })
+local function onHit(c, hunter, base, ret, b1, b2, b3, info, inner)
+    local storage = {}
+    c.storage = storage
+    c.hooks[ON_HIT].pre({ nil, c.power, info or {}, base, hunter, b1, b2, b3 })
+    if inner then inner() end
+    c.storage = storage
     c.hooks[ON_HIT].post(ret)
 end
 
-local function hit(c, owner, attackData, preCalc)
-    c.hooks[HIT_INFO].pre({ nil, {}, hitInfo(owner, attackData) })
+local function hit(c, owner, attackData, preCalc, info)
+    c.hooks[HIT_INFO].pre({ nil, {}, info or hitInfo(owner, attackData) })
     c.hooks[CALC].pre({ nil, {}, {}, preCalc, {} })
 end
 
@@ -170,13 +175,14 @@ function T.masterHitLogsOneLineWithTheOnHitValues()
         c.probe.install()
         setPower(c, 220.0, 235.0, 15.0, 1.0, 42.5)
         c.now = 250.25
-        onHit(c, c.master, 235.0, 247.5, 1, 0, 1)
-        hit(c, c.masterObject, { _OriginalAttackAdjust = 30.0, _CriticaType = 1, _IsNoCritical = false },
-            { Attack = 92.8, FixAttack = 0.0, AbsoluteAttack = 0.0, ActionType = 1 })
+        local info = hitInfo(c.masterObject, { _OriginalAttackAdjust = 30.0, _CriticaType = 1, _IsNoCritical = false })
+        onHit(c, c.master, 235.0, 247.5, 1, 0, 1, info)
+        hit(c, nil, nil, { Attack = 92.8, FixAttack = 0.0, AbsoluteAttack = 0.0, ActionType = 1 }, info)
         local lines = atkLines()
         assert(#lines == 1, #lines)
         assert(lines[1]:find("atk hit at 250.25 mv=30.0 crit=1 nocrit=false action=1 preAttack=92.8 fix=0.0 abs=0.0 "
-            .. "weapon=220.0 current=235.0 add=15.0 rate=1.0 upTimer=42.5 onhit=247.5 onhitBase=235.0 onhitFlags=TFT onhitCalls=1", 1, true), lines[1])
+            .. "weapon=220.0 current=235.0 add=15.0 rate=1.0 upTimer=42.5 onhit=247.5 onhitBase=235.0 onhitFlags=TFT onhitCalls=1 "
+            .. "onhitAge=0.0 onhitSame=T", 1, true), lines[1])
     end)
 end
 
@@ -189,7 +195,53 @@ function T.hitWithoutAnOnHitCallPrintsNilOnHitValues()
         local lines = atkLines()
         assert(#lines == 1, #lines)
         assert(lines[1]:find("crit=0 nocrit=true action=2 preAttack=70.5", 1, true), lines[1])
-        assert(lines[1]:find("onhit=nil onhitBase=nil onhitFlags=nil onhitCalls=0", 1, true), lines[1])
+        assert(lines[1]:find("onhit=nil onhitBase=nil onhitFlags=nil onhitCalls=0 onhitAge=nil onhitSame=nil", 1, true), lines[1])
+    end)
+end
+
+function T.anOnHitResultFromAnotherHitInfoIsMarkedWithItsAgeAndNotSame()
+    withProbe(function(c)
+        c.probe.install()
+        setPower(c, 220.0, 235.0, 15.0, 1.0, 0.0)
+        c.now = 10.0
+        onHit(c, c.master, 235.0, 240.0, 0, 0, 0, { name = "other hit info" })
+        c.now = 100.0
+        hit(c, c.masterObject, { _OriginalAttackAdjust = 30.0, _CriticaType = 0, _IsNoCritical = false },
+            { Attack = 70.5, FixAttack = 0.0, AbsoluteAttack = 0.0, ActionType = 1 })
+        local lines = atkLines()
+        assert(#lines == 1, #lines)
+        assert(lines[1]:find("onhit=240.0 onhitBase=235.0 onhitFlags=FFF onhitCalls=1 onhitAge=90.0 onhitSame=F", 1, true), lines[1])
+    end)
+end
+
+function T.nestedOnHitCallsKeepEachInvocationsOwnRecord()
+    withProbe(function(c)
+        c.probe.install()
+        setPower(c, 220.0, 235.0, 15.0, 1.0, 0.0)
+        local attackData = { _OriginalAttackAdjust = 30.0, _CriticaType = 0, _IsNoCritical = false }
+        local preCalc = { Attack = 70.5, FixAttack = 0.0, AbsoluteAttack = 0.0, ActionType = 1 }
+        onHit(c, c.master, 235.0, 300.0, 1, 0, 0, nil, function()
+            onHit(c, c.master, 235.0, 222.0, 0, 1, 0)
+        end)
+        hit(c, c.masterObject, attackData, preCalc)
+        onHit(c, c.master, 235.0, 310.0, 1, 1, 1, nil, function()
+            onHit(c, c.other, 500.0, 999.0, 0, 0, 0)
+        end)
+        hit(c, c.masterObject, attackData, preCalc)
+        local lines = atkLines()
+        assert(#lines == 2, #lines)
+        assert(lines[1]:find("onhit=300.0 onhitBase=235.0 onhitFlags=TFF onhitCalls=2", 1, true), lines[1])
+        assert(lines[2]:find("onhit=310.0 onhitBase=235.0 onhitFlags=TTT onhitCalls=1", 1, true), lines[2])
+    end)
+end
+
+function T.aGetterWhoseLookupRaisesPrintsAQuestionMark()
+    withProbe(function(c)
+        c.power = setmetatable({}, { __index = function() error("lookup failed") end })
+        c.probe.update()
+        local lines = atkLines()
+        assert(#lines == 4, #lines)
+        assert(lines[1]:find("atk change weapon nil -> ? at 100.0", 1, true), lines[1])
     end)
 end
 
@@ -206,8 +258,8 @@ function T.onHitCallsAreCountedAndResetByTheHitLine()
         hit(c, c.masterObject, attackData, preCalc)
         local lines = atkLines()
         assert(#lines == 2, #lines)
-        assert(lines[1]:find("onhit=247.5 onhitBase=235.0 onhitFlags=TTF onhitCalls=2", 1, true), lines[1])
-        assert(lines[2]:find("onhit=nil onhitBase=nil onhitFlags=nil onhitCalls=0", 1, true), lines[2])
+        assert(lines[1]:find("onhit=247.5 onhitBase=235.0 onhitFlags=TTF onhitCalls=2 onhitAge=0.0 onhitSame=F", 1, true), lines[1])
+        assert(lines[2]:find("onhit=nil onhitBase=nil onhitFlags=nil onhitCalls=0 onhitAge=nil onhitSame=nil", 1, true), lines[2])
     end)
 end
 
@@ -285,6 +337,7 @@ function T.onHitValuesDoNotSurviveADeveloperModeOffPeriod()
         c.probe.install()
         setPower(c, 220.0, 235.0, 15.0, 1.0, 0.0)
         onHit(c, c.master, 235.0, 247.5, 1, 0, 1)
+        c.storage = {}
         c.hooks[ON_HIT].pre({ nil, c.power, {}, 235.0, c.master, 1, 1, 1 })
         Log.setDeveloperMode(false)
         c.hooks[ON_HIT].post(999.0)
