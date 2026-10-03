@@ -3,7 +3,7 @@ local Log = require("MyHuntReport.Log")
 
 local PalicoProbe = {}
 
-PalicoProbe.COUNTER_ORDER = { "hits", "blastLines", "poisonLines", "unresolved" }
+PalicoProbe.COUNTER_ORDER = { "hits", "blastBrackets", "blastLines", "poisonBrackets", "poisonLines", "unresolved" }
 PalicoProbe.IDENTITY_ORDER = {
     "name", "isMaster", "isMasterMyOtomo", "holderIsMaster", "ownerIsMaster", "ownerName",
     "npc", "partnerNpc", "ctxVia", "stableIndex", "masterOtomo",
@@ -18,6 +18,7 @@ local counters = {}
 local palicos = {}
 local order = {}
 local brackets = {}
+local poisonInvokers = {}
 local installed = false
 
 local function resetQuestState()
@@ -25,6 +26,7 @@ local function resetQuestState()
     palicos = {}
     order = {}
     brackets = {}
+    poisonInvokers = {}
 end
 
 resetQuestState()
@@ -42,7 +44,7 @@ end
 
 local function readValue(read)
     local ok, value = pcall(read)
-    if ok then return PalicoProbe.formatValue(value) end
+    if ok and value ~= nil then return PalicoProbe.formatValue(value) end
     return "?"
 end
 
@@ -77,9 +79,11 @@ end
 function PalicoProbe.summaryLine(entry)
     local identity = entry.identity or {}
     return string.format(
-        "summary id=%s mine=%s ownerIsMaster=%s npc=%s detail=%d mark=%d damage=%.1f blast=%.1f blastCount=%d poison=%.1f poisonCount=%d",
+        "summary id=%s mine=%s ownerIsMaster=%s npc=%s detail=%d mark=%d positive=%d matched=%d unmatchedDetail=%d unmatchedMark=%d"
+            .. " unkeyed=%d damage=%.1f blast=%.1f blastCount=%d poison=%.1f poisonCount=%d",
         entry.id, identity.isMasterMyOtomo or "?", identity.ownerIsMaster or "?", identity.npc or "?",
-        entry.detail, entry.mark, entry.damage, entry.blast, entry.blastCount, entry.poison, entry.poisonCount)
+        entry.detail, entry.mark, entry.positive, entry.matched, entry.detail - entry.matched, entry.mark - entry.matched,
+        entry.unkeyed, entry.damage, entry.blast, entry.blastCount, entry.poison, entry.poisonCount)
 end
 
 function PalicoProbe.summaryEndLine(palicoCount, values)
@@ -155,7 +159,8 @@ local function ensureEntry(gameObject)
     if entry then return entry end
     entry = {
         id = readValue(function() return gameObject:get_Name() end) .. "@" .. string.format("%x", address),
-        detail = 0, mark = 0, damage = 0, blast = 0, blastCount = 0, poison = 0, poisonCount = 0,
+        detail = 0, mark = 0, positive = 0, matched = 0, unkeyed = 0, pending = {},
+        damage = 0, blast = 0, blastCount = 0, poison = 0, poisonCount = 0,
     }
     palicos[address] = entry
     order[#order + 1] = address
@@ -182,8 +187,15 @@ local function enemyIndexText(hitInfo)
     return readValue(function() return Game.enemyContext(hitInfo:get_DamageOwner()):get_UniqueIndex() end)
 end
 
+local function hitKey(hitInfo)
+    local ok, address = pcall(function() return hitInfo:get_address() end)
+    if ok and address ~= nil then return address end
+    return nil
+end
+
 local function keyIsMaster(key)
     local ok, master = pcall(function()
+        if type(key.Category) ~= "number" then error("no category") end
         if not HUNTER_CATEGORIES[key.Category] then return false end
         local character = Game.callStatic("app.TargetAccessKeyUtil", "getHunterCharacter(app.TARGET_ACCESS_KEY)", key)
         return addressIsMaster(character:get_GameObject())
@@ -217,24 +229,9 @@ local function palicoSuffix(key, field, countField, value, now)
         return " id=?"
     end
     refreshIdentity(entry, gameObject, otomo, now)
-    if type(value) == "number" then
-        entry[field] = entry[field] + value
-        entry[countField] = entry[countField] + 1
-    end
+    entry[countField] = entry[countField] + 1
+    if type(value) == "number" then entry[field] = entry[field] + value end
     return " id=" .. entry.id .. " " .. entry.identityText
-end
-
-local function markInvocation()
-    local ok = pcall(function() thread.get_hook_storage().pp = true end)
-    return ok
-end
-
-local function takeInvocation()
-    local ok, storage = pcall(thread.get_hook_storage)
-    if not ok or type(storage) ~= "table" then return false end
-    local marked = storage.pp == true
-    storage.pp = nil
-    return marked
 end
 
 local function hostText()
@@ -264,7 +261,14 @@ local function onStockDamageDetailPre(args)
     local owner = palicoOwner(hitInfo)
     if not owner then return end
     local entry = ensureEntry(owner)
-    if entry then entry.detail = entry.detail + 1 end
+    if not entry then return end
+    entry.detail = entry.detail + 1
+    local key = hitKey(hitInfo)
+    if key == nil then
+        entry.unkeyed = entry.unkeyed + 1
+        return
+    end
+    entry.pending[key] = (entry.pending[key] or 0) + 1
 end
 
 local function onHitMarkPre(args)
@@ -279,57 +283,92 @@ local function onHitMarkPre(args)
     refreshIdentity(entry, owner, otomo, now)
     local calc = managedArg(args, 3)
     local okFinal, final = pcall(function() return calc.FinalDamage end)
-    if not okFinal then final = nil end
+    if not okFinal or type(final) ~= "number" then final = nil end
     entry.mark = entry.mark + 1
-    if type(final) == "number" and final > 0 then entry.damage = entry.damage + final end
+    local key = hitKey(hitInfo)
+    local matched = "?"
+    if key == nil then
+        entry.unkeyed = entry.unkeyed + 1
+    elseif (entry.pending[key] or 0) > 0 then
+        entry.pending[key] = entry.pending[key] - 1
+        entry.matched = entry.matched + 1
+        matched = "true"
+    else
+        matched = "false"
+    end
+    if final and final > 0 then
+        entry.positive = entry.positive + 1
+        entry.damage = entry.damage + final
+    end
     bump("hits")
     trace("hit t=" .. timeText(now) .. " em=" .. enemyIndexText(hitInfo) .. " id=" .. entry.id
-        .. " final=" .. (okFinal and PalicoProbe.formatValue(final) or "?")
+        .. " final=" .. (final and PalicoProbe.formatValue(final) or "?")
+        .. " matched=" .. matched
         .. " obj=" .. readValue(function() return hitInfo:get_AttackObj():get_Name() end)
         .. " data=" .. readValue(function() return hitInfo:get_AttackData():get_type_definition():get_full_name() end)
         .. " mine=" .. tostring(entry.identity.isMasterMyOtomo))
 end
 
 local function enterBracket(kind, args)
+    local bracket = { kind = kind, active = false }
+    brackets[#brackets + 1] = bracket
     if not Log.isDeveloperMode() then return end
     local this = managedArg(args, 2)
-    local bracket = { kind = kind, em = readValue(function() return this._This.UniqueIndex end), invoker = nil }
+    bracket.active = true
+    bracket.em = readValue(function() return this._This.UniqueIndex end)
     pcall(function() bracket.invoker = this._Invoker end)
-    if markInvocation() then brackets[#brackets + 1] = bracket end
+    local invokerText = keyText(bracket.invoker)
+    if kind == "blast" then
+        bump("blastBrackets")
+        trace("blast-activate t=" .. timeText(Game.uptime()) .. " em=" .. bracket.em
+            .. " invoker=" .. invokerText .. " master=" .. keyIsMaster(bracket.invoker))
+        return
+    end
+    bump("poisonBrackets")
+    if poisonInvokers[bracket.em] == invokerText then return end
+    poisonInvokers[bracket.em] = invokerText
+    trace("poison-active t=" .. timeText(Game.uptime()) .. " em=" .. bracket.em
+        .. " invoker=" .. invokerText .. " master=" .. keyIsMaster(bracket.invoker))
 end
 
 local function leaveBracket()
-    if takeInvocation() then brackets[#brackets] = nil end
+    brackets[#brackets] = nil
+end
+
+local function activeBracket(kind)
+    local bracket = brackets[#brackets]
+    if bracket and bracket.active and bracket.kind == kind then return bracket end
+    return nil
 end
 
 local function onSetParamPre(args)
     if not Log.isDeveloperMode() then return end
-    local bracket = brackets[#brackets]
-    if not bracket or bracket.kind ~= "blast" then return end
+    local bracket = activeBracket("blast")
+    if not bracket then return end
     local now = Game.uptime()
     local okValue, value = pcall(sdk.to_float, args[3])
-    if not okValue then value = nil end
+    if not okValue or type(value) ~= "number" then value = nil end
     local okKey, key = pcall(sdk.to_valuetype, args[4], KEY_TYPE)
     if not okKey then key = nil end
     bump("blastLines")
     trace("blast t=" .. timeText(now) .. " em=" .. bracket.em
-        .. " value=" .. (okValue and PalicoProbe.formatValue(value) or "?")
+        .. " value=" .. (value and PalicoProbe.formatValue(value) or "?")
         .. " key=" .. keyText(key) .. " master=" .. keyIsMaster(key)
         .. palicoSuffix(key, "blast", "blastCount", value, now))
 end
 
 local function onExternalPre(args)
     if not Log.isDeveloperMode() then return end
-    local bracket = brackets[#brackets]
-    if not bracket or bracket.kind ~= "poison" then return end
+    local bracket = activeBracket("poison")
+    if not bracket then return end
     local now = Game.uptime()
     local okValue, value = pcall(sdk.to_float, args[3])
-    if not okValue then value = nil end
+    if not okValue or type(value) ~= "number" then value = nil end
     local okNullable, nullable = pcall(sdk.to_valuetype, args[5], NULLABLE_KEY_TYPE)
     if not okNullable then nullable = nil end
     bump("poisonLines")
     trace("poison t=" .. timeText(now) .. " em=" .. bracket.em
-        .. " value=" .. (okValue and PalicoProbe.formatValue(value) or "?")
+        .. " value=" .. (value and PalicoProbe.formatValue(value) or "?")
         .. " invoker=" .. keyText(bracket.invoker)
         .. " hasKey=" .. readValue(function() return nullable._HasValue end)
         .. " key=" .. readValue(function() return nullable._Value.Category end)

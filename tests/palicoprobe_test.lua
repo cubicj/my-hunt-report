@@ -73,8 +73,9 @@ local function enemyOwner(index)
     return { em = { get_UniqueIndex = function() return index end } }
 end
 
-local function hitInfo(attacker, enemy, attackObjName, dataType)
+local function hitInfo(attacker, enemy, attackObjName, dataType, address)
     return {
+        get_address = function() return address end,
         getActualAttackOwner = function() return attacker end,
         get_DamageOwner = function() return enemy end,
         get_AttackObj = function() return { get_Name = function() return attackObjName end } end,
@@ -92,7 +93,6 @@ local function withProbe(callback)
     local hook, callStatic, singleton = Game.hook, Game.callStatic, Game.singleton
     local componentOf, enemyContext, masterAddress, uptime = Game.componentOf, Game.enemyContext, Game.masterAddress, Game.uptime
     local toManaged, toValue, toFloat, findType = sdk.to_managed_object, sdk.to_valuetype, sdk.to_float, sdk.find_type_definition
-    local originalThread = thread
     local hooks = {}
     local c = { hooks = hooks, now = 100.0, characters = {}, masterOtomo = nil, host = true, masterAddress = 0x1000 }
     touched = 0
@@ -101,7 +101,7 @@ local function withProbe(callback)
         Log.resetCounts()
         stubs.reset()
         Game.hook = function(typeName, signature, pre, post)
-            hooks[typeName .. "." .. signature] = { pre = pre, post = post, storage = {} }
+            hooks[typeName .. "." .. signature] = { pre = pre, post = post }
             return true
         end
         Game.callStatic = function(_, signature, key)
@@ -136,19 +136,17 @@ local function withProbe(callback)
                 return { call = function() return c.host end }
             end }
         end
-        thread = { get_hook_storage = function() return c.storage end }
         c.probe = assert(loadfile(MODULE_PATH))()
         c.probe.install(true)
         function c.pre(name, args)
-            c.storage = hooks[HOOKS[name]].storage
             hooks[HOOKS[name]].pre(args)
         end
         function c.post(name)
-            c.storage = hooks[HOOKS[name]].storage
             hooks[HOOKS[name]].post(nil)
         end
         function c.hit(attacker, final)
-            local info = hitInfo(attacker, enemyOwner(7), "Sh200_0", "app.cAttackParamOt")
+            c.hitAddress = (c.hitAddress or 0x9000) + 16
+            local info = hitInfo(attacker, enemyOwner(7), "Sh200_0", "app.cAttackParamOt", c.hitAddress)
             c.pre("detail", { nil, nil, info })
             c.pre("hitMark", { nil, nil, { FinalDamage = final }, info })
         end
@@ -157,7 +155,6 @@ local function withProbe(callback)
     Game.hook, Game.callStatic, Game.singleton = hook, callStatic, singleton
     Game.componentOf, Game.enemyContext, Game.masterAddress, Game.uptime = componentOf, enemyContext, masterAddress, uptime
     sdk.to_managed_object, sdk.to_valuetype, sdk.to_float, sdk.find_type_definition = toManaged, toValue, toFloat, findType
-    thread = originalThread
     Log.setDeveloperMode(false)
     if not ok then error(err, 0) end
 end
@@ -191,16 +188,20 @@ function T.summaryLinesComeFromPlainState()
     withProbe(function(c)
         local line = c.probe.summaryLine({
             id = "Otomo_00@3000", identity = { isMasterMyOtomo = "true", ownerIsMaster = "true", npc = "false" },
-            detail = 4, mark = 3, damage = 61.5, blast = 100, blastCount = 1, poison = 30, poisonCount = 2,
+            detail = 4, mark = 3, positive = 2, matched = 3, unkeyed = 1, damage = 61.5,
+            blast = 100, blastCount = 1, poison = 30, poisonCount = 2,
         })
-        assert(line == "summary id=Otomo_00@3000 mine=true ownerIsMaster=true npc=false detail=4 mark=3 damage=61.5"
-            .. " blast=100.0 blastCount=1 poison=30.0 poisonCount=2", line)
+        assert(line == "summary id=Otomo_00@3000 mine=true ownerIsMaster=true npc=false detail=4 mark=3 positive=2"
+            .. " matched=3 unmatchedDetail=1 unmatchedMark=0 unkeyed=1 damage=61.5 blast=100.0 blastCount=1 poison=30.0 poisonCount=2", line)
         local bare = c.probe.summaryLine({
-            id = "Otomo_01@4000", detail = 1, mark = 0, damage = 0, blast = 0, blastCount = 0, poison = 0, poisonCount = 0,
+            id = "Otomo_01@4000", detail = 1, mark = 0, positive = 0, matched = 0, unkeyed = 0, damage = 0,
+            blast = 0, blastCount = 0, poison = 0, poisonCount = 0,
         })
-        assert(bare:find("mine=? ownerIsMaster=? npc=? detail=1 mark=0", 1, true), bare)
-        local tail = c.probe.summaryEndLine(2, { hits = 5, blastLines = 1, poisonLines = 2, unresolved = 0 })
-        assert(tail == "summary-end palicos=2 hits=5 blastLines=1 poisonLines=2 unresolved=0", tail)
+        assert(bare:find("mine=? ownerIsMaster=? npc=? detail=1 mark=0 positive=0 matched=0 unmatchedDetail=1 unmatchedMark=0", 1, true), bare)
+        local tail = c.probe.summaryEndLine(2, {
+            hits = 5, blastBrackets = 2, blastLines = 1, poisonBrackets = 9, poisonLines = 2, unresolved = 0,
+        })
+        assert(tail == "summary-end palicos=2 hits=5 blastBrackets=2 blastLines=1 poisonBrackets=9 poisonLines=2 unresolved=0", tail)
     end)
 end
 
@@ -236,15 +237,15 @@ function T.palicoHitsAccumulatePerPalicoAndLogIdentityOnce()
         assert(lines[1] == "[MyHuntReport] pp identity t=100.00 id=Otomo_00@3000 name=Otomo_00 isMaster=true"
             .. " isMasterMyOtomo=true holderIsMaster=true ownerIsMaster=true ownerName=MasterPlayer npc=false"
             .. " partnerNpc=false ctxVia=get_OtomoContext stableIndex=0 masterOtomo=true", lines[1])
-        assert(lines[2] == "[MyHuntReport] pp hit t=100.00 em=7 id=Otomo_00@3000 final=12.5 obj=Sh200_0"
+        assert(lines[2] == "[MyHuntReport] pp hit t=100.00 em=7 id=Otomo_00@3000 final=12.5 matched=true obj=Sh200_0"
             .. " data=app.cAttackParamOt mine=true", lines[2])
-        assert(lines[3]:find("pp hit t=100.00 em=7 id=Otomo_00@3000 final=0 ", 1, true), lines[3])
+        assert(lines[3]:find("pp hit t=100.00 em=7 id=Otomo_00@3000 final=0 matched=true ", 1, true), lines[3])
         assert(lines[4]:find("pp identity t=100.00 id=Otomo_01@4000 ", 1, true), lines[4])
         assert(lines[4]:find("isMasterMyOtomo=false", 1, true) and lines[4]:find("ownerIsMaster=false", 1, true))
         assert(lines[4]:find("ownerName=Player_Replica_1", 1, true) and lines[4]:find("masterOtomo=false", 1, true))
         assert(lines[5]:find("id=Otomo_01@4000 final=20 ", 1, true) and lines[5]:find("mine=false", 1, true), lines[5])
         local entry = c.probe.entry(0x3000)
-        assert(entry.detail == 2 and entry.mark == 2 and entry.damage == 12.5)
+        assert(entry.detail == 2 and entry.mark == 2 and entry.positive == 1 and entry.matched == 2 and entry.damage == 12.5)
         assert(c.probe.entry(0x4000).damage == 20 and c.probe.entry(0x1000) == nil)
         assert(c.probe.counters().hits == 3)
     end)
@@ -269,9 +270,10 @@ function T.identityFallsBackToTheHolderContextAndMarksFailedReads()
     withDeveloperProbe(function(c)
         local mine = palico("Otomo_00", 0x3000, MASTER, { mine = true, noContextGetter = true })
         mine.otomo.get_IsMasterMyOtomo = nil
+        mine.otomo.get_IsMaster = function() return nil end
         c.hit(mine, 5)
         local line = ppLines()[1]
-        assert(line:find("isMasterMyOtomo=? ", 1, true), line)
+        assert(line:find(" isMaster=? isMasterMyOtomo=? ", 1, true), line)
         assert(line:find("npc=false partnerNpc=false ctxVia=get_ContextHolder", 1, true), line)
         assert(line:find("masterOtomo=?", 1, true), line)
     end)
@@ -290,19 +292,24 @@ function T.blastLinesAppearOnlyInsideABlastBracketAndCreditThePalico()
         c.pre("setParam", { nil, nil, 100.0, palicoKey })
         c.pre("setParam", { nil, nil, 100.0, { Category = 0, UniqueIndex = 0 } })
         c.pre("setParam", { nil, nil, 50.0, { Category = 2, UniqueIndex = 9 } })
+        c.pre("setParam", { nil, nil, "broken", palicoKey })
+        c.pre("setParam", { nil, nil, 25.0, { UniqueIndex = 0 } })
         c.post("blast")
         assert(c.probe.bracketDepth() == 0)
         c.pre("setParam", { nil, nil, 100.0, palicoKey })
         local lines = ppLines()
-        assert(#lines == 4, #lines)
-        assert(lines[1]:find("pp identity t=100.00 id=Otomo_00@3000 ", 1, true), lines[1])
-        assert(lines[2]:find("pp blast t=100.00 em=7 value=100.0 key=2/0 master=false id=Otomo_00@3000 name=Otomo_00 ", 1, true), lines[2])
-        assert(lines[3] == "[MyHuntReport] pp blast t=100.00 em=7 value=100.0 key=0/0 master=true", lines[3])
-        assert(lines[4] == "[MyHuntReport] pp blast t=100.00 em=7 value=50.0 key=2/9 master=false id=?", lines[4])
+        assert(#lines == 7, #lines)
+        assert(lines[1] == "[MyHuntReport] pp blast-activate t=100.00 em=7 invoker=2/0 master=false", lines[1])
+        assert(lines[2]:find("pp identity t=100.00 id=Otomo_00@3000 ", 1, true), lines[2])
+        assert(lines[3]:find("pp blast t=100.00 em=7 value=100.0 key=2/0 master=false id=Otomo_00@3000 name=Otomo_00 ", 1, true), lines[3])
+        assert(lines[4] == "[MyHuntReport] pp blast t=100.00 em=7 value=100.0 key=0/0 master=true", lines[4])
+        assert(lines[5] == "[MyHuntReport] pp blast t=100.00 em=7 value=50.0 key=2/9 master=false id=?", lines[5])
+        assert(lines[6]:find("pp blast t=100.00 em=7 value=? key=2/0 master=false id=Otomo_00@3000 ", 1, true), lines[6])
+        assert(lines[7] == "[MyHuntReport] pp blast t=100.00 em=7 value=25.0 key=?/0 master=?", lines[7])
         local entry = c.probe.entry(0x3000)
-        assert(entry.blast == 100.0 and entry.blastCount == 1 and entry.mark == 0)
+        assert(entry.blast == 100.0 and entry.blastCount == 2 and entry.mark == 0)
         local counters = c.probe.counters()
-        assert(counters.blastLines == 3 and counters.unresolved == 1)
+        assert(counters.blastBrackets == 1 and counters.blastLines == 5 and counters.unresolved == 1)
     end)
 end
 
@@ -311,25 +318,34 @@ function T.poisonLinesAppearOnlyInsideAPoisonBracketAndUseTheInvoker()
         local mine = palico("Otomo_00", 0x3000, MASTER, { mine = true })
         c.characters["2/0"] = mine
         c.characters["0/0"] = MASTER
+        local palicoKey, masterKey = { Category = 2, UniqueIndex = 0 }, { Category = 0, UniqueIndex = 0 }
         local nullable = { _HasValue = false, _Value = { Category = 0, UniqueIndex = 0 } }
         c.pre("external", { nil, nil, 15.0, nil, nullable })
-        c.pre("blast", { nil, condition(7, { Category = 2, UniqueIndex = 0 }) })
+        assert(#ppLines() == 0)
+        c.pre("blast", { nil, condition(7, palicoKey) })
         c.pre("external", { nil, nil, 15.0, nil, nullable })
         c.post("blast")
-        assert(#ppLines() == 0)
-        c.pre("poison", { nil, condition(7, { Category = 2, UniqueIndex = 0 }) })
+        assert(#ppLines() == 1)
+        stubs.logLines = {}
+        c.pre("poison", { nil, condition(7, palicoKey) })
         c.pre("external", { nil, nil, 15.0, nil, nullable })
         c.post("poison")
-        c.pre("poison", { nil, condition(7, { Category = 0, UniqueIndex = 0 }) })
+        c.pre("poison", { nil, condition(7, palicoKey) })
+        c.post("poison")
+        c.pre("poison", { nil, condition(7, masterKey) })
         c.pre("external", { nil, nil, 15.0, nil, nullable })
         c.post("poison")
         local lines = ppLines()
-        assert(#lines == 3, #lines)
-        assert(lines[2]:find("pp poison t=100.00 em=7 value=15.0 invoker=2/0 hasKey=false key=0/0 master=false id=Otomo_00@3000 ", 1, true), lines[2])
-        assert(lines[3] == "[MyHuntReport] pp poison t=100.00 em=7 value=15.0 invoker=0/0 hasKey=false key=0/0 master=true", lines[3])
+        assert(#lines == 5, #lines)
+        assert(lines[1] == "[MyHuntReport] pp poison-active t=100.00 em=7 invoker=2/0 master=false", lines[1])
+        assert(lines[2]:find("pp identity t=100.00 id=Otomo_00@3000 ", 1, true), lines[2])
+        assert(lines[3]:find("pp poison t=100.00 em=7 value=15.0 invoker=2/0 hasKey=false key=0/0 master=false id=Otomo_00@3000 ", 1, true), lines[3])
+        assert(lines[4] == "[MyHuntReport] pp poison-active t=100.00 em=7 invoker=0/0 master=true", lines[4])
+        assert(lines[5] == "[MyHuntReport] pp poison t=100.00 em=7 value=15.0 invoker=0/0 hasKey=false key=0/0 master=true", lines[5])
         local entry = c.probe.entry(0x3000)
         assert(entry.poison == 15.0 and entry.poisonCount == 1)
-        assert(c.probe.counters().poisonLines == 2 and c.probe.bracketDepth() == 0)
+        local counters = c.probe.counters()
+        assert(counters.poisonBrackets == 3 and counters.poisonLines == 2 and c.probe.bracketDepth() == 0)
     end)
 end
 
@@ -342,7 +358,7 @@ function T.failedReadsPrintAQuestionMarkInsteadOfADefiniteValue()
         c.pre("hitMark", { nil, nil, { FinalDamage = 9.0 }, info })
         local lines = ppLines()
         assert(lines[1]:find(" ownerIsMaster=? ownerName=MasterPlayer ", 1, true), lines[1])
-        assert(lines[2] == "[MyHuntReport] pp hit t=100.00 em=? id=Otomo_00@3000 final=9.0 obj=Sh200_0"
+        assert(lines[2] == "[MyHuntReport] pp hit t=100.00 em=? id=Otomo_00@3000 final=9.0 matched=? obj=Sh200_0"
             .. " data=app.cAttackParamOt mine=true", lines[2])
         c.masterAddress = 0x1000
         local unreadable = gameObject("Player_Replica_2", 0x5000)
@@ -372,30 +388,75 @@ function T.aFailedEnemyIndexReadPrintsAQuestionMarkInStatusLines()
         c.pre("blast", { nil, broken })
         c.pre("setParam", { nil, nil, 100.0, masterKey })
         c.post("blast")
-        c.pre("poison", { nil, broken })
+        c.pre("poison", { nil, { _This = {}, _Invoker = masterKey } })
         c.pre("external", { nil, nil, 15.0, nil, { _HasValue = false, _Value = masterKey } })
         c.post("poison")
         local lines = ppLines()
-        assert(lines[1] == "[MyHuntReport] pp blast t=100.00 em=? value=100.0 key=0/0 master=true", lines[1])
-        assert(lines[2] == "[MyHuntReport] pp poison t=100.00 em=? value=15.0 invoker=0/0 hasKey=false key=0/0 master=true", lines[2])
+        assert(#lines == 4, #lines)
+        assert(lines[1] == "[MyHuntReport] pp blast-activate t=100.00 em=? invoker=0/0 master=true", lines[1])
+        assert(lines[2] == "[MyHuntReport] pp blast t=100.00 em=? value=100.0 key=0/0 master=true", lines[2])
+        assert(lines[3] == "[MyHuntReport] pp poison-active t=100.00 em=? invoker=0/0 master=true", lines[3])
+        assert(lines[4] == "[MyHuntReport] pp poison t=100.00 em=? value=15.0 invoker=0/0 hasKey=false key=0/0 master=true", lines[4])
         assert(c.probe.bracketDepth() == 0)
     end)
 end
 
-function T.aBracketIsNotOpenedWhenTheInvocationCannotBeMarked()
+function T.anActivationWithoutADamageCallIsStillVisible()
     withDeveloperProbe(function(c)
-        c.characters["0/0"] = MASTER
-        local masterKey = { Category = 0, UniqueIndex = 0 }
-        local working = thread.get_hook_storage
-        thread.get_hook_storage = function() error("no hook storage") end
-        c.pre("blast", { nil, condition(7, masterKey) })
-        assert(c.probe.bracketDepth() == 0)
-        c.pre("setParam", { nil, nil, 100.0, masterKey })
-        thread.get_hook_storage = working
+        local mine = palico("Otomo_00", 0x3000, MASTER, { mine = true })
+        c.characters["2/0"] = mine
+        c.pre("blast", { nil, condition(7, { Category = 2, UniqueIndex = 0 }) })
         c.post("blast")
-        c.pre("setParam", { nil, nil, 100.0, masterKey })
-        assert(#ppLines() == 0 and c.probe.bracketDepth() == 0)
-        assert(c.probe.counters().blastLines == 0)
+        c.pre("poison", { nil, condition(8, { Category = 2, UniqueIndex = 0 }) })
+        c.post("poison")
+        local lines = ppLines()
+        assert(#lines == 2, #lines)
+        assert(lines[1] == "[MyHuntReport] pp blast-activate t=100.00 em=7 invoker=2/0 master=false", lines[1])
+        assert(lines[2] == "[MyHuntReport] pp poison-active t=100.00 em=8 invoker=2/0 master=false", lines[2])
+        stubs.logLines = {}
+        c.post("resultInfo")
+        assert(ppLines()[1] == "[MyHuntReport] pp summary-end palicos=0 hits=0 blastBrackets=1 blastLines=0"
+            .. " poisonBrackets=1 poisonLines=0 unresolved=0", ppLines()[1])
+    end)
+end
+
+function T.unmatchedDetailAndMarkCallsAreCountedPerPalico()
+    withDeveloperProbe(function(c)
+        local mine = palico("Otomo_00", 0x3000, MASTER, { mine = true })
+        local first = hitInfo(mine, enemyOwner(7), "Otomo_00", "app.cAttackParamOt", 0xA000)
+        local second = hitInfo(mine, enemyOwner(7), "Otomo_00", "app.cAttackParamOt", 0xB000)
+        c.pre("detail", { nil, nil, first })
+        c.pre("detail", { nil, nil, second })
+        c.pre("hitMark", { nil, nil, { FinalDamage = 10.0 }, first })
+        c.pre("hitMark", { nil, nil, { FinalDamage = 10.0 }, first })
+        c.pre("hitMark", { nil, nil, {}, second })
+        local lines = ppLines()
+        assert(lines[2]:find(" final=10.0 matched=true ", 1, true), lines[2])
+        assert(lines[3]:find(" final=10.0 matched=false ", 1, true), lines[3])
+        assert(lines[4]:find(" final=? matched=true ", 1, true), lines[4])
+        stubs.logLines = {}
+        c.pre("detail", { nil, nil, first })
+        c.post("resultInfo")
+        assert(ppLines()[1]:find("detail=3 mark=3 positive=2 matched=2 unmatchedDetail=1 unmatchedMark=1 unkeyed=0 damage=20.0", 1, true), ppLines()[1])
+    end)
+end
+
+function T.hitsWithoutAReadableIdentityNeverCountAsMatched()
+    withDeveloperProbe(function(c)
+        local mine = palico("Otomo_00", 0x3000, MASTER, { mine = true })
+        local addressless = hitInfo(mine, enemyOwner(7), "Otomo_00", "app.cAttackParamOt", nil)
+        local throwing = hitInfo(mine, enemyOwner(7), "Otomo_00", "app.cAttackParamOt", nil)
+        throwing.get_address = function() error("no address") end
+        c.pre("detail", { nil, nil, addressless })
+        c.pre("detail", { nil, nil, throwing })
+        c.pre("hitMark", { nil, nil, { FinalDamage = 10.0 }, addressless })
+        c.pre("hitMark", { nil, nil, { FinalDamage = 10.0 }, throwing })
+        local lines = ppLines()
+        assert(lines[2]:find(" final=10.0 matched=? ", 1, true), lines[2])
+        assert(lines[3]:find(" final=10.0 matched=? ", 1, true), lines[3])
+        stubs.logLines = {}
+        c.post("resultInfo")
+        assert(ppLines()[1]:find("detail=2 mark=2 positive=2 matched=0 unmatchedDetail=2 unmatchedMark=2 unkeyed=4 damage=20.0", 1, true), ppLines()[1])
     end)
 end
 
@@ -415,14 +476,16 @@ function T.hitsAndStatusDamageForOnePalicoShareOneEntry()
         assert(entry.mark == 1 and entry.damage == 12.5)
         assert(entry.blast == 100.0 and entry.blastCount == 1 and entry.poison == 15.0 and entry.poisonCount == 1)
         local lines = ppLines()
-        assert(#lines == 4, #lines)
-        for index = 2, 4 do assert(lines[index]:find(" id=Otomo_00@3000 ", 1, true), lines[index]) end
+        assert(#lines == 6, #lines)
+        for _, index in ipairs({ 2, 4, 6 }) do assert(lines[index]:find(" id=Otomo_00@3000 ", 1, true), lines[index]) end
         stubs.logLines = {}
         c.post("resultInfo")
         lines = ppLines()
         assert(#lines == 2, #lines)
-        assert(lines[1]:find("detail=1 mark=1 damage=12.5 blast=100.0 blastCount=1 poison=15.0 poisonCount=1", 1, true), lines[1])
-        assert(lines[2] == "[MyHuntReport] pp summary-end palicos=1 hits=1 blastLines=1 poisonLines=1 unresolved=0", lines[2])
+        assert(lines[1]:find("detail=1 mark=1 positive=1 matched=1 unmatchedDetail=0 unmatchedMark=0 unkeyed=0 damage=12.5"
+            .. " blast=100.0 blastCount=1 poison=15.0 poisonCount=1", 1, true), lines[1])
+        assert(lines[2] == "[MyHuntReport] pp summary-end palicos=1 hits=1 blastBrackets=1 blastLines=1"
+            .. " poisonBrackets=1 poisonLines=1 unresolved=0", lines[2])
     end)
 end
 
@@ -454,9 +517,12 @@ function T.resultLogsOneSummaryPerPalicoInFirstSeenOrder()
         c.post("resultInfo")
         local lines = ppLines()
         assert(#lines == 6, #lines)
-        assert(lines[1]:find("pp summary id=Otomo_01@4000 mine=false ownerIsMaster=false npc=false detail=1 mark=1 damage=20.0", 1, true), lines[1])
-        assert(lines[2]:find("pp summary id=Otomo_00@3000 mine=true ownerIsMaster=true npc=false detail=1 mark=1 damage=12.5", 1, true), lines[2])
-        assert(lines[3] == "[MyHuntReport] pp summary-end palicos=2 hits=2 blastLines=0 poisonLines=0 unresolved=0", lines[3])
+        assert(lines[1]:find("pp summary id=Otomo_01@4000 mine=false ownerIsMaster=false npc=false detail=1 mark=1 positive=1", 1, true), lines[1])
+        assert(lines[1]:find(" unmatchedDetail=0 unmatchedMark=0 unkeyed=0 damage=20.0 ", 1, true), lines[1])
+        assert(lines[2]:find("pp summary id=Otomo_00@3000 mine=true ownerIsMaster=true npc=false detail=1 mark=1 positive=1", 1, true), lines[2])
+        assert(lines[2]:find(" unmatchedDetail=0 unmatchedMark=0 unkeyed=0 damage=12.5 ", 1, true), lines[2])
+        assert(lines[3] == "[MyHuntReport] pp summary-end palicos=2 hits=2 blastBrackets=0 blastLines=0"
+            .. " poisonBrackets=0 poisonLines=0 unresolved=0", lines[3])
         assert(lines[4] == lines[1] and lines[6] == lines[3])
     end)
 end
@@ -477,14 +543,27 @@ function T.nothingIsReadOrLoggedWhenDeveloperModeIsOff()
     end)
 end
 
-function T.aBracketOpenedWithDeveloperModeOffIsNotClosedTwice()
+function T.bracketsOpenedWhileDeveloperModeIsOffStayBalancedAndSilent()
     withDeveloperProbe(function(c)
-        c.pre("blast", { nil, condition(7, { Category = 0, UniqueIndex = 0 }) })
+        c.characters["0/0"] = MASTER
+        local masterKey = { Category = 0, UniqueIndex = 0 }
+        local nullable = { _HasValue = false, _Value = masterKey }
+        c.pre("blast", { nil, condition(7, masterKey) })
         Log.setDeveloperMode(false)
         c.pre("poison", raising())
+        assert(c.probe.bracketDepth() == 2)
+        Log.setDeveloperMode(true)
+        c.pre("external", { nil, nil, 15.0, nil, nullable })
+        c.pre("setParam", { nil, nil, 100.0, masterKey })
         c.post("poison")
         assert(c.probe.bracketDepth() == 1)
-        Log.setDeveloperMode(true)
+        c.pre("setParam", { nil, nil, 100.0, masterKey })
+        c.post("blast")
+        assert(c.probe.bracketDepth() == 0 and touched == 0)
+        local lines = ppLines()
+        assert(#lines == 2, #lines)
+        assert(lines[1] == "[MyHuntReport] pp blast-activate t=100.00 em=7 invoker=0/0 master=true", lines[1])
+        assert(lines[2] == "[MyHuntReport] pp blast t=100.00 em=7 value=100.0 key=0/0 master=true", lines[2])
         c.post("blast")
         assert(c.probe.bracketDepth() == 0)
     end)
