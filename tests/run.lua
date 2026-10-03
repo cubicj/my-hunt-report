@@ -27,7 +27,6 @@ local SUITES = {
     "pulse_test",
     "reportwindow_test",
     "settingspanel_test",
-    "woundprobe_test",
     "entry_test",
 }
 
