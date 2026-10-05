@@ -246,11 +246,13 @@ function T.entryUpdatesTheCursorProbeDirectlyAfterTheReportWindowDraw()
     }, { __index = _G })
     assert(loadfile("reframework/autorun/my_hunt_report.lua", "t", environment))()
     assert(required["MyHuntReport.CursorProbe"] == true)
+    assert(required["MyHuntReport.MouseNav"] == true)
     assert(type(frame) == "function")
     calls = {}
     frame()
-    assert(calls[#calls - 1] == "MyHuntReport.ReportWindow.draw", table.concat(calls, ","))
-    assert(calls[#calls] == "MyHuntReport.CursorProbe.update", table.concat(calls, ","))
+    assert(calls[#calls - 2] == "MyHuntReport.ReportWindow.draw", table.concat(calls, ","))
+    assert(calls[#calls - 1] == "MyHuntReport.CursorProbe.update", table.concat(calls, ","))
+    assert(calls[#calls] == "MyHuntReport.MouseNav.update", table.concat(calls, ","))
 end
 
 function T.entryRegistersTheCursorProbeRestoreForScriptReset()

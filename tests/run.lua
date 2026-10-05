@@ -31,6 +31,7 @@ local SUITES = {
     "pulse_test",
     "reportwindow_test",
     "cursorprobe_test",
+    "mousenav_test",
     "settingspanel_test",
     "entry_test",
 }

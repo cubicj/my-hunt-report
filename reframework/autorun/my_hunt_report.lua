@@ -15,6 +15,7 @@ local Game = tryRequire("MyHuntReport.Game")
 local Fonts = tryRequire("MyHuntReport.Fonts")
 local ReportWindow = tryRequire("MyHuntReport.ReportWindow")
 local CursorProbe = tryRequire("MyHuntReport.CursorProbe")
+local MouseNav = tryRequire("MyHuntReport.MouseNav")
 local SettingsPanel = tryRequire("MyHuntReport.SettingsPanel")
 local ShellTracker = tryRequire("MyHuntReport.ShellTracker")
 local AttackLog = tryRequire("MyHuntReport.AttackLog")
@@ -80,20 +81,23 @@ if type(re.on_script_reset) == "function" then
     pcall(re.on_script_reset, CursorProbe.restore)
 end
 
+local function isKeyDown(code)
+    local ok, down = pcall(reframework.is_key_down, reframework, code)
+    return ok and down == true
+end
+
 re.on_frame(function()
     ShellTracker.update()
     AttackLog.update()
     Pulse.tick()
-    local event = Hotkey.update(function(code)
-        local ok, down = pcall(reframework.is_key_down, reframework, code)
-        return ok and down == true
-    end, Settings.get().toggleKey)
+    local event = Hotkey.update(isKeyDown, Settings.get().toggleKey)
     if event then
         if event.captured then Settings.set("toggleKey", event.captured) end
         if event.toggle then ReportWindow.toggle(nil) end
     end
     ReportWindow.draw()
     CursorProbe.update()
+    MouseNav.update(isKeyDown)
 end)
 
 re.on_config_save(function()
