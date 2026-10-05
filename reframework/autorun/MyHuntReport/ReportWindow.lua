@@ -753,9 +753,6 @@ local function updateFilteredHistory(changed)
         end
         selected[#selected + 1] = axis .. "=[" .. table.concat(values, ",") .. "]"
     end
-    if state.historyActive then
-        state.historyChips[#state.historyChips + 1] = { text = L("history_filter_clear_all"), id = "##historyClearAll" }
-    end
     if changed and Log.isDeveloperMode() then
         state.filterChangeCount = state.filterChangeCount + 1
         Log.debug(string.format("history filter %s shown=%d/%d", table.concat(selected, " "),
@@ -801,7 +798,7 @@ local function drawHistoryChips(ctx)
         local x, y = 0, origin.y
         local height = ctx.sizes.body + m.itemSpacing
         for _, chip in ipairs(state.historyChips) do
-            local suffix = chip.axis and " ×" or ""
+            local suffix = " ×"
             local suffixWidth = textWidth(suffix) or ctx.sizes.body
             local text = clipName(chip.text, ctx.width - m.itemSpacing * 2 - suffixWidth) .. suffix
             local width = math.min(ctx.width, (textWidth(text) or ctx.width - m.itemSpacing * 2) + m.itemSpacing * 2)

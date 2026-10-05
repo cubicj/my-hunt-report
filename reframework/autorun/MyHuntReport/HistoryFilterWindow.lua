@@ -56,11 +56,17 @@ local function drawContents(ctx, options, labels, selection, change, clipName)
     imgui.set_cursor_pos(Vector2f.new(top.x, top.y + m.topBarHeight))
     imgui.invisible_button("##filterWidth", { width, m.titleGap })
     for axisIndex, axis in ipairs(AXES) do
+        local lineTop = imgui.get_cursor_pos()
+        local clearHeight = math.floor(m.filterClearHeight * ctx.scale)
+        imgui.set_cursor_pos(Vector2f.new(top.x, lineTop.y + (clearHeight - ctx.sizes.small) / 2))
         textIn(ctx.fonts.small, Locale.text("history_filter_" .. axis.key), Theme.colors.textMuted)
         if next(selection[axis.key]) then
-            imgui.same_line()
-            if imgui.button(Locale.text("history_filter_clear") .. "##filterClear" .. axis.key) then change(axis.key) end
+            local axisClearText = Locale.text("history_filter_clear")
+            local axisClearWidth = imgui.calc_text_size(axisClearText).x + m.itemSpacing * 3
+            imgui.set_cursor_pos(Vector2f.new(top.x + width - axisClearWidth, lineTop.y))
+            if imgui.button(axisClearText .. "##filterClear" .. axis.key, { axisClearWidth, clearHeight }) then change(axis.key) end
         end
+        imgui.set_cursor_pos(Vector2f.new(top.x, lineTop.y + clearHeight + m.itemSpacing))
         local values = options[axis.key]
         local bottom
         if #values == 0 then

@@ -2431,7 +2431,7 @@ function T.historyFilterCheckboxesSelectTwoWeaponsWithOrSemantics()
     end)
 end
 
-function T.historyFilterChipsFollowAxisAndOptionOrderAndClearAllIsLast()
+function T.historyFilterChipsFollowAxisAndOptionOrderWithoutAClearAllChip()
     withHistoryFilters(function(ui)
         ui.entries = { filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2) }
         ui.openFilters()
@@ -2447,9 +2447,7 @@ function T.historyFilterChipsFollowAxisAndOptionOrderAndClearAllIsLast()
             assert(chip.id == "##historyChip" .. expected[index])
             assert(chip.text:find(" ×##", 1, true))
         end
-        local clear = ui.item("##historyClearAll")
-        assert(clear and clear.window == REPORT_WINDOW)
-        assert(clear.y > chips[#chips].y or clear.x > chips[#chips].x)
+        assert(not ui.item("##historyClearAll"))
     end)
 end
 
@@ -2467,20 +2465,23 @@ function T.historyFilterChipRemovalUnchecksOnlyItsValue()
     end)
 end
 
-function T.historyFilterPerAxisClearAndBothClearAllButtons()
+function T.historyFilterPerAxisClearAndFilterWindowClearAll()
     withHistoryFilters(function(ui)
         ui.entries = { filterRecord(10, 5, 32, 0) }
         ui.openFilters()
         local choices = { { "weapons", 10 }, { "levels", 5 }, { "species", 32 }, { "variants", "normal" } }
         for _, choice in ipairs(choices) do ui.check(choice[1], choice[2], true) end
         for index, choice in ipairs(choices) do
+            ui.draw()
+            local clear = ui.item("##filterClear" .. choice[1])
+            assert(clear.size[2] == 30 and clear.x + clear.size[1] == 24 + 480)
             ui.draw("##filterClear" .. choice[1])
             assert(not ui.checkbox(choice[1], choice[2]).checked)
             ui.draw()
             assert(#ui.chips() == #choices - index)
             assert(not ui.item("##filterClear" .. choice[1]))
         end
-        for _, clear in ipairs({ "##historyClearAll", "##filterClearAll" }) do
+        for _, clear in ipairs({ "##filterClearAll" }) do
             for _, choice in ipairs(choices) do ui.check(choice[1], choice[2], true) end
             ui.draw(clear)
             for _, choice in ipairs(choices) do assert(not ui.checkbox(choice[1], choice[2]).checked) end
@@ -2772,7 +2773,7 @@ function T.historyFilterActiveIconUsesAccentAndReturnsToMuted()
         imgui.is_item_hovered = function() return true end
         ui.draw()
         for index = 3, 8 do assert(list.calls[index][3] == Theme.colors.accent) end
-        ui.draw("##historyClearAll")
+        ui.draw("##filterClearAll")
         list.calls = {}
         imgui.is_item_hovered = function() return false end
         ui.draw()

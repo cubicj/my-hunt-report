@@ -88,6 +88,7 @@ Theme.metrics = {
     historyWeaponShare = 0.4,
     filterWidth = 480,
     filterWindowGap = 16,
+    filterClearHeight = 30,
 }
 
 Theme.WINDOW_FLAGS = 1 | 2 | 8 | 32 | 64 | 256
