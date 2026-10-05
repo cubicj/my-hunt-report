@@ -8,6 +8,7 @@ local DEFAULTS = {
     autoPopup = true,
     closeOnQuestStart = true,
     closeOnResultClose = false,
+    hoverCursor = true,
     toggleKey = 118,
     fontSize = 18,
     windowX = -1,

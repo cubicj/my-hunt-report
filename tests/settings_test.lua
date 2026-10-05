@@ -8,6 +8,7 @@ function T.defaultsWhenFileMissing()
     assert(s.autoPopup == true)
     assert(s.closeOnQuestStart == true)
     assert(s.closeOnResultClose == false)
+    assert(s.hoverCursor == true)
     assert(s.toggleKey == 118)
     assert(s.fontSize == 18)
     assert(s.visibleRows == nil)
@@ -99,6 +100,15 @@ function T.skillProcCaptureLoadsAndSavesFalse()
     assert(stubs.jsonFiles[Settings.FILE].skillProcCapture == true)
     assert(Settings.set("skillProcCapture", false) == true)
     assert(stubs.jsonFiles[Settings.FILE].skillProcCapture == false)
+end
+
+function T.hoverCursorLoadsSavesAndRejectsNonBooleans()
+    stubs.jsonFiles[Settings.FILE] = { hoverCursor = false }
+    assert(Settings.load().hoverCursor == false)
+    assert(Settings.set("hoverCursor", true) == true)
+    assert(stubs.jsonFiles[Settings.FILE].hoverCursor == true)
+    stubs.jsonFiles[Settings.FILE] = { hoverCursor = "off" }
+    assert(Settings.load().hoverCursor == true)
 end
 
 function T.scalarFileBackupPreservesRawText()

@@ -600,4 +600,25 @@ function T.settingsPanelCloseOnResultCloseFollowsCloseOnQuestStartAndSaves()
     end)
 end
 
+function T.settingsPanelHoverCursorFollowsCloseOnResultCloseAndSaves()
+    withClearPanel(function(ui)
+        local Settings = require("MyHuntReport.Settings")
+        ui.draw()
+        local resultClose, resultCloseIndex = ui.find("Close report when the quest result screen closes")
+        local hoverCursor, hoverCursorIndex = ui.find("Show the mouse cursor over the report window")
+        assert(resultClose.kind == "checkbox" and hoverCursor.kind == "checkbox")
+        assert(resultCloseIndex + 1 == hoverCursorIndex)
+        assert(Settings.get().hoverCursor == true)
+        local checkbox = imgui.checkbox
+        imgui.checkbox = function(label, value)
+            if label == "Show the mouse cursor over the report window" then return true, false end
+            return checkbox(label, value)
+        end
+        ui.draw()
+        imgui.checkbox = checkbox
+        assert(Settings.get().hoverCursor == false)
+        Settings.set("hoverCursor", true)
+    end)
+end
+
 return T

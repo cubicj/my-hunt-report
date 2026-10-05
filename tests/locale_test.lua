@@ -332,6 +332,14 @@ function T.woundBreakTextsResolve()
     assert(Locale.text("settings_skill_proc_capture") == "쇄인자격·속성 변환·상처 파괴·독 대미지 집계")
 end
 
+function T.hoverCursorTextsResolve()
+    Locale.init({ gameLanguage = function() return "en" end })
+    assert(Locale.resolve("en") == "en")
+    assert(Locale.text("settings_hover_cursor") == "Show the mouse cursor over the report window")
+    assert(Locale.resolve("ko") == "ko")
+    assert(Locale.text("settings_hover_cursor") == "리포트 창 위에서 마우스 커서 표시")
+end
+
 function T.closeOnResultCloseTextsResolve()
     Locale.init({ gameLanguage = function() return "en" end })
     assert(Locale.resolve("en") == "en")

@@ -165,6 +165,9 @@ local function drawTree()
     changed, value = imgui.checkbox(L("settings_close_on_result_close"), s.closeOnResultClose)
     if changed then Settings.set("closeOnResultClose", value) end
 
+    changed, value = imgui.checkbox(L("settings_hover_cursor"), s.hoverCursor)
+    if changed then Settings.set("hoverCursor", value) end
+
     drawHotkey(s, L)
     drawFontAndLanguage(s, L)
     drawHdrCorrection(s, L)
