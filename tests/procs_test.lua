@@ -453,6 +453,41 @@ function T.diagnosticsAreGatedAndUseSharedLogKeys()
     end)
 end
 
+function T.flayerOwnershipTraceComparesInvokerAndGetterWithoutRepeatCap()
+    withProcs(function(c)
+        local masterSkill = { get_address = function() return 123 end }
+        local otherSkill = { get_address = function() return 456 end }
+        local function bracket(kind, key, skill)
+            c.enter(kind, key)
+            if skill then c.hooks[GETTERS.stabbing].pre({ [2] = skill }) end
+            c.external(160, { _HasValue = false })
+            c.leave(kind)
+        end
+        bracket("flayer", c.master, masterSkill)
+        assert(#stubs.logLines == 0)
+        Log.setDeveloperMode(true)
+        for _ = 1, 7 do bracket("flayer", c.master, masterSkill) end
+        bracket("flayer", c.other, otherSkill)
+        bracket("flayer", c.master, otherSkill)
+        bracket("flayer", c.other, nil)
+        bracket("elementConvert", c.master, masterSkill)
+        bracket("poison", c.master, nil)
+        local agree, total = 0, 0
+        for _, line in ipairs(stubs.logLines) do
+            if line:find("proc flayer ownership", 1, true) then total = total + 1 end
+            if line:find("proc flayer ownership invoker=0/7 invokerMaster=true getterMaster=true recorded=true agree", 1, true) then
+                agree = agree + 1
+            end
+        end
+        assert(agree == 7 and total == 10)
+        local lines = table.concat(stubs.logLines, "\n")
+        assert(lines:find("proc flayer ownership invoker=0/8 invokerMaster=false getterMaster=false recorded=false agree", 1, true))
+        assert(lines:find("proc flayer ownership invoker=0/7 invokerMaster=true getterMaster=false recorded=false DISAGREE", 1, true))
+        assert(lines:find("proc flayer ownership invoker=0/8 invokerMaster=false getterMaster=nil recorded=false noGetter", 1, true))
+        assert(not lines:find("proc elementConvert ownership", 1, true) and not lines:find("proc poison ownership", 1, true))
+    end)
+end
+
 function T.getterDiagnosticsReturnBeforeReadingWhenDisabled()
     withProcs(function(c)
         sdk.to_managed_object = function() error("must not decode") end

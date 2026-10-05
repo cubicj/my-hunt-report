@@ -138,9 +138,26 @@ local function enterBracket(kind, args)
         "proc:" .. kind .. ":invoker")
 end
 
+local function traceFlayerOwnership(bracket)
+    if bracket.kind ~= "flayer" or not Log.isDeveloperMode() then return end
+    local invoker = readInvoker(bracket)
+    local category = diagnosticValue(function() return invoker.Category end)
+    local uniqueIndex = diagnosticValue(function() return invoker.UniqueIndex end)
+    local byInvoker = invokerIsMaster(bracket)
+    local byGetter = bracket.getterIsMaster
+    local verdict = "noGetter"
+    if byGetter ~= nil then
+        verdict = byGetter == byInvoker and "agree" or "DISAGREE"
+    end
+    Log.trace("proc flayer ownership invoker=" .. category .. "/" .. uniqueIndex
+        .. " invokerMaster=" .. tostring(byInvoker) .. " getterMaster=" .. tostring(byGetter)
+        .. " recorded=" .. tostring(bracket.recorded) .. " " .. verdict)
+end
+
 local function leaveBracket()
     local bracket = brackets[#brackets]
     brackets[#brackets] = nil
+    if bracket then traceFlayerOwnership(bracket) end
     if not bracket or bracket.recorded or bracket.palicoDamage == nil then return end
     if not Session.addPalicoProc(bracket.kind, bracket.palicoDamage) or not Log.isDeveloperMode() then return end
     Log.trace(string.format("palico %s value=%.1f total=%.1f",
