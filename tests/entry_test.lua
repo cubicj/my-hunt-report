@@ -253,4 +253,32 @@ function T.entryUpdatesTheCursorProbeDirectlyAfterTheReportWindowDraw()
     assert(calls[#calls] == "MyHuntReport.CursorProbe.update", table.concat(calls, ","))
 end
 
+function T.entryRegistersTheCursorProbeRestoreForScriptReset()
+    local noop = function() end
+    local dummy = setmetatable({}, { __index = function() return noop end })
+    local resets, restores = {}, 0
+    local modules = {
+        ["MyHuntReport.Settings"] = {
+            load = noop,
+            get = function() return { language = "en", fontSize = 18, developerMode = false, skillProcCapture = false } end,
+        },
+        ["MyHuntReport.CursorProbe"] = {
+            update = noop,
+            restore = function() restores = restores + 1 end,
+        },
+    }
+    local environment = setmetatable({
+        require = function(name) return modules[name] or dummy end,
+        re = {
+            on_draw_ui = noop, on_frame = noop, on_config_save = noop,
+            on_script_reset = function(callback) resets[#resets + 1] = callback end,
+        },
+    }, { __index = _G })
+    assert(loadfile("reframework/autorun/my_hunt_report.lua", "t", environment))()
+    assert(#resets == 1 and type(resets[1]) == "function")
+    assert(restores == 0)
+    resets[1]()
+    assert(restores == 1)
+end
+
 return T

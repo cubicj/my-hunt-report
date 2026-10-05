@@ -75,6 +75,10 @@ end)
 
 SettingsPanel.register({ quest = Quest })
 
+if type(re.on_script_reset) == "function" then
+    pcall(re.on_script_reset, CursorProbe.restore)
+end
+
 re.on_frame(function()
     ShellTracker.update()
     AttackLog.update()

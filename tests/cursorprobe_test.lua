@@ -301,10 +301,155 @@ function T.aFailingSetterLogsOncePerHover()
         assert(c.count("set failed") == 1 and #c.sets == 3)
         c.outside()
         c.frame()
-        assert(c.count("set failed") == 1 and c.has("hover end at 14.000 duration=3.000 overrides=2"))
+        assert(c.count("set failed") == 1 and not c.has("hover end"))
+        assert(#c.sets == 4 and c.sets[4] == false)
         c.inside()
         c.frame()
+        assert(c.count("set failed") == 1 and not c.has("hover end"))
+        assert(c.count("hover start at") == 1 and not c.has("hover start at 15.000"))
+        assert(#c.sets == 5 and c.sets[5] == false)
+        c.setFails = false
+        c.frame()
+        assert(#c.sets == 6 and c.sets[6] == false and c.show == false)
+        assert(c.count("hover end") == 1)
+        assert(c.has("hover end at 16.000 duration=5.000 overrides=2 restored=false readback=false"))
+        assert(c.count("hover start at") == 1 and c.count("set failed") == 1)
+        c.setFails = true
+        c.frame()
+        assert(c.count("hover start at") == 2 and c.count("hover end") == 1)
         assert(c.count("set failed") == 2)
+    end)
+end
+
+function T.resetRestoresAnActiveHoverAndIsIdempotent()
+    withProbe(function(c)
+        c.inside()
+        c.frame()
+        assert(c.show == true)
+        c.probe.restore()
+        assert(#c.sets == 2 and c.sets[2] == false and c.show == false)
+        assert(c.count("hover end") == 1)
+        local reads, lines = c.reads, #stubs.logLines
+        c.probe.restore()
+        assert(#c.sets == 2 and c.reads == reads and #stubs.logLines == lines)
+    end)
+end
+
+function T.resetRestoresASavedTrueWithDeveloperModeOff()
+    withProbe(function(c)
+        c.show = true
+        c.inside()
+        c.frame()
+        c.show = false
+        local lines = #stubs.logLines
+        Log.setDeveloperMode(false)
+        c.probe.restore()
+        assert(#c.sets == 2 and c.sets[2] == true and c.show == true)
+        assert(#stubs.logLines == lines)
+        local reads = c.reads
+        c.probe.restore()
+        assert(#c.sets == 2 and c.reads == reads and #stubs.logLines == lines)
+    end)
+end
+
+function T.resetDoesNothingAndReadsNothingWhenIdle()
+    withProbe(function(c)
+        c.inside()
+        c.probe.restore()
+        Log.setDeveloperMode(false)
+        c.probe.restore()
+        assert(c.reads == 0 and #c.sets == 0 and #stubs.logLines == 0)
+    end)
+end
+
+function T.failedResetRestorationIsRetriedByUpdate()
+    withProbe(function(c)
+        c.inside()
+        c.frame()
+        c.setFails = true
+        c.probe.restore()
+        assert(#c.sets == 2 and c.sets[2] == false and c.show == true)
+        assert(not c.has("hover end") and c.count("set failed") == 1)
+        c.setFails = false
+        c.frame()
+        assert(#c.sets == 3 and c.sets[3] == false and c.show == false)
+        assert(c.count("hover start at") == 1 and c.count("hover end") == 1)
+        assert(c.has("hover end at 12.000 duration=1.000 overrides=0 restored=false readback=false"))
+    end)
+end
+
+function T.onlyTheRestorationFailsAndLaterSucceeds()
+    withProbe(function(c)
+        c.inside()
+        c.frame()
+        assert(c.show == true and not c.has("set failed"))
+        c.setFails = true
+        c.outside()
+        c.frame()
+        assert(#c.sets == 2 and c.sets[2] == false and c.show == true)
+        assert(c.count("set failed") == 1 and not c.has("hover end"))
+        c.frame()
+        assert(#c.sets == 3 and c.sets[3] == false)
+        assert(c.count("set failed") == 1 and not c.has("hover end"))
+        c.setFails = false
+        c.frame()
+        assert(#c.sets == 4 and c.sets[4] == false and c.show == false)
+        assert(c.count("hover end") == 1)
+        assert(c.has("hover end at 14.000 duration=3.000 overrides=0 restored=false readback=false"))
+        c.frame()
+        assert(#c.sets == 4 and c.count("hover end") == 1)
+        assert(not c.has("change show"))
+    end)
+end
+
+function T.pendingRestorePreventsANewHoverAndPreservesTheSavedValue()
+    withProbe(function(c)
+        c.inside()
+        c.frame()
+        c.setFails = true
+        c.outside()
+        c.frame()
+        c.inside()
+        c.frame()
+        c.frame()
+        assert(#c.sets == 4 and c.sets[3] == false and c.sets[4] == false)
+        assert(c.count("hover start at") == 1 and not c.has("hover end"))
+        assert(not c.has("override #"))
+        c.setFails = false
+        c.frame()
+        assert(#c.sets == 5 and c.sets[5] == false and c.show == false)
+        assert(c.count("hover end") == 1 and c.count("hover start at") == 1)
+        assert(c.has("hover end at 15.000 duration=4.000 overrides=0 restored=false readback=false"))
+        c.frame()
+        assert(#c.sets == 6 and c.sets[6] == true)
+        assert(c.has("hover start at 16.000 saved=false readback=true"))
+    end)
+end
+
+function T.pendingRestoreRetriesWithDeveloperModeOffAndThenBecomesInert()
+    withProbe(function(c)
+        c.inside()
+        c.frame()
+        c.setFails = true
+        Log.setDeveloperMode(false)
+        local lines = #stubs.logLines
+        c.frame()
+        assert(#c.sets == 2 and c.sets[2] == false and c.show == true)
+        local reads = c.reads
+        c.frame()
+        assert(#c.sets == 3 and c.sets[3] == false and c.show == true)
+        assert(c.reads - reads <= 3 and #stubs.logLines == lines)
+        c.setFails = false
+        c.frame()
+        assert(#c.sets == 4 and c.sets[4] == false and c.show == false)
+        assert(#stubs.logLines == lines)
+        reads = c.reads
+        c.frame()
+        assert(#c.sets == 4 and c.reads == reads and #stubs.logLines == lines)
+        c.outside()
+        Log.setDeveloperMode(true)
+        c.frame()
+        assert(c.count("snapshot at") == 2 and #c.sets == 4)
     end)
 end
 

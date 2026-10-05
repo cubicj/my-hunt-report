@@ -53,16 +53,22 @@ local function setShow(value)
         active.setFailed = true
         Log.trace("cursor set failed " .. tostring(err))
     end
+    return err == nil
 end
 
 local function endHover(now)
     local hover = active
-    setShow(hover.saved)
+    hover.restoring = true
+    if not setShow(hover.saved) then return readBoolean(GET_SHOW) end
     active = nil
     local readback = readBoolean(GET_SHOW)
     Log.trace(string.format("cursor hover end at %.3f duration=%.3f overrides=%d restored=%s readback=%s",
         now, now - hover.startedAt, hover.overrides, text(hover.saved), text(readback)))
     return readback
+end
+
+function CursorProbe.restore()
+    if active then return endHover(Game.uptime()) end
 end
 
 local function startHover(now, saved)
@@ -86,7 +92,7 @@ end
 
 function CursorProbe.update()
     if not Log.isDeveloperMode() then
-        if active then endHover(Game.uptime()) end
+        CursorProbe.restore()
         previous = nil
         skipped = false
         return
@@ -106,7 +112,7 @@ function CursorProbe.update()
     local ownShow = false
     if current.hover ~= true then skipped = false end
     if active then
-        if current.hover ~= true then
+        if active.restoring or current.hover ~= true then
             current.show = endHover(now)
             ownShow = true
         elseif current.show == false then
@@ -115,10 +121,8 @@ function CursorProbe.update()
         end
     elseif current.hover == true and current.menu == false and not skipped then
         if current.show == nil then
-            if not skipped then
-                skipped = true
-                Log.trace("cursor hover start skipped saved=?")
-            end
+            skipped = true
+            Log.trace("cursor hover start skipped saved=?")
         else
             current.show = startHover(now, current.show)
             ownShow = true
