@@ -45,13 +45,19 @@ local function monsterName(label)
         path = "identifier"
     end
     if legendaryId == LEGENDARY_NORMAL or legendaryId == LEGENDARY_KING or roleId == ROLE_FRENZY then
+        local forced = Locale.viaLanguage() ~= nil
         local okVariant, variantName = pcall(function()
+            if forced then
+                local guid = Game.callStatic("app.EnemyDef",
+                    "Name(app.EnemyDef.ID, app.EnemyDef.ROLE_ID, app.EnemyDef.LEGENDARY_ID)", emId, roleId, legendaryId)
+                return Game.messageText(guid)
+            end
             return Game.callStatic("app.EnemyDef",
                 "NameString(app.EnemyDef.ID, app.EnemyDef.ROLE_ID, app.EnemyDef.LEGENDARY_ID)", emId, roleId, legendaryId)
         end)
         if okVariant and Game.isUsableText(variantName) and variantName ~= name then
             name = variantName
-            path = "NameString"
+            path = forced and "Name" or "NameString"
         else
             local prefix = legendaryId == LEGENDARY_KING and "monster_arch_tempered"
                 or legendaryId == LEGENDARY_NORMAL and "monster_tempered" or "monster_frenzied"

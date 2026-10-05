@@ -198,6 +198,7 @@ end
 
 function T.monsterVariantsUseDistinctNameString()
     withNames(function(Names)
+        Locale.resolve("auto")
         Game.messageText = function() return "Ajarakan" end
         for _, variant in ipairs({ { 0, 1 }, { 0, 2 }, { 3, 0 }, { 3, 2 } }) do
             local calls = 0
@@ -221,21 +222,31 @@ end
 
 function T.monsterVariantsPrefixBaseOrFailedOrUnusableNameString()
     withNames(function(Names)
-        for _, language in ipairs({ "en", "ko" }) do
+        for _, language in ipairs({ "en", "ko", "auto" }) do
             Locale.resolve(language)
             local base = language == "ko" and "아자라칸" or "Ajarakan"
             local prefixes = language == "ko" and { "역전 ", "역전왕 ", "광룡화 " }
                 or { "Tempered ", "Arch-tempered ", "Frenzied " }
-            Game.messageText = function() return base end
+            local variantSignature = language == "auto"
+                and "NameString(app.EnemyDef.ID, app.EnemyDef.ROLE_ID, app.EnemyDef.LEGENDARY_ID)"
+                or "Name(app.EnemyDef.ID, app.EnemyDef.ROLE_ID, app.EnemyDef.LEGENDARY_ID)"
             for _, result in ipairs({ "base", "throw", "nil", false, 123, "", "#Rejected#guid", "name---" }) do
                 Names.reset()
-                Game.callStatic = function(_, signature)
-                    if signature == "EnemyName(app.EnemyDef.ID)" then return "guid" end
-                    assert(signature == "NameString(app.EnemyDef.ID, app.EnemyDef.ROLE_ID, app.EnemyDef.LEGENDARY_ID)")
+                local function variantResult()
                     if result == "throw" then error("name unavailable") end
                     if result == "nil" then return nil end
                     if result == "base" then return base end
                     return result
+                end
+                Game.callStatic = function(_, signature)
+                    if signature == "EnemyName(app.EnemyDef.ID)" then return "guid" end
+                    assert(signature == variantSignature, signature)
+                    if language == "auto" then return variantResult() end
+                    return "variantGuid"
+                end
+                Game.messageText = function(guid)
+                    if guid == "variantGuid" then return variantResult() end
+                    return base
                 end
                 for _, variant in ipairs({ { 0, 1, 1 }, { 0, 2, 2 }, { 3, 0, 3 }, { 3, 1, 1 }, { 3, 2, 2 } }) do
                     assert(Names.resolve({ kind = "monster", emId = 26, roleId = variant[1], legendaryId = variant[2] })
@@ -266,7 +277,10 @@ function T.monsterCacheSeparatesLocaleEnemyRoleAndLegendary()
             if signature == "EnemyName(app.EnemyDef.ID)" then return emId end
             return Locale.textKey() .. ":" .. emId .. ":" .. roleId .. ":" .. legendaryId
         end
-        Game.messageText = function(emId) return "Base " .. emId end
+        Game.messageText = function(value)
+            if type(value) == "string" then return value end
+            return "Base " .. value
+        end
         for _, language in ipairs({ "en", "ko", "auto" }) do
             Locale.resolve(language)
             for _, emId in ipairs({ 26, 27 }) do
@@ -285,12 +299,15 @@ end
 function T.monsterDebugReportsEachResolutionPathOncePerCachedKey()
     withNames(function(Names)
         Log.setDeveloperMode(true)
-        Game.messageText = function() return "Ajarakan" end
+        Game.messageText = function(guid) return guid == "kingGuid" and "Arch-tempered Ajarakan" or "Ajarakan" end
         Game.callStatic = function(_, signature, _, _, legendaryId)
             if signature == "EnemyName(app.EnemyDef.ID)" then return "guid" end
+            if signature == "Name(app.EnemyDef.ID, app.EnemyDef.ROLE_ID, app.EnemyDef.LEGENDARY_ID)" then
+                return legendaryId == 2 and "kingGuid" or "guid"
+            end
             return legendaryId == 2 and "Arch-tempered Ajarakan" or "Ajarakan"
         end
-        for _, variant in ipairs({ { 0, "EnemyName" }, { 1, "prefix" }, { 2, "NameString" } }) do
+        for _, variant in ipairs({ { 0, "EnemyName" }, { 1, "prefix" }, { 2, "Name" } }) do
             local label = { kind = "monster", emId = 26, legendaryId = variant[1] }
             for _ = 1, 2 do Names.resolve(label) end
             local key = "via:1:26:0:" .. variant[1]
@@ -298,9 +315,32 @@ function T.monsterDebugReportsEachResolutionPathOncePerCachedKey()
             assert(Log.count("monster:name:" .. key) == 1)
         end
         assert(#stubs.logLines == 3)
+        Locale.resolve("auto")
+        Names.resolve({ kind = "monster", emId = 26, legendaryId = 2 })
+        assert(stubs.logLines[#stubs.logLines] == "[MyHuntReport] monster name " .. Locale.textKey() .. ":26:0:2 via NameString")
+        Locale.resolve("en")
+        local logged = #stubs.logLines
         Log.setDeveloperMode(false)
         Names.resolve({ kind = "monster", emId = 27, legendaryId = 2 })
-        assert(#stubs.logLines == 3)
+        assert(#stubs.logLines == logged)
+    end)
+end
+
+function T.monsterVariantsFollowTheForcedLanguageThroughTheGuidName()
+    withNames(function(Names)
+        local signatures = {}
+        Game.callStatic = function(_, signature, emId, roleId, legendaryId)
+            signatures[#signatures + 1] = signature
+            if signature == "EnemyName(app.EnemyDef.ID)" then return "guid" end
+            assert(emId == 26 and roleId == 0 and legendaryId == 1)
+            return "variantGuid"
+        end
+        Game.messageText = function(guid)
+            return guid == "variantGuid" and "Tempered Ajarakan (guid)" or "Ajarakan"
+        end
+        assert(Names.resolve({ kind = "monster", emId = 26, roleId = 0, legendaryId = 1 }) == "Tempered Ajarakan (guid)")
+        assert(#signatures == 2)
+        assert(signatures[2] == "Name(app.EnemyDef.ID, app.EnemyDef.ROLE_ID, app.EnemyDef.LEGENDARY_ID)")
     end)
 end
 
