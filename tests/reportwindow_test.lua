@@ -2474,7 +2474,7 @@ function T.historyFilterPerAxisClearAndFilterWindowClearAll()
         for index, choice in ipairs(choices) do
             ui.draw()
             local clear = ui.item("##filterClear" .. choice[1])
-            assert(clear.size[2] == 30)
+            assert(clear.size[2] == ui.item("##filterClearAll").size[2])
             assert(clear.x == 24 + utf8.len(Locale.text("history_filter_" .. choice[1])) * 8 + 10)
             ui.draw("##filterClear" .. choice[1])
             assert(not ui.checkbox(choice[1], choice[2]).checked)

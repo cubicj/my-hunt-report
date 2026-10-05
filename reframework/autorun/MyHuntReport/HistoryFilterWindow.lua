@@ -57,7 +57,7 @@ local function drawContents(ctx, options, labels, selection, change, clipName)
     imgui.invisible_button("##filterWidth", { width, m.titleGap })
     for axisIndex, axis in ipairs(AXES) do
         local lineTop = imgui.get_cursor_pos()
-        local clearHeight = math.floor(m.filterClearHeight * ctx.scale)
+        local clearHeight = m.iconButton
         imgui.set_cursor_pos(Vector2f.new(top.x, lineTop.y + (clearHeight - ctx.sizes.small) / 2))
         local title = Locale.text("history_filter_" .. axis.key)
         textIn(ctx.fonts.small, title, Theme.colors.textMuted)
