@@ -2276,7 +2276,8 @@ local function withHistoryFilters(callback)
             return open
         end
         imgui.end_window = function()
-            assert(current ~= FILTER_WINDOW or not movedWithoutItem, "filter window ends on a bare cursor move")
+            assert(current ~= FILTER_WINDOW or ui.failText or ui.failCheckbox or not movedWithoutItem,
+                "filter window ends on a bare cursor move")
             assert(table.remove(windows) == current)
             current = nil
         end
@@ -2297,8 +2298,8 @@ local function withHistoryFilters(callback)
         imgui.get_cursor_screen_pos = function() return { x = cursor.x, y = cursor.y } end
         imgui.calc_text_size = function(text) return { x = utf8.len(text) * 8, y = 18 } end
         local function advance(height)
+            movedWithoutItem, itemBottom = false, math.max(itemBottom, cursor.y + (height or 24))
             cursor = { x = 24, y = cursor.y + (height or 24) + 10 }
-            movedWithoutItem, itemBottom = false, math.max(itemBottom, cursor.y)
         end
         local originalText = imgui.text
         imgui.text = function(text)

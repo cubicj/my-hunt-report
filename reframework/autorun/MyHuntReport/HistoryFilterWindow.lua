@@ -63,8 +63,10 @@ local function drawContents(ctx, options, labels, selection, change, clipName)
             if imgui.button(Locale.text("history_filter_clear") .. "##filterClear" .. axis.key) then change(axis.key) end
         end
         local values = options[axis.key]
+        local bottom
         if #values == 0 then
             textIn(ctx.fonts.body, "-", Theme.colors.textMuted)
+            bottom = imgui.get_cursor_pos().y
         else
             local origin = imgui.get_cursor_pos()
             local columnWidth = width / axis.columns
@@ -78,11 +80,10 @@ local function drawContents(ctx, options, labels, selection, change, clipName)
                 if changed then change(axis.key, value, checked) end
                 nextY = math.max(nextY, imgui.get_cursor_pos().y)
             end
-            imgui.set_cursor_pos(Vector2f.new(origin.x, nextY))
+            bottom = nextY
         end
         if axisIndex < #AXES then
-            local pos = imgui.get_cursor_pos()
-            imgui.set_cursor_pos(Vector2f.new(pos.x, pos.y + m.sectionGap))
+            imgui.set_cursor_pos(Vector2f.new(top.x, bottom + m.sectionGap))
         end
     end
     return not closed
