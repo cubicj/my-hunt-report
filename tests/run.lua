@@ -30,7 +30,7 @@ local SUITES = {
     "names_test",
     "pulse_test",
     "reportwindow_test",
-    "cursorprobe_test",
+    "hovercursor_test",
     "mousenav_test",
     "settingspanel_test",
     "entry_test",

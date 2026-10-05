@@ -1,14 +1,15 @@
 local Game = require("MyHuntReport.Game")
 local Log = require("MyHuntReport.Log")
 local ReportWindow = require("MyHuntReport.ReportWindow")
+local Settings = require("MyHuntReport.Settings")
 
-local CursorProbe = {}
+local HoverCursor = {}
 
 local MOUSE_TYPE = "via.hid.Mouse"
 local GET_SHOW = "get_ShowCursor()"
 local GET_IN_CLIENT = "get_InWindowClientArea()"
 local SET_SHOW = "set_ShowCursor(System.Boolean)"
-local FIELDS = { "show", "inClient", "menu", "hover" }
+local FIELDS = { "show", "inClient", "menu", "hover", "enabled" }
 local MAX_OVERRIDE_LINES = 10
 
 local previous = nil
@@ -32,7 +33,7 @@ local function readMenu()
     return nil
 end
 
-function CursorProbe.contains(x, y, width, height, pointX, pointY)
+function HoverCursor.contains(x, y, width, height, pointX, pointY)
     return pointX >= x and pointX < x + width and pointY >= y and pointY < y + height
 end
 
@@ -42,8 +43,8 @@ local function readHover()
     if x == nil and fx == nil then return false end
     local ok, inside = pcall(function()
         local mouse = imgui.get_mouse()
-        return (x ~= nil and CursorProbe.contains(x, y, width, height, mouse.x, mouse.y))
-            or (fx ~= nil and CursorProbe.contains(fx, fy, fw, fh, mouse.x, mouse.y))
+        return (x ~= nil and HoverCursor.contains(x, y, width, height, mouse.x, mouse.y))
+            or (fx ~= nil and HoverCursor.contains(fx, fy, fw, fh, mouse.x, mouse.y))
     end)
     if ok and type(inside) == "boolean" then return inside end
     return nil
@@ -69,7 +70,7 @@ local function endHover(now)
     return readback
 end
 
-function CursorProbe.restore()
+function HoverCursor.restore()
     if active then return endHover(Game.uptime()) end
 end
 
@@ -92,44 +93,52 @@ local function reassert(now)
     return readBoolean(GET_SHOW)
 end
 
-function CursorProbe.update()
-    if not Log.isDeveloperMode() then
-        CursorProbe.restore()
-        previous = nil
-        skipped = false
-        return
+function HoverCursor.update()
+    local enabled = Settings.get().hoverCursor == true
+    local observing = Log.isDeveloperMode()
+    if not observing then previous = nil end
+    if not enabled and not active and not observing then return end
+    local current = { enabled = enabled, hover = readHover() }
+    if current.hover ~= true then skipped = false end
+    local ending = active ~= nil and (active.restoring or current.hover ~= true or not enabled)
+    local starting = active == nil and enabled and current.hover == true and not skipped
+    local now = nil
+    if observing then
+        now = Game.uptime()
+        current.show = readBoolean(GET_SHOW)
+        current.inClient = readBoolean(GET_IN_CLIENT)
+        current.menu = readMenu()
+    elseif active and not ending then
+        current.show = readBoolean(GET_SHOW)
+    elseif starting then
+        current.menu = readMenu()
+        if current.menu == false then current.show = readBoolean(GET_SHOW) end
     end
-    local now = Game.uptime()
-    local current = {
-        show = readBoolean(GET_SHOW),
-        inClient = readBoolean(GET_IN_CLIENT),
-        menu = readMenu(),
-        hover = readHover(),
-    }
-    local first = previous == nil
+    local first = observing and previous == nil
     if first then
-        Log.trace(string.format("cursor snapshot at %.3f show=%s inClient=%s menu=%s hover=%s",
-            now, text(current.show), text(current.inClient), text(current.menu), text(current.hover)))
+        Log.trace(string.format("cursor snapshot at %.3f show=%s inClient=%s menu=%s hover=%s enabled=%s",
+            now, text(current.show), text(current.inClient), text(current.menu), text(current.hover),
+            text(current.enabled)))
     end
     local ownShow = false
-    if current.hover ~= true then skipped = false end
-    if active then
-        if active.restoring or current.hover ~= true then
-            current.show = endHover(now)
-            ownShow = true
-        elseif current.show == false then
-            current.show = reassert(now)
+    if ending then
+        current.show = endHover(now or Game.uptime())
+        ownShow = true
+    elseif active then
+        if current.show == false then
+            current.show = reassert(now or Game.uptime())
             ownShow = true
         end
-    elseif current.hover == true and current.menu == false and not skipped then
+    elseif starting and current.menu == false then
         if current.show == nil then
             skipped = true
             Log.trace("cursor hover start skipped saved=?")
         else
-            current.show = startHover(now, current.show)
+            current.show = startHover(now or Game.uptime(), current.show)
             ownShow = true
         end
     end
+    if not observing then return end
     if not first then
         for _, field in ipairs(FIELDS) do
             if current[field] ~= previous[field] and not (field == "show" and ownShow) then
@@ -141,4 +150,4 @@ function CursorProbe.update()
     previous = current
 end
 
-return CursorProbe
+return HoverCursor

@@ -21,6 +21,7 @@ Settings live in the REFramework menu under **My Hunt Report**.
 - **F7** toggles the report window (rebindable).
 - The mouse side buttons go back and forward between the live report, the history list, and a past report, like a browser. They act only while the mouse is over the report or filter window.
 - Show the report automatically when a quest ends, and close it when the next quest starts or when the quest result screen closes.
+- Show the Windows mouse cursor while the mouse is over the report or filter window, so the buttons are easy to click with the REFramework menu closed (can be turned off).
 - Font size, and language (automatic, English, or Korean).
 - HDR color correction (automatic, on, or off), so the report colors look the same with HDR on as in SDR.
 - Record Flayer, Element Convert, wound-break, and poison damage, which can be turned off (turning it off needs a game restart).

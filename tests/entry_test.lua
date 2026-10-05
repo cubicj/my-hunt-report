@@ -222,7 +222,7 @@ function T.entryInstallsThePalicoCaptureAfterHitCaptureAndNotTheRetiredProbe()
     if not ok then error(err, 0) end
 end
 
-function T.entryUpdatesTheCursorProbeDirectlyAfterTheReportWindowDraw()
+function T.entryUpdatesTheHoverCursorDirectlyAfterTheReportWindowDraw()
     local noop = function() end
     local calls, required = {}, {}
     local frame
@@ -252,13 +252,16 @@ function T.entryUpdatesTheCursorProbeDirectlyAfterTheReportWindowDraw()
         re = { on_draw_ui = noop, on_frame = function(callback) frame = callback end, on_config_save = noop },
     }, { __index = _G })
     assert(loadfile("reframework/autorun/my_hunt_report.lua", "t", environment))()
-    assert(required["MyHuntReport.CursorProbe"] == true)
+    assert(required["MyHuntReport.HoverCursor"] == true)
+    assert(required["MyHuntReport.CursorProbe"] == nil)
+    assert(loadfile("reframework/autorun/MyHuntReport/CursorProbe.lua") == nil)
+    assert(loadfile("tests/cursorprobe_test.lua") == nil)
     assert(required["MyHuntReport.MouseNav"] == true)
     assert(type(frame) == "function")
     calls = {}
     frame()
     assert(calls[#calls - 2] == "MyHuntReport.ReportWindow.draw", table.concat(calls, ","))
-    assert(calls[#calls - 1] == "MyHuntReport.CursorProbe.update", table.concat(calls, ","))
+    assert(calls[#calls - 1] == "MyHuntReport.HoverCursor.update", table.concat(calls, ","))
     assert(calls[#calls] == "MyHuntReport.MouseNav.update", table.concat(calls, ","))
     local asked
     local original = rawget(imgui, "is_mouse_down")
@@ -271,7 +274,7 @@ function T.entryUpdatesTheCursorProbeDirectlyAfterTheReportWindowDraw()
     assert(okRead and down == true and asked == 4)
 end
 
-function T.entryRegistersTheCursorProbeRestoreForScriptReset()
+function T.entryRegistersTheHoverCursorRestoreForScriptReset()
     local noop = function() end
     local dummy = setmetatable({}, { __index = function() return noop end })
     local resets, restores = {}, 0
@@ -280,7 +283,7 @@ function T.entryRegistersTheCursorProbeRestoreForScriptReset()
             load = noop,
             get = function() return { language = "en", fontSize = 18, developerMode = false, skillProcCapture = false } end,
         },
-        ["MyHuntReport.CursorProbe"] = {
+        ["MyHuntReport.HoverCursor"] = {
             update = noop,
             restore = function() restores = restores + 1 end,
         },

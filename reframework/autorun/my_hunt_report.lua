@@ -14,7 +14,7 @@ local Locale = tryRequire("MyHuntReport.Locale")
 local Game = tryRequire("MyHuntReport.Game")
 local Fonts = tryRequire("MyHuntReport.Fonts")
 local ReportWindow = tryRequire("MyHuntReport.ReportWindow")
-local CursorProbe = tryRequire("MyHuntReport.CursorProbe")
+local HoverCursor = tryRequire("MyHuntReport.HoverCursor")
 local MouseNav = tryRequire("MyHuntReport.MouseNav")
 local SettingsPanel = tryRequire("MyHuntReport.SettingsPanel")
 local ShellTracker = tryRequire("MyHuntReport.ShellTracker")
@@ -78,7 +78,7 @@ end)
 SettingsPanel.register({ quest = Quest })
 
 if type(re.on_script_reset) == "function" then
-    pcall(re.on_script_reset, CursorProbe.restore)
+    pcall(re.on_script_reset, HoverCursor.restore)
 end
 
 local function isKeyDown(code)
@@ -101,7 +101,7 @@ re.on_frame(function()
         if event.toggle then ReportWindow.toggle(nil) end
     end
     ReportWindow.draw()
-    CursorProbe.update()
+    HoverCursor.update()
     MouseNav.update(isMouseDown)
 end)
 
