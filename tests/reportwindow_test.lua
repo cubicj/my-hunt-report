@@ -110,14 +110,14 @@ function T.topBarDrawsCenteredIconsWithHiddenLabels()
         imgui.get_cursor_screen_pos = function() return { x = screen.x, y = screen.y } end
         ui.onButton = function(label, size)
             assert(label == "##back" or label == "##close")
-            assert(size[1] == 28 and size[2] == 28)
+            assert(size[1] == 36 and size[2] == 36)
             screen = { x = 300, y = 400 }
         end
         ui.draw()
         assertNavigation(ui, "##back|##close")
         local expected = {
-            { 116, 218, 112, 214 }, { 112, 214, 116, 210 },
-            { 318, 410, 310, 418 }, { 310, 410, 318, 418 },
+            { 120.5, 223, 115.5, 218 }, { 115.5, 218, 120.5, 213 },
+            { 323, 413, 313, 423 }, { 313, 413, 323, 423 },
         }
         assert(#list.calls == 4)
         for index, points in ipairs(expected) do
@@ -335,8 +335,8 @@ end
 function T.topBarPositionsButtonsAndTitlesInSeparateRows()
     withNavigation(function(ui)
         ui.onButton = function(label, size)
-            if label == "기록" then assert(size[1] == 72 and size[2] == 28) end
-            if label == "X##close" or label == "<##back" then assert(size[1] == 28 and size[2] == 28) end
+            if label == "기록" then assert(size[1] == 92 and size[2] == 36) end
+            if label == "X##close" or label == "<##back" then assert(size[1] == 36 and size[2] == 36) end
         end
         local shown = snapshot("clear")
         shown.quest.weapons = { { name = "태도" } }
@@ -347,8 +347,8 @@ function T.topBarPositionsButtonsAndTitlesInSeparateRows()
             if view == "selected" then ui.draw("##history1") end
             ui.draw()
             local expected = (view == "history" or view == "selected")
-                and { ["<##back"] = 24, ["X##close"] = 716 }
-                or { ["기록"] = 636, ["X##close"] = 716 }
+                and { ["<##back"] = 24, ["X##close"] = 708 }
+                or { ["기록"] = 608, ["X##close"] = 708 }
             local title = view == "history" and Locale.text("history_title")
                 or view == "empty" and Locale.text("report_title") or "태도"
             local buttons, titles = 0, 0
@@ -359,7 +359,7 @@ function T.topBarPositionsButtonsAndTitlesInSeparateRows()
                     buttons = buttons + 1
                 elseif event.kind == "text" and event.value == title then
                     assert(buttons == 2, "title must follow the tab row")
-                    assert(pos[1] == 24 and pos[2] == 60, view .. " title position")
+                    assert(pos[1] == 24 and pos[2] == 68, view .. " title position")
                     titles = titles + 1
                 end
             end
@@ -382,7 +382,7 @@ function T.topBarTitleGapIsFixedAtEveryFontSize()
                     title = ui.positions[event.positionCount]
                 end
             end
-            assert(title and title[1] == 24 and title[2] == 60, "title cursor at font size " .. size)
+            assert(title and title[1] == 24 and title[2] == 68, "title cursor at font size " .. size)
         end
     end)
 end
@@ -411,22 +411,22 @@ function T.topBarDrawsOnlyButtonsAndCentersHistoryWithTheBodyFont()
                     addText(self, ...)
                 end
                 ui.onButton = function(label, dimensions)
-                    assert(cursor.x == (label == "##history" and 596 or 676) and cursor.y == 20)
-                    assert(dimensions[1] == (label == "##history" and 72 or 28) and dimensions[2] == 28)
+                    assert(cursor.x == (label == "##history" and 568 or 668) and cursor.y == 20)
+                    assert(dimensions[1] == (label == "##history" and 92 or 36) and dimensions[2] == 36)
                     cursor = { x = 999, y = 999 }
                 end
                 ReportWindow.drawTopBar({ width = 680, fonts = { body = { handle = "body", size = size } }, sizes = { body = size } })
                 assertNavigation(ui, "##history|##close")
                 assert(#ui.events == 2 and #fonts == 0)
-                assert(cursor.x == 24 and cursor.y == 60)
+                assert(cursor.x == 24 and cursor.y == 68)
                 assert(#list.calls == 3)
                 local label = list.calls[1]
                 assert(label.name == "add_text" and label[3] == "기록")
-                assert(label[1][1] == 696 + (72 - size * 2) / 2)
+                assert(label[1][1] == 668 + (92 - size * 2) / 2)
                 local nudge = size == 28 and 2 or 1
-                assert(label[1][2] == 220 + (28 - size) / 2 - nudge)
+                assert(label[1][2] == 220 + (36 - size) / 2 - nudge)
                 assert(label[2] == (hovered and Theme.colors.text or Theme.colors.textMuted))
-                assert(list.calls[2][1][1] == 794 and list.calls[2][1][2] == 230)
+                assert(list.calls[2][1][1] == 791 and list.calls[2][1][2] == 233)
             end)
         end
     end
