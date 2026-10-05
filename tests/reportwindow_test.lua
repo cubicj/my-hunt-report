@@ -2309,16 +2309,25 @@ local function withHistoryFilters(callback)
             advance()
         end
         local originalButton = imgui.button
+        local reserves = {}
         imgui.button = function(label, size)
             local id = label:match("(##.*)$") or label
             local color
             for _, item in ipairs(ui.colors) do if item[1] == 0 then color = item[2] end end
             ui.items[#ui.items + 1] = { id = id, text = label, window = current, x = cursor.x, y = cursor.y, size = size, color = color }
+            for _, reserve in ipairs(reserves) do
+                assert(reserve.window ~= current or cursor.x >= reserve.x + reserve.width or cursor.y >= reserve.y + reserve.height
+                    or cursor.x < reserve.x or cursor.y < reserve.y, "button " .. id .. " sits under an earlier invisible button")
+            end
             originalButton(label, size)
             advance(size and size[2])
             return ui.click ~= nil and (ui.click == label or ui.click == id)
         end
-        imgui.invisible_button = function(_, size) advance(size[2]) return false end
+        imgui.invisible_button = function(_, size)
+            reserves[#reserves + 1] = { window = current, x = cursor.x, y = cursor.y, width = size[1], height = size[2] }
+            advance(size[2])
+            return false
+        end
         imgui.same_line = function() cursor = { x = cursor.x + 120, y = cursor.y - 34 } end
         imgui.checkbox = function(label, checked)
             if ui.failCheckbox then error("filter checkbox failed") end
@@ -2335,6 +2344,7 @@ local function withHistoryFilters(callback)
         local draw = ui.draw
         ui.draw = function(click)
             ui.items, ui.windows, ui.checkboxes, ui.children, ui.texts = {}, {}, {}, {}, {}
+            for index = #reserves, 1, -1 do reserves[index] = nil end
             draw(click)
             assert(current == nil and #windows == 0 and #fonts == 0, "unbalanced windows or fonts")
         end

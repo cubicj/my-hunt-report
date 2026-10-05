@@ -34,8 +34,6 @@ local function drawContents(ctx, options, labels, selection, change, clipName)
     local m = Theme.metrics
     local width = math.floor(m.filterWidth * ctx.scale)
     local top = imgui.get_cursor_pos()
-    imgui.invisible_button("##filterWidth", { width, m.topBarHeight })
-    imgui.set_cursor_pos(Vector2f.new(top.x, top.y))
     textIn(ctx.fonts.header, Locale.text("history_filter"))
     local clearText = Locale.text("history_filter_clear_all")
     local size = imgui.calc_text_size(clearText)
@@ -55,7 +53,8 @@ local function drawContents(ctx, options, labels, selection, change, clipName)
         local inset = (m.iconButton - m.iconSize) / 2
         Draw.icon("filterClose", "close", screen.x + inset, screen.y + inset, m.iconSize, color, m.iconStroke)
     end
-    imgui.set_cursor_pos(Vector2f.new(top.x, top.y + m.topBarHeight + m.titleGap))
+    imgui.set_cursor_pos(Vector2f.new(top.x, top.y + m.topBarHeight))
+    imgui.invisible_button("##filterWidth", { width, m.titleGap })
     for axisIndex, axis in ipairs(AXES) do
         textIn(ctx.fonts.small, Locale.text("history_filter_" .. axis.key), Theme.colors.textMuted)
         if next(selection[axis.key]) then
