@@ -259,7 +259,9 @@ function ReportWindow.statTiles(snapshot)
         tiles[#tiles + 1] = { label = L("combat_dps"), value = Format.decimal(stats.combatDps, 1) }
     end
     tiles[#tiles + 1] = { label = L("crit_rate"), value = Format.rate(stats.critRate) }
-    tiles[#tiles + 1] = { label = L("negative_crit_rate"), value = Format.rate(stats.negativeCritRate) }
+    if type(stats.negativeCritRate) == "number" and stats.negativeCritRate > 0 then
+        tiles[#tiles + 1] = { label = L("negative_crit_rate"), value = Format.rate(stats.negativeCritRate) }
+    end
     tiles[#tiles + 1] = { label = L("avg_attack"), value = Format.decimal(stats.avgAttack, 1) }
     tiles[#tiles + 1] = { label = L("avg_hitzone"), value = Format.decimal(stats.avgHitzone, 1) }
     if stats.attributeHitzones then
