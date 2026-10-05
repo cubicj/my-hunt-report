@@ -2,11 +2,10 @@ local stubs = require("stubs")
 local Hotkey = require("MyHuntReport.Hotkey")
 local Log = require("MyHuntReport.Log")
 local ReportWindow = require("MyHuntReport.ReportWindow")
-local Settings = require("MyHuntReport.Settings")
 
 local T = {}
 
-local BACK, FORWARD = 0x05, 0x06
+local BACK, FORWARD = 3, 4
 
 local function withNav(callback)
     local originalImgui = imgui
@@ -15,7 +14,7 @@ local function withNav(callback)
         bounds = ReportWindow.bounds, filterBounds = ReportWindow.filterBounds,
         isCapturing = Hotkey.isCapturing,
     }
-    local developerMode, toggleKey = Log.isDeveloperMode(), Settings.get().toggleKey
+    local developerMode = Log.isDeveloperMode()
     local c = {
         screen = "history", bounds = { 100, 200, 300, 400 }, filterBounds = nil,
         mouse = { x = 150, y = 250 }, capturing = false, keys = {}, calls = {},
@@ -23,7 +22,6 @@ local function withNav(callback)
     }
     local ok, err = pcall(function()
         Log.setDeveloperMode(true)
-        Settings.get().toggleKey = 118
         ReportWindow.screen = function() return c.screen end
         ReportWindow.bounds = function()
             if c.bounds then return table.unpack(c.bounds) end
@@ -49,7 +47,6 @@ local function withNav(callback)
     for name, value in pairs(originals) do
         if name == "isCapturing" then Hotkey.isCapturing = value else ReportWindow[name] = value end
     end
-    Settings.get().toggleKey = toggleKey
     Log.setDeveloperMode(developerMode)
     package.loaded["MyHuntReport.MouseNav"] = nil
     if not ok then error(err, 0) end
@@ -161,14 +158,19 @@ function T.hotkeyCaptureSuppressesNavigation()
     end)
 end
 
-function T.aSideButtonUsedAsTheToggleKeyDoesNotNavigate()
+function T.buttonsAreReadAsImguiMouseButtonsThreeAndFour()
     withNav(function(c)
-        Settings.get().toggleKey = BACK
-        c.keys[BACK] = true
-        c.keys[FORWARD] = true
+        c.keys[0x05] = true
+        c.keys[0x06] = true
         c.update()
-        assert(table.concat(c.calls, ",") == "forward")
-        assert(navLines()[1]:find("button=back", 1, true) and navLines()[1]:find("reason=toggle_key", 1, true))
+        assert(#c.calls == 0 and #navLines() == 0)
+        c.keys[3] = true
+        c.update()
+        assert(table.concat(c.calls, ",") == "back")
+        c.screen = "history"
+        c.keys[4] = true
+        c.update()
+        assert(table.concat(c.calls, ",") == "back,forward")
     end)
 end
 

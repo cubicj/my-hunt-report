@@ -1,13 +1,12 @@
 local Hotkey = require("MyHuntReport.Hotkey")
 local Log = require("MyHuntReport.Log")
 local ReportWindow = require("MyHuntReport.ReportWindow")
-local Settings = require("MyHuntReport.Settings")
 
 local MouseNav = {}
 
 local BUTTONS = {
-    { code = 0x05, name = "back" },
-    { code = 0x06, name = "forward" },
+    { index = 3, name = "back" },
+    { index = 4, name = "forward" },
 }
 
 local wasDown = {}
@@ -35,8 +34,6 @@ local function press(button)
         reason = "not_open"
     elseif Hotkey.isCapturing() then
         reason = "capturing"
-    elseif Settings.get().toggleKey == button.code then
-        reason = "toggle_key"
     elseif not hover then
         reason = "not_hovered"
     else
@@ -49,9 +46,9 @@ end
 
 function MouseNav.update(isDown)
     for _, button in ipairs(BUTTONS) do
-        local down = isDown(button.code) == true
-        if down and not wasDown[button.code] then press(button) end
-        wasDown[button.code] = down
+        local down = isDown(button.index) == true
+        if down and not wasDown[button.index] then press(button) end
+        wasDown[button.index] = down
     end
 end
 

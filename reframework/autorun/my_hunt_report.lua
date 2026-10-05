@@ -86,6 +86,11 @@ local function isKeyDown(code)
     return ok and down == true
 end
 
+local function isMouseDown(button)
+    local ok, down = pcall(imgui.is_mouse_down, button)
+    return ok and down == true
+end
+
 re.on_frame(function()
     ShellTracker.update()
     AttackLog.update()
@@ -97,7 +102,7 @@ re.on_frame(function()
     end
     ReportWindow.draw()
     CursorProbe.update()
-    MouseNav.update(isKeyDown)
+    MouseNav.update(isMouseDown)
 end)
 
 re.on_config_save(function()

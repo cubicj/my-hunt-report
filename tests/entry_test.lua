@@ -231,7 +231,14 @@ function T.entryUpdatesTheCursorProbeDirectlyAfterTheReportWindowDraw()
             return function() calls[#calls + 1] = name .. "." .. method end
         end })
     end
+    local reader
     local modules = {
+        ["MyHuntReport.MouseNav"] = {
+            update = function(isDown)
+                calls[#calls + 1] = "MyHuntReport.MouseNav.update"
+                reader = isDown
+            end,
+        },
         ["MyHuntReport.Settings"] = {
             load = noop,
             get = function() return { language = "en", fontSize = 18, developerMode = false, skillProcCapture = false } end,
@@ -253,6 +260,15 @@ function T.entryUpdatesTheCursorProbeDirectlyAfterTheReportWindowDraw()
     assert(calls[#calls - 2] == "MyHuntReport.ReportWindow.draw", table.concat(calls, ","))
     assert(calls[#calls - 1] == "MyHuntReport.CursorProbe.update", table.concat(calls, ","))
     assert(calls[#calls] == "MyHuntReport.MouseNav.update", table.concat(calls, ","))
+    local asked
+    local original = rawget(imgui, "is_mouse_down")
+    imgui.is_mouse_down = function(button)
+        asked = button
+        return true
+    end
+    local okRead, down = pcall(reader, 4)
+    imgui.is_mouse_down = original
+    assert(okRead and down == true and asked == 4)
 end
 
 function T.entryRegistersTheCursorProbeRestoreForScriptReset()
