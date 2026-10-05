@@ -74,13 +74,6 @@ local function invokerIsMaster(bracket)
     return bracket.invokerIsMaster
 end
 
-local function attributedToMaster(bracket)
-    if bracket.kind == "flayer" and bracket.getterIsMaster ~= nil then
-        return bracket.getterIsMaster == true
-    end
-    return invokerIsMaster(bracket)
-end
-
 local function holdPalicoProc(bracket, key, value)
     if bracket.palicoDamage ~= nil or value ~= value or value >= math.huge then return end
     if Palico.isOwnKey(key) then bracket.palicoDamage = value end
@@ -95,7 +88,7 @@ local function onSetParam(args)
         key = decodeKey(args[4])
         isMaster = Procs.attackerIsMaster(key)
     else
-        isMaster = attributedToMaster(bracket)
+        isMaster = invokerIsMaster(bracket)
     end
     Log.debug("proc " .. bracket.kind .. " setParam value=" .. (ok and tostring(value) or "?")
         .. " master=" .. tostring(isMaster), "proc:" .. bracket.kind .. ":setParam")
@@ -120,7 +113,8 @@ local function enterBracket(kind, args)
     local ok, this = pcall(sdk.to_managed_object, args[2])
     if ok then bracket.this = this end
     local pending = takePacketDamage(kind)
-    if pending and attributedToMaster(bracket) then
+    bracket.damage = pending
+    if pending and invokerIsMaster(bracket) then
         bracket.recorded = true
         Session.addProc({ kind = kind, damage = pending, time = Game.uptime() })
     end
@@ -143,15 +137,9 @@ local function traceFlayerOwnership(bracket)
     local invoker = readInvoker(bracket)
     local category = diagnosticValue(function() return invoker.Category end)
     local uniqueIndex = diagnosticValue(function() return invoker.UniqueIndex end)
-    local byInvoker = invokerIsMaster(bracket)
-    local byGetter = bracket.getterIsMaster
-    local verdict = "noGetter"
-    if byGetter ~= nil then
-        verdict = byGetter == byInvoker and "agree" or "DISAGREE"
-    end
     Log.trace("proc flayer ownership invoker=" .. category .. "/" .. uniqueIndex
-        .. " invokerMaster=" .. tostring(byInvoker) .. " getterMaster=" .. tostring(byGetter)
-        .. " recorded=" .. tostring(bracket.recorded) .. " " .. verdict)
+        .. " master=" .. tostring(invokerIsMaster(bracket)) .. " recorded=" .. tostring(bracket.recorded)
+        .. " value=" .. tostring(bracket.damage))
 end
 
 local function leaveBracket()
@@ -191,8 +179,10 @@ local function onExternalDamage(args)
             .. " _HasValue=" .. hasValue, "proc:" .. bracket.kind .. ":external")
     end
     if bracket.kind ~= "poison" and bracket.kind ~= "flayer" and bracket.kind ~= "elementConvert" then return end
-    if not ok or type(value) ~= "number" or value <= 0 or bracket.recorded then return end
-    if attributedToMaster(bracket) then
+    if not ok or type(value) ~= "number" or value <= 0 then return end
+    bracket.damage = value
+    if bracket.recorded then return end
+    if invokerIsMaster(bracket) then
         bracket.recorded = true
         Session.addProc({ kind = bracket.kind, damage = value, time = Game.uptime() })
         return
@@ -210,25 +200,6 @@ local function onActivatePacket(kind)
         end
         Log.debug("proc " .. kind .. " packet damage=" .. (ok and tostring(value) or "?"), "proc:" .. kind .. ":packet")
     end
-end
-
-local function onGetter(kind, args)
-    local bracket = brackets[#brackets]
-    local matching = bracket and bracket.kind == kind
-    if not matching and not Log.isDeveloperMode() then return end
-    local ok, isMaster = pcall(function()
-        local this = sdk.to_managed_object(args[2])
-        local masterSkill = Game.masterHunter():get_HunterSkill()
-        local address = this:get_address()
-        local masterAddress = masterSkill:get_address()
-        if address == nil or masterAddress == nil then return nil end
-        return address == masterAddress
-    end)
-    if matching then bracket.getterIsMaster = ok and isMaster == true end
-    if not Log.isDeveloperMode() then return end
-    local identity = ok and isMaster ~= nil and tostring(isMaster) or "?"
-    Log.debug("proc getter stabbing master=" .. identity .. " kind=" .. tostring(Procs.activeKind()),
-        "proc:getter:stabbing")
 end
 
 function Procs.install()
@@ -262,9 +233,6 @@ function Procs.installSkillProcs()
     Game.hook("app.cEnemyBadConditionPoison", "onUpdateActive", function(args)
         enterBracket("poison", args)
     end, leaveBracket)
-    Game.hook("app.cHunterSkill", "getSkillStabbingAddDamage(app.cEnemyContextHolder)", function(args)
-        onGetter("flayer", args)
-    end)
 end
 
 function Procs.skillProcsInstalled()

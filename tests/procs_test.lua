@@ -14,9 +14,7 @@ local BRACKETS = {
 }
 local SET_PARAM = "app.cEnemyStockDamage.cBadConditionDamageInfo.setParam(System.Single, app.TARGET_ACCESS_KEY, System.Boolean)"
 local EXTERNAL = "app.cEnemyStockDamage.stockExternalDamage(System.Single, System.Boolean, System.Nullable`1<app.TARGET_ACCESS_KEY>, System.Boolean, System.Boolean)"
-local GETTERS = {
-    stabbing = "app.cHunterSkill.getSkillStabbingAddDamage(app.cEnemyContextHolder)",
-}
+local STABBING_GETTER = "app.cHunterSkill.getSkillStabbingAddDamage(app.cEnemyContextHolder)"
 local RYUKI_GETTER = "app.cHunterSkill.getSkillRyukiAddDamage(app.cEnemyContextHolder, System.Single, System.Single)"
 
 local PACKETS = {
@@ -26,7 +24,7 @@ local PACKETS = {
 
 local function withProcs(callback)
     local hook, addProc, uptime = Game.hook, Session.addProc, Game.uptime
-    local callStatic, isMasterGameObject, masterHunter = Game.callStatic, Game.isMasterGameObject, Game.masterHunter
+    local callStatic, isMasterGameObject = Game.callStatic, Game.isMasterGameObject
     local toManaged, toFloat, toValue = sdk.to_managed_object, sdk.to_float, sdk.to_valuetype
     local developerMode = Log.isDeveloperMode()
     local addPalicoProc, isOwnKey = Session.addPalicoProc, Palico.isOwnKey
@@ -38,7 +36,6 @@ local function withProcs(callback)
     local other = { Category = 0, UniqueIndex = 8 }
     local masterObject = { get_Name = function() return "MasterPlayer" end }
     local otherObject = { get_Name = function() return "OtherPlayer" end }
-    local masterSkill = { get_address = function() return 123 end }
     local ok, err = pcall(function()
         Log.setDeveloperMode(false)
         Log.resetCounts()
@@ -54,7 +51,6 @@ local function withProcs(callback)
             if key == other then return { get_GameObject = function() return otherObject end } end
         end
         Game.isMasterGameObject = function(object) return object == masterObject end
-        Game.masterHunter = function() return { get_HunterSkill = function() return masterSkill end } end
         Session.addProc = function(proc) recorded[#recorded + 1] = proc end
         Session.addPalicoProc = function(kind, damage)
             if damage ~= damage or damage == math.huge then return false end
@@ -88,7 +84,7 @@ local function withProcs(callback)
     end)
     Game.hook, Session.addProc, Game.uptime = hook, addProc, uptime
     Session.addPalicoProc, Palico.isOwnKey = addPalicoProc, isOwnKey
-    Game.callStatic, Game.isMasterGameObject, Game.masterHunter = callStatic, isMasterGameObject, masterHunter
+    Game.callStatic, Game.isMasterGameObject = callStatic, isMasterGameObject
     sdk.to_managed_object, sdk.to_float, sdk.to_valuetype = toManaged, toFloat, toValue
     Log.setDeveloperMode(developerMode)
     Log.resetCounts()
@@ -269,50 +265,14 @@ function T.blastSetParamRequiresMasterCallKey()
     end)
 end
 
-local function checkGetterAttribution(kind, path)
+function T.elementConvertIsAttributedByInvoker()
     withProcs(function(c)
-        local getter = GETTERS.stabbing
-        local function damage(key)
-            if path == "setParam" then c.setParam(160, key) else c.external(160, { _HasValue = false }) end
-        end
-        c.enter(kind, c.other)
-        c.hooks[getter].pre({ [2] = { get_address = function() return 123 end } })
-        damage(c.other)
-        c.leave(kind)
-        assert(#c.recorded == 1 and c.recorded[1].kind == kind and c.recorded[1].damage == 160)
-        c.enter(kind, c.master)
-        c.hooks[getter].pre({ [2] = { get_address = function() return 456 end } })
-        damage(c.master)
-        c.leave(kind)
-        assert(#c.recorded == 1)
-        c.enter(kind, c.master)
-        damage(c.other)
-        c.leave(kind)
-        assert(#c.recorded == 2 and c.recorded[2].kind == kind)
-        c.enter(kind, c.other)
-        damage(c.master)
-        c.leave(kind)
-        assert(#c.recorded == 2)
-        assert(Log.isDeveloperMode() == false and #stubs.logLines == 0)
-    end)
-end
-
-function T.flayerExternalPrefersGetterIdentityWithInvokerFallback()
-    checkGetterAttribution("flayer", "external")
-end
-
-function T.elementConvertIsAttributedByInvokerAndIgnoresTheStabbingGetter()
-    withProcs(function(c)
-        local masterArgs = { [2] = { get_address = function() return 123 end } }
-        local otherArgs = { [2] = { get_address = function() return 456 end } }
         c.enter("elementConvert", c.other)
-        c.hooks[GETTERS.stabbing].pre(masterArgs)
         c.setParam(160, c.other)
         c.external(160, { _HasValue = false })
         c.leave("elementConvert")
         assert(#c.recorded == 0)
         c.enter("elementConvert", c.master)
-        c.hooks[GETTERS.stabbing].pre(otherArgs)
         c.setParam(160, c.master)
         c.leave("elementConvert")
         assert(#c.recorded == 1 and c.recorded[1].kind == "elementConvert" and c.recorded[1].damage == 160)
@@ -320,73 +280,6 @@ function T.elementConvertIsAttributedByInvokerAndIgnoresTheStabbingGetter()
         c.external(160, { _HasValue = false })
         c.leave("elementConvert")
         assert(#c.recorded == 2 and c.recorded[2].kind == "elementConvert")
-    end)
-end
-
-function T.gettersOutsideMatchingBracketDoNotAffectAttribution()
-    withProcs(function(c)
-        local masterArgs = { [2] = { get_address = function() return 123 end } }
-        local otherArgs = { [2] = { get_address = function() return 456 end } }
-        for _, getter in pairs(GETTERS) do c.hooks[getter].pre(masterArgs) end
-        c.enter("flayer", c.other)
-        c.external(160)
-        c.leave("flayer")
-        c.enter("elementConvert", c.other)
-        c.setParam(160, c.master)
-        c.leave("elementConvert")
-        assert(#c.recorded == 0)
-        c.enter("flayer", c.other)
-        c.enter("poison", c.other)
-        for _, getter in pairs(GETTERS) do c.hooks[getter].pre(masterArgs) end
-        c.external(15)
-        c.leave("poison")
-        c.external(160)
-        c.leave("flayer")
-        assert(#c.recorded == 0)
-        c.enter("poison", c.master)
-        for _, getter in pairs(GETTERS) do c.hooks[getter].pre(otherArgs) end
-        c.external(15)
-        c.leave("poison")
-        assert(#c.recorded == 1 and c.recorded[1].kind == "poison")
-        c.enter("flayer", c.master)
-        c.external(160)
-        c.leave("flayer")
-        c.enter("elementConvert", c.master)
-        c.hooks[GETTERS.stabbing].pre(otherArgs)
-        c.setParam(160, c.other)
-        c.leave("elementConvert")
-        assert(#c.recorded == 3)
-    end)
-end
-
-function T.failedGetterIdentityRejectsMasterInvoker()
-    withProcs(function(c)
-        for _, readAddress in ipairs({
-            function() error("address unavailable") end,
-            function() return nil end,
-        }) do
-            c.enter("flayer", c.master)
-            c.hooks[GETTERS.stabbing].pre({ [2] = { get_address = readAddress } })
-            c.external(160)
-            c.leave("flayer")
-        end
-        assert(#c.recorded == 0 and #stubs.logLines == 0)
-    end)
-end
-
-function T.nestedGetterAttributionStaysWithInnermostBracket()
-    withProcs(function(c)
-        c.enter("flayer", c.other)
-        c.hooks[GETTERS.stabbing].pre({ [2] = { get_address = function() return 123 end } })
-        c.enter("flayer", c.master)
-        c.hooks[GETTERS.stabbing].pre({ [2] = { get_address = function() return 456 end } })
-        c.external(160)
-        c.leave("flayer")
-        assert(#c.recorded == 0)
-        c.external(160)
-        c.external(160)
-        c.leave("flayer")
-        assert(#c.recorded == 1 and c.recorded[1].kind == "flayer")
     end)
 end
 
@@ -422,13 +315,11 @@ end
 
 function T.diagnosticsAreGatedAndUseSharedLogKeys()
     withProcs(function(c)
-        local sameSkill = { get_address = function() return 123 end }
         local function probe()
             for _, kind in ipairs({ "blast", "poison", "flayer", "elementConvert" }) do
                 c.enter(kind, c.master)
                 c.external(0, { _HasValue = false })
                 if kind == "blast" or kind == "elementConvert" then c.setParam(0, c.master) end
-                c.hooks[GETTERS.stabbing].pre({ [2] = sameSkill })
                 c.leave(kind)
             end
         end
@@ -440,7 +331,6 @@ function T.diagnosticsAreGatedAndUseSharedLogKeys()
         for _, kind in ipairs({ "blast", "poison", "flayer", "elementConvert" }) do
             assert(lines:find("proc " .. kind .. " invoker Category=0 UniqueIndex=7 GameObject=MasterPlayer", 1, true))
             assert(lines:find("proc " .. kind .. " external value=0 _HasValue=false", 1, true))
-            assert(lines:find("proc getter stabbing master=true kind=" .. kind, 1, true))
             assert(Log.count("proc:" .. kind .. ":invoker") == 1)
             assert(Log.count("proc:" .. kind .. ":external") == 1)
             if kind == "blast" or kind == "elementConvert" then
@@ -448,52 +338,39 @@ function T.diagnosticsAreGatedAndUseSharedLogKeys()
                 assert(Log.count("proc:" .. kind .. ":setParam") == 1)
             end
         end
-        assert(Log.count("proc:getter:stabbing") == 4 and not lines:find("getter ryuki", 1, true))
+        assert(not lines:find("proc getter", 1, true))
         assert(#c.recorded == 0)
     end)
 end
 
-function T.flayerOwnershipTraceComparesInvokerAndGetterWithoutRepeatCap()
+function T.flayerOwnershipTraceLogsEveryBracketWithoutRepeatCap()
     withProcs(function(c)
-        local masterSkill = { get_address = function() return 123 end }
-        local otherSkill = { get_address = function() return 456 end }
-        local function bracket(kind, key, skill)
+        local function bracket(kind, key, value)
             c.enter(kind, key)
-            if skill then c.hooks[GETTERS.stabbing].pre({ [2] = skill }) end
-            c.external(160, { _HasValue = false })
+            if value then c.external(value, { _HasValue = false }) end
             c.leave(kind)
         end
-        bracket("flayer", c.master, masterSkill)
+        bracket("flayer", c.master, 160)
         assert(#stubs.logLines == 0)
         Log.setDeveloperMode(true)
-        for _ = 1, 7 do bracket("flayer", c.master, masterSkill) end
-        bracket("flayer", c.other, otherSkill)
-        bracket("flayer", c.master, otherSkill)
+        for _ = 1, 7 do bracket("flayer", c.master, 160) end
+        bracket("flayer", c.other, 140)
         bracket("flayer", c.other, nil)
-        bracket("elementConvert", c.master, masterSkill)
-        bracket("poison", c.master, nil)
-        local agree, total = 0, 0
+        c.packet("flayer", 150)
+        bracket("flayer", c.master, nil)
+        bracket("elementConvert", c.master, 285)
+        bracket("poison", c.master, 15)
+        local own, total = 0, 0
         for _, line in ipairs(stubs.logLines) do
             if line:find("proc flayer ownership", 1, true) then total = total + 1 end
-            if line:find("proc flayer ownership invoker=0/7 invokerMaster=true getterMaster=true recorded=true agree", 1, true) then
-                agree = agree + 1
-            end
+            if line:find("proc flayer ownership invoker=0/7 master=true recorded=true value=160", 1, true) then own = own + 1 end
         end
-        assert(agree == 7 and total == 10)
+        assert(own == 7 and total == 10)
         local lines = table.concat(stubs.logLines, "\n")
-        assert(lines:find("proc flayer ownership invoker=0/8 invokerMaster=false getterMaster=false recorded=false agree", 1, true))
-        assert(lines:find("proc flayer ownership invoker=0/7 invokerMaster=true getterMaster=false recorded=false DISAGREE", 1, true))
-        assert(lines:find("proc flayer ownership invoker=0/8 invokerMaster=false getterMaster=nil recorded=false noGetter", 1, true))
+        assert(lines:find("proc flayer ownership invoker=0/8 master=false recorded=false value=140", 1, true))
+        assert(lines:find("proc flayer ownership invoker=0/8 master=false recorded=false value=nil", 1, true))
+        assert(lines:find("proc flayer ownership invoker=0/7 master=true recorded=true value=150", 1, true))
         assert(not lines:find("proc elementConvert ownership", 1, true) and not lines:find("proc poison ownership", 1, true))
-    end)
-end
-
-function T.getterDiagnosticsReturnBeforeReadingWhenDisabled()
-    withProcs(function(c)
-        sdk.to_managed_object = function() error("must not decode") end
-        Game.masterHunter = function() error("must not read hunter") end
-        for _, name in pairs(GETTERS) do c.hooks[name].pre({}) end
-        assert(#stubs.logLines == 0 and #c.recorded == 0)
     end)
 end
 
@@ -507,13 +384,11 @@ function T.diagnosticReadFailuresUseQuestionMarksAndKeepRecording()
         c.enter("flayer", c.master)
         sdk.to_valuetype = function() error("nullable unavailable") end
         c.external(160)
-        Game.masterHunter = function() error("hunter unavailable") end
-        c.hooks[GETTERS.stabbing].pre({})
         c.leave("flayer")
         local lines = table.concat(stubs.logLines, "\n")
         assert(lines:find("invoker Category=? UniqueIndex=? GameObject=?", 1, true))
         assert(lines:find("external value=160 _HasValue=?", 1, true))
-        assert(lines:find("getter stabbing master=? kind=flayer", 1, true))
+        assert(lines:find("proc flayer ownership invoker=?/? master=true recorded=true value=160", 1, true))
         assert(#c.recorded == 1 and c.recorded[1].kind == "flayer")
     end)
 end
@@ -624,7 +499,7 @@ function T.installRegistersBlastHooksOnly()
     if not ok then error(err, 0) end
 end
 
-function T.installSkillProcsRegistersTheSevenSkillProcHooksWithoutTheRyukiGetter()
+function T.installSkillProcsRegistersTheSixSkillProcHooksWithoutTheOwnerGetters()
     local hook = Game.hook
     local names = {}
     local ok, err = pcall(function()
@@ -633,15 +508,14 @@ function T.installSkillProcsRegistersTheSevenSkillProcHooksWithoutTheRyukiGetter
         procs.install()
         procs.installSkillProcs()
         procs.installSkillProcs()
-        assert(#names == 9, table.concat(names, ","))
+        assert(#names == 8, table.concat(names, ","))
         assert(names[3] == BRACKETS.flayer, names[3])
         assert(names[4] == BRACKETS.elementConvert, names[4])
         assert(names[5] == EXTERNAL, names[5])
         assert(names[6] == PACKETS.flayer, names[6])
         assert(names[7] == PACKETS.elementConvert, names[7])
         assert(names[8] == BRACKETS.poison, names[8])
-        assert(names[9] == GETTERS.stabbing, names[9])
-        for _, name in ipairs(names) do assert(name ~= RYUKI_GETTER, name) end
+        for _, name in ipairs(names) do assert(name ~= STABBING_GETTER and name ~= RYUKI_GETTER, name) end
     end)
     Game.hook = hook
     if not ok then error(err, 0) end
@@ -654,7 +528,7 @@ function T.installSkillProcsWorksWithoutInstall()
         Game.hook = function(typeName, signature) names[#names + 1] = typeName .. "." .. signature end
         local procs = assert(loadfile("reframework/autorun/MyHuntReport/Procs.lua"))()
         procs.installSkillProcs()
-        assert(#names == 7, table.concat(names, ","))
+        assert(#names == 6, table.concat(names, ","))
         assert(names[1] == BRACKETS.flayer, names[1])
         assert(procs.skillProcsInstalled() == true)
     end)
