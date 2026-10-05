@@ -2183,4 +2183,37 @@ function T.palicoShareWrapsAsAWholeItem()
     assert(names[3].name == "Palico" and names[3].value == "4.6%")
 end
 
+function T.boundsReportTheDrawnWindowRectangle()
+    withNavigation(function(ui)
+        imgui.get_window_size = function() return { x = 600, y = 400 } end
+        assert(ReportWindow.bounds() == nil)
+        ReportWindow.show(snapshot("clear"))
+        ui.draw()
+        local x, y, width, height = ReportWindow.bounds()
+        assert(x == 0 and y == 0 and width == 600 and height == 400)
+        imgui.get_window_size = function() error("size unavailable") end
+        ui.draw()
+        assert(ReportWindow.bounds() == nil)
+        imgui.get_window_size = function() return { x = 600 } end
+        ui.draw()
+        assert(ReportWindow.bounds() == nil)
+        imgui.get_window_size = function() return { x = 620, y = 410 } end
+        ui.draw()
+        local _, _, nextWidth, nextHeight = ReportWindow.bounds()
+        assert(nextWidth == 620 and nextHeight == 410)
+        ReportWindow.hide()
+        assert(ReportWindow.bounds() == nil)
+    end)
+end
+
+function T.boundsAreNilWhenThePositionReadFails()
+    withNavigation(function(ui)
+        imgui.get_window_pos = function() error("position unavailable") end
+        imgui.get_window_size = function() return { x = 600, y = 400 } end
+        ReportWindow.show(snapshot("clear"))
+        ui.draw()
+        assert(ReportWindow.bounds() == nil)
+    end)
+end
+
 return T

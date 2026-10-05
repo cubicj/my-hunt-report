@@ -33,6 +33,7 @@ local state = {
     relabeler = nil,
     pendingAction = nil,
     liveRefreshAt = nil,
+    bounds = nil,
     livePosition = nil,
     positionSettledAt = nil,
     placementLogged = false,
@@ -878,7 +879,14 @@ function ReportWindow.setNotSaved(flag)
     state.notSaved = flag == true
 end
 
+function ReportWindow.bounds()
+    local bounds = state.bounds
+    if not state.open or not bounds then return nil end
+    return bounds.x, bounds.y, bounds.width, bounds.height
+end
+
 function ReportWindow.draw()
+    state.bounds = nil
     if not state.open then return end
     local settings = Settings.get()
     Theme.apply(Hdr.targetNits(settings.hdrCorrection))
@@ -912,6 +920,10 @@ function ReportWindow.draw()
         local okPos, pos = pcall(imgui.get_window_pos)
         if okPos and pos and type(pos.x) == "number" and type(pos.y) == "number" then
             ReportWindow.trackPosition(pos.x, pos.y, Game.uptime())
+            local okExtent, extent = pcall(imgui.get_window_size)
+            if okExtent and extent and type(extent.x) == "number" and type(extent.y) == "number" then
+                state.bounds = { x = pos.x, y = pos.y, width = extent.x, height = extent.y }
+            end
         end
         if not opened then ReportWindow.persistPosition() end
         local pushedBody = Fonts.push(fonts.body)
