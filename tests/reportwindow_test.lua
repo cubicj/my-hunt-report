@@ -2797,4 +2797,117 @@ function T.historyFilterWindowErrorsBalanceBothWindowsStylesAndFonts()
     end
 end
 
+function T.backAndForwardWalkTheScreensLikeABrowser()
+    withNavigation(function(ui)
+        local live, past = snapshot("clear"), snapshot("fail")
+        ui.entries = { past }
+        ReportWindow.show(live)
+        assert(ReportWindow.screen() == "live")
+        assert(ReportWindow.back() == false)
+        assert(ReportWindow.isOpen() and ReportWindow.screen() == "live")
+        assert(ReportWindow.forward() == false)
+        ui.draw("기록")
+        assert(ReportWindow.screen() == "history")
+        assert(ReportWindow.forward() == false)
+        ui.draw()
+        ui.draw("##history1")
+        assert(ReportWindow.screen() == "past")
+        assert(ReportWindow.forward() == false)
+        assert(ReportWindow.back() == true and ReportWindow.screen() == "history")
+        assert(ReportWindow.back() == true and ReportWindow.screen() == "live")
+        assert(ReportWindow.debugState().snapshot == live)
+        assert(ReportWindow.back() == false)
+        assert(ReportWindow.forward() == true and ReportWindow.screen() == "history")
+        ui.draw()
+        assert(ReportWindow.forward() == true and ReportWindow.screen() == "past")
+        assert(ReportWindow.debugState().snapshot == past)
+        assert(ReportWindow.forward() == false)
+        assert(ReportWindow.back() == true and ReportWindow.back() == true)
+        assert(ReportWindow.debugState().snapshot == live)
+    end)
+end
+
+function T.topBarBackButtonRecordsForwardState()
+    withNavigation(function(ui)
+        local past = snapshot("fail")
+        ui.entries = { past }
+        ReportWindow.show(snapshot("clear"))
+        ui.draw("기록")
+        ui.draw()
+        ui.draw("##history1")
+        ui.draw("<##back")
+        assert(ReportWindow.screen() == "history")
+        assert(ReportWindow.debugState().forwardSnapshot == past)
+        ui.draw("<##back")
+        assert(ReportWindow.screen() == "live")
+        assert(ReportWindow.debugState().forwardHistory == true)
+        assert(ReportWindow.forward() == true and ReportWindow.forward() == true)
+        assert(ReportWindow.screen() == "past" and ReportWindow.debugState().snapshot == past)
+    end)
+end
+
+function T.forwardRecordIsClearedByNewNavigation()
+    local function leftBoth(ui)
+        ui.entries = { snapshot("fail"), snapshot("clear") }
+        ReportWindow.show(snapshot("clear"))
+        ui.draw("기록")
+        ui.draw()
+        ui.draw("##history1")
+        assert(ReportWindow.back() == true and ReportWindow.back() == true)
+        local s = ReportWindow.debugState()
+        assert(s.forwardHistory == true and s.forwardSnapshot ~= nil)
+    end
+    local function assertCleared()
+        local s = ReportWindow.debugState()
+        assert(s.forwardHistory == false and s.forwardSnapshot == nil)
+    end
+    withNavigation(function(ui)
+        leftBoth(ui)
+        ui.draw("기록")
+        assertCleared()
+        assert(ReportWindow.forward() == false)
+
+        leftBoth(ui)
+        assert(ReportWindow.forward() == true)
+        ui.draw()
+        ui.draw("##history2")
+        assert(ReportWindow.screen() == "past")
+        assertCleared()
+
+        leftBoth(ui)
+        ReportWindow.show(snapshot("clear"))
+        assertCleared()
+
+        leftBoth(ui)
+        ReportWindow.hide()
+        assertCleared()
+        assert(ReportWindow.screen() == nil)
+        assert(ReportWindow.back() == false and ReportWindow.forward() == false)
+
+        leftBoth(ui)
+        ReportWindow.onHistoryCleared()
+        assertCleared()
+    end)
+end
+
+function T.forwardRelabelsThePastReportItReopens()
+    withNavigation(function(ui)
+        local past = snapshot("fail")
+        ui.entries = { past }
+        ReportWindow.show(snapshot("clear"))
+        ui.draw("기록")
+        ui.draw()
+        ui.draw("##history1")
+        assert(ReportWindow.back() == true)
+        local relabeled = {}
+        ReportWindow.setRelabeler(function(value) relabeled[#relabeled + 1] = value end)
+        local ok, err = pcall(function()
+            assert(ReportWindow.forward() == true)
+            assert(#relabeled == 1 and relabeled[1] == past)
+        end)
+        ReportWindow.setRelabeler(nil)
+        if not ok then error(err, 0) end
+    end)
+end
+
 return T

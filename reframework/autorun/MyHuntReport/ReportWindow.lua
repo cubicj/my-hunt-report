@@ -31,6 +31,8 @@ local state = {
     view = "report",
     entries = nil,
     fromHistory = false,
+    forwardHistory = false,
+    forwardSnapshot = nil,
     provider = nil,
     relabeler = nil,
     nameResolver = nil,
@@ -183,8 +185,13 @@ function ReportWindow.persistPosition()
     return true
 end
 
+local function clearForward()
+    state.forwardHistory, state.forwardSnapshot = false, nil
+end
+
 local function close()
     state.filterOpen, state.filterBounds = false, nil
+    clearForward()
     state.open = false
     ReportWindow.persistPosition()
 end
@@ -610,7 +617,9 @@ local function returnFromHistory()
         state.view = "report"
         state.fromHistory = false
         state.entries = nil
+        state.forwardHistory = true
     elseif state.fromHistory then
+        state.forwardSnapshot = state.snapshot
         state.view = "history"
         state.fromHistory = false
     end
@@ -850,6 +859,7 @@ local function drawHistory(ctx)
             local top = imgui.get_cursor_pos()
             if imgui.button("##history" .. index, { columns.buttonWidth, layout.rowHeight }) then
                 state.pendingAction = function()
+                    clearForward()
                     state.filterOpen, state.filterBounds = false, nil
                     state.snapshot = entry
                     state.view = "report"
@@ -921,6 +931,7 @@ end
 
 function ReportWindow.show(snapshot)
     state.filterOpen, state.filterBounds = false, nil
+    clearForward()
     Locale.refresh()
     state.placementLogged = false
     state.positionSettledAt = nil
@@ -950,7 +961,7 @@ function ReportWindow.replaceLiveView(snapshot)
     return true
 end
 
-function ReportWindow.showHistory()
+local function enterHistory()
     if state.view ~= "history" and not state.fromHistory then
         state.liveSnapshot = state.snapshot
         state.liveNotSaved = state.notSaved
@@ -961,12 +972,54 @@ function ReportWindow.showHistory()
     state.open = true
 end
 
+function ReportWindow.showHistory()
+    clearForward()
+    enterHistory()
+end
+
 function ReportWindow.onHistoryCleared()
     state.entries = nil
+    clearForward()
 end
 
 function ReportWindow.returnFromHistory()
     returnFromHistory()
+end
+
+function ReportWindow.screen()
+    if not state.open then return nil end
+    if state.view == "history" then return "history" end
+    if state.fromHistory then return "past" end
+    return "live"
+end
+
+function ReportWindow.back()
+    local screen = ReportWindow.screen()
+    if screen == nil or screen == "live" then return false end
+    returnFromHistory()
+    return true
+end
+
+function ReportWindow.forward()
+    local screen = ReportWindow.screen()
+    if screen == "live" then
+        if not state.forwardHistory then return false end
+        state.forwardHistory = false
+        enterHistory()
+        return true
+    end
+    if screen == "history" then
+        local snapshot = state.forwardSnapshot
+        if snapshot == nil then return false end
+        state.forwardSnapshot = nil
+        state.filterOpen, state.filterBounds = false, nil
+        relabelSnapshot(snapshot)
+        state.snapshot = snapshot
+        state.view = "report"
+        state.fromHistory = true
+        return true
+    end
+    return false
 end
 
 function ReportWindow.debugState()
@@ -975,6 +1028,8 @@ function ReportWindow.debugState()
         snapshot = state.snapshot,
         notSaved = state.notSaved,
         fromHistory = state.fromHistory,
+        forwardHistory = state.forwardHistory,
+        forwardSnapshot = state.forwardSnapshot,
     }
 end
 
