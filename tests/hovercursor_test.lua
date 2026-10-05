@@ -211,6 +211,41 @@ function T.hoverEndRestoresASavedTrueWithDeveloperModeOff()
     end)
 end
 
+function T.anOverrideWithDeveloperModeOffCostsOneReadAndOneWrite()
+    withCursor(function(c)
+        Log.setDeveloperMode(false)
+        c.inside()
+        c.frame()
+        for _ = 1, 12 do
+            c.show = false
+            local calls = c.gameCalls
+            c.frame()
+            assert(c.show == true and c.gameCalls - calls == 2)
+        end
+        assert(#c.sets == 13 and #stubs.logLines == 0)
+    end)
+end
+
+function T.developerModeTurnedOnDuringAHoverPrintsAnUnknownOverrideInterval()
+    withCursor(function(c)
+        Log.setDeveloperMode(false)
+        c.inside()
+        c.frame()
+        c.show = false
+        c.frame()
+        Log.setDeveloperMode(true)
+        c.show = false
+        c.frame()
+        assert(c.has("override #2 at 13.000 after=?"))
+        c.show = false
+        c.frame()
+        assert(c.has("override #3 at 14.000 after=1.000"))
+        c.outside()
+        c.frame()
+        assert(c.has("hover end at 15.000 duration=4.000 overrides=3 restored=false readback=false"))
+    end)
+end
+
 function T.developerModeOffKeepsTheHoverWithoutLinesAndResnapshotsLater()
     withCursor(function(c)
         c.inside()

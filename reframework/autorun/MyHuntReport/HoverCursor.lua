@@ -84,13 +84,14 @@ end
 
 local function reassert(now)
     active.overrides = active.overrides + 1
-    if active.overrides <= MAX_OVERRIDE_LINES then
-        Log.trace(string.format("cursor override #%d at %.3f after=%.3f",
-            active.overrides, now, now - active.lastSetAt))
+    if now and active.overrides <= MAX_OVERRIDE_LINES then
+        local after = active.lastSetAt and string.format("%.3f", now - active.lastSetAt) or "?"
+        Log.trace(string.format("cursor override #%d at %.3f after=%s", active.overrides, now, after))
     end
     setShow(true)
     active.lastSetAt = now
-    return readBoolean(GET_SHOW)
+    if now then return readBoolean(GET_SHOW) end
+    return nil
 end
 
 function HoverCursor.update()
@@ -126,7 +127,7 @@ function HoverCursor.update()
         ownShow = true
     elseif active then
         if current.show == false then
-            current.show = reassert(now or Game.uptime())
+            current.show = reassert(now)
             ownShow = true
         end
     elseif starting and current.menu == false then
