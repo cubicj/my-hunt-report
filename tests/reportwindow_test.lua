@@ -2264,10 +2264,11 @@ local function withHistoryFilters(callback)
         imgui.set_next_window_pos = function(pos, condition, pivot)
             pendingPosition = { x = pos[1], y = pos[2], condition = condition, pivot = pivot }
         end
+        local movedWithoutItem, itemBottom = false, 0
         imgui.begin_window = function(id, open, flags)
             assert(current == nil, "windows must not be nested")
             if ui.failBegin and id == FILTER_WINDOW then error("filter begin failed") end
-            current, cursor = id, { x = 24, y = 24 }
+            current, cursor, movedWithoutItem, itemBottom = id, { x = 24, y = 24 }, false, 0
             windows[#windows + 1] = id
             ui.windows[#ui.windows + 1] = { id = id, flags = flags, placement = pendingPosition }
             pendingPosition = nil
@@ -2275,6 +2276,7 @@ local function withHistoryFilters(callback)
             return open
         end
         imgui.end_window = function()
+            assert(current ~= FILTER_WINDOW or not movedWithoutItem, "filter window ends on a bare cursor move")
             assert(table.remove(windows) == current)
             current = nil
         end
@@ -2290,11 +2292,13 @@ local function withHistoryFilters(callback)
         imgui.set_cursor_pos = function(pos)
             cursor = { x = pos.x or pos[1], y = pos.y or pos[2] }
             ui.positions[#ui.positions + 1] = { x = cursor.x, y = cursor.y }
+            movedWithoutItem = cursor.y > itemBottom
         end
         imgui.get_cursor_screen_pos = function() return { x = cursor.x, y = cursor.y } end
         imgui.calc_text_size = function(text) return { x = utf8.len(text) * 8, y = 18 } end
         local function advance(height)
             cursor = { x = 24, y = cursor.y + (height or 24) + 10 }
+            movedWithoutItem, itemBottom = false, math.max(itemBottom, cursor.y)
         end
         local originalText = imgui.text
         imgui.text = function(text)

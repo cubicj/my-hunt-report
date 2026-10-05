@@ -56,7 +56,7 @@ local function drawContents(ctx, options, labels, selection, change, clipName)
         Draw.icon("filterClose", "close", screen.x + inset, screen.y + inset, m.iconSize, color, m.iconStroke)
     end
     imgui.set_cursor_pos(Vector2f.new(top.x, top.y + m.topBarHeight + m.titleGap))
-    for _, axis in ipairs(AXES) do
+    for axisIndex, axis in ipairs(AXES) do
         textIn(ctx.fonts.small, Locale.text("history_filter_" .. axis.key), Theme.colors.textMuted)
         if next(selection[axis.key]) then
             imgui.same_line()
@@ -80,8 +80,10 @@ local function drawContents(ctx, options, labels, selection, change, clipName)
             end
             imgui.set_cursor_pos(Vector2f.new(origin.x, nextY))
         end
-        local pos = imgui.get_cursor_pos()
-        imgui.set_cursor_pos(Vector2f.new(pos.x, pos.y + m.sectionGap))
+        if axisIndex < #AXES then
+            local pos = imgui.get_cursor_pos()
+            imgui.set_cursor_pos(Vector2f.new(pos.x, pos.y + m.sectionGap))
+        end
     end
     return not closed
 end
