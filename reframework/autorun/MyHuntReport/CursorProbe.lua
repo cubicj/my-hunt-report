@@ -38,10 +38,12 @@ end
 
 local function readHover()
     local x, y, width, height = ReportWindow.bounds()
-    if x == nil then return false end
+    local fx, fy, fw, fh = ReportWindow.filterBounds()
+    if x == nil and fx == nil then return false end
     local ok, inside = pcall(function()
         local mouse = imgui.get_mouse()
-        return CursorProbe.contains(x, y, width, height, mouse.x, mouse.y)
+        return (x ~= nil and CursorProbe.contains(x, y, width, height, mouse.x, mouse.y))
+            or (fx ~= nil and CursorProbe.contains(fx, fy, fw, fh, mouse.x, mouse.y))
     end)
     if ok and type(inside) == "boolean" then return inside end
     return nil

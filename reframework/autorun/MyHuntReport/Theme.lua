@@ -86,6 +86,8 @@ Theme.metrics = {
     historyStarsWidth = 48,
     historyGap = 16,
     historyWeaponShare = 0.4,
+    filterWidth = 480,
+    filterWindowGap = 16,
 }
 
 Theme.WINDOW_FLAGS = 1 | 2 | 8 | 32 | 64 | 256
@@ -93,19 +95,13 @@ Theme.WINDOW_FLAGS = 1 | 2 | 8 | 32 | 64 | 256
 local COL_TEXT = 0
 local COL_WINDOW_BG = 2
 local COL_CHILD_BG = 3
-local COL_POPUP_BG = 4
 local COL_BORDER = 5
 local COL_FRAME_BG = 7
-local COL_FRAME_BG_HOVERED = 8
-local COL_FRAME_BG_ACTIVE = 9
 local COL_SCROLLBAR_BG = 14
 local COL_SCROLLBAR_GRAB = 15
 local COL_BUTTON = 21
 local COL_BUTTON_HOVERED = 22
 local COL_BUTTON_ACTIVE = 23
-local COL_HEADER = 24
-local COL_HEADER_HOVERED = 25
-local COL_HEADER_ACTIVE = 26
 
 local function pushColor(token, index, color)
     local ok = pcall(imgui.push_style_color, index, color)
@@ -180,29 +176,6 @@ function Theme.pushListRows()
 end
 
 function Theme.popListRows(token)
-    popToken(token)
-end
-
-function Theme.pushHistoryFilters()
-    local token = { colors = 0, vars = 0 }
-    local c = Theme.colors
-    pushColor(token, COL_TEXT, c.text)
-    pushColor(token, COL_POPUP_BG, c.windowBg)
-    pushColor(token, COL_BORDER, c.rule)
-    pushColor(token, COL_FRAME_BG, c.barTrack)
-    pushColor(token, COL_FRAME_BG_HOVERED, c.accentDim)
-    pushColor(token, COL_FRAME_BG_ACTIVE, c.accentDim)
-    pushColor(token, COL_BUTTON, c.barTrack)
-    pushColor(token, COL_BUTTON_HOVERED, c.accentDim)
-    pushColor(token, COL_BUTTON_ACTIVE, c.accentDim)
-    pushColor(token, COL_HEADER, c.accentDim)
-    pushColor(token, COL_HEADER_HOVERED, c.accentDim)
-    pushColor(token, COL_HEADER_ACTIVE, c.accentDim)
-    pushVectorVar(token, "ItemSpacing", Theme.metrics.historyGap, Theme.metrics.itemSpacing)
-    return token
-end
-
-function Theme.popHistoryFilters(token)
     popToken(token)
 end
 

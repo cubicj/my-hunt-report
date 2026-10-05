@@ -109,17 +109,23 @@ function T.topBarDrawsCenteredIconsWithHiddenLabels()
         local screen = { x = 100, y = 200 }
         imgui.get_cursor_screen_pos = function() return { x = screen.x, y = screen.y } end
         ui.onButton = function(label, size)
-            assert(label == "##back" or label == "##close")
+            assert(label == "##back" or label == "##filter" or label == "##close")
             assert(size[1] == 36 and size[2] == 36)
             screen = { x = 300, y = 400 }
         end
         ui.draw()
-        assertNavigation(ui, "##back|##close")
+        assertNavigation(ui, "##back|##filter|##close")
         local expected = {
             { 120.5, 223, 115.5, 218 }, { 115.5, 218, 120.5, 213 },
+            { 310.5, 408 + 25 / 6, 325.5, 408 + 25 / 6 },
+            { 325.5, 408 + 25 / 6, 308 + 35 / 3, 408 + 65 / 6 },
+            { 308 + 35 / 3, 408 + 65 / 6, 308 + 35 / 3, 408 + 50 / 3 },
+            { 308 + 35 / 3, 408 + 50 / 3, 308 + 25 / 3, 423 },
+            { 308 + 25 / 3, 423, 308 + 25 / 3, 408 + 65 / 6 },
+            { 308 + 25 / 3, 408 + 65 / 6, 310.5, 408 + 25 / 6 },
             { 323, 413, 313, 423 }, { 313, 413, 323, 423 },
         }
-        assert(#list.calls == 4)
+        assert(#list.calls == 10)
         for index, points in ipairs(expected) do
             local call = list.calls[index]
             assert(call.name == "add_line" and call[3] == Theme.colors.textMuted and call[4] == 2)
@@ -133,7 +139,7 @@ end
 
 function T.topBarIconsReadHoverForEachButton()
     local Theme = require("MyHuntReport.Theme")
-    for _, hovered in ipairs({ "##back", "##close" }) do
+    for _, hovered in ipairs({ "##back", "##filter", "##close" }) do
         withIconNavigation(function(ui, list)
             local reads = {}
             imgui.is_item_hovered = function()
@@ -142,10 +148,10 @@ function T.topBarIconsReadHoverForEachButton()
                 return label == hovered
             end
             ui.draw()
-            assert(table.concat(reads, "|") == "##back|##close")
-            assert(#list.calls == 4)
+            assert(table.concat(reads, "|") == "##back|##filter|##close")
+            assert(#list.calls == 10)
             for index, call in ipairs(list.calls) do
-                local label = index <= 2 and "##back" or "##close"
+                local label = index <= 2 and "##back" or index <= 8 and "##filter" or "##close"
                 assert(call[3] == (label == hovered and Theme.colors.text or Theme.colors.textMuted))
             end
         end)
@@ -158,8 +164,8 @@ function T.topBarIconsDefaultToMutedWhenHoverFailsOrIsMissing()
         withIconNavigation(function(ui, list)
             imgui.is_item_hovered = hover
             ui.draw()
-            assertNavigation(ui, "##back|##close")
-            assert(#list.calls == 4)
+            assertNavigation(ui, "##back|##filter|##close")
+            assert(#list.calls == 10)
             for _, call in ipairs(list.calls) do assert(call[3] == Theme.colors.textMuted) end
         end)
     end
@@ -173,7 +179,7 @@ function T.topBarUsesTextWhenDrawListIsAbsentOrForcedOff()
             imgui.is_item_hovered = function() hovers = hovers + 1 return true end
             Draw.setForced(forced)
             ui.draw()
-            assertNavigation(ui, "<##back|X##close")
+            assertNavigation(ui, "<##back|필터|X##close")
             assert(#list.calls == 0 and hovers == 0 and getters == (forced and 0 or 1))
         end)
     end
@@ -184,9 +190,9 @@ function T.topBarUsesTextAfterAnIconDrawFailure()
         list.add_line = function() error("icon failed") end
         ui.draw()
         assert(Draw.statusText() == "failed")
-        assertNavigation(ui, "##back|X##close")
+        assertNavigation(ui, "##back|필터|X##close")
         ui.draw()
-        assertNavigation(ui, "<##back|X##close")
+        assertNavigation(ui, "<##back|필터|X##close")
     end)
 end
 
@@ -231,7 +237,7 @@ function T.historyRowsDrawFourColumnsOverATransparentButton()
         ui.entries = { entry }
         ReportWindow.showHistory()
         ui.draw()
-        assert(ui.buttons[3] == "##history1", tostring(ui.buttons[3]))
+        assert(ui.buttons[4] == "##history1", tostring(ui.buttons[4]))
         local texts = {}
         local afterRow = false
         for _, event in ipairs(ui.events) do
@@ -262,7 +268,7 @@ function T.reportNavigationPrecedesBodyRows()
     end)
 end
 
-function T.historyNavigationHasBackAndCloseOnly()
+function T.historyNavigationHasBackFilterAndClose()
     withNavigation(function(ui)
         for _, entries in ipairs({ {}, { snapshot("clear") } }) do
             ui.entries = entries
@@ -270,8 +276,8 @@ function T.historyNavigationHasBackAndCloseOnly()
             ReportWindow.showHistory()
             ui.draw()
             assert(ReportWindow.isOpen())
-            assertNavigation(ui, "<##back|X##close")
-            assert(ui.buttons[1] == "<##back" and ui.buttons[2] == "X##close")
+            assertNavigation(ui, "<##back|필터|X##close")
+            assert(ui.buttons[1] == "<##back" and ui.buttons[2] == "필터" and ui.buttons[3] == "X##close")
         end
     end)
 end
@@ -282,7 +288,7 @@ function T.selectedHistoryReportNavigationHasBackAndCloseOnly()
         ReportWindow.show(snapshot("running"))
         ReportWindow.showHistory()
         ui.draw()
-        ui.draw(ui.buttons[3])
+        ui.draw("##history1")
         assert(ReportWindow.debugState().fromHistory)
         ui.draw()
         assertNavigation(ui, "<##back|X##close")
@@ -297,7 +303,7 @@ function T.topBarButtonsNavigateAndCloseEveryView()
         ui.draw("기록")
         assert(ReportWindow.debugState().view == "history")
         ui.draw()
-        ui.draw(ui.buttons[3])
+        ui.draw("##history1")
         assert(ReportWindow.debugState().fromHistory)
         ui.draw("<##back")
         assert(ReportWindow.debugState().view == "history")
@@ -308,7 +314,7 @@ function T.topBarButtonsNavigateAndCloseEveryView()
             if view == "history" or view == "selected" then ReportWindow.showHistory() end
             if view == "selected" then
                 ui.draw()
-                ui.draw(ui.buttons[3])
+                ui.draw("##history1")
                 assert(ReportWindow.debugState().fromHistory)
             end
             ui.draw("X##close")
@@ -349,6 +355,8 @@ function T.topBarPositionsButtonsAndTitlesInSeparateRows()
             local expected = (view == "history" or view == "selected")
                 and { ["<##back"] = 24, ["X##close"] = 708 }
                 or { ["기록"] = 608, ["X##close"] = 708 }
+            if view == "history" then expected["필터"] = 664 end
+            local buttonCount = view == "history" and 3 or 2
             local title = view == "history" and Locale.text("history_title")
                 or view == "empty" and Locale.text("report_title") or "태도"
             local buttons, titles = 0, 0
@@ -358,12 +366,12 @@ function T.topBarPositionsButtonsAndTitlesInSeparateRows()
                     assert(pos[1] == expected[event.value] and pos[2] == 20, event.value)
                     buttons = buttons + 1
                 elseif event.kind == "text" and event.value == title then
-                    assert(buttons == 2, "title must follow the tab row")
+                    assert(buttons == buttonCount, "title must follow the tab row")
                     assert(pos[1] == 24 and pos[2] == 68, view .. " title position")
                     titles = titles + 1
                 end
             end
-            assert(buttons == 2 and titles == 1)
+            assert(buttons == buttonCount and titles == 1)
         end
     end)
 end
@@ -2223,9 +2231,8 @@ function T.boundsAreNilWhenThePositionReadFails()
     end)
 end
 
-local FILTER_IDS = {
-    "##historyFilterWeapon", "##historyFilterLevel", "##historyFilterMonster", "##historyFilterVariant",
-}
+local FILTER_WINDOW = "##MyHuntReportFilterWindow"
+local REPORT_WINDOW = "##MyHuntReportWindow"
 
 local function filterRecord(weaponType, level, emId, legendaryId)
     local record = snapshot("clear")
@@ -2238,8 +2245,12 @@ end
 local function withHistoryFilters(callback)
     withNavigation(function(ui)
         local Fonts = require("MyHuntReport.Fonts")
+        local Draw = require("MyHuntReport.Draw")
         local push, pop = Fonts.push, Fonts.pop
-        local fonts = {}
+        local fonts, windows = {}, {}
+        local cursor, current, pendingPosition
+        ui.reportRect = { x = 300, y = 100, width = 768, height = 400 }
+        ui.checks = {}
         Fonts.push = function(desc)
             local token = push(desc)
             if token then fonts[#fonts + 1] = desc end
@@ -2249,291 +2260,394 @@ local function withHistoryFilters(callback)
             if token then assert(table.remove(fonts)) end
             pop(token)
         end
-        local draw = ui.draw
-        ui.choices = {}
-        ui.draw = function(click)
-            ui.combos, ui.children, ui.sameLines = {}, {}, 0
-            draw(click)
-            assert(#fonts == 0, "unbalanced fonts")
+        imgui.combo = function() error("history must not draw a combo") end
+        imgui.set_next_window_pos = function(pos, condition, pivot)
+            pendingPosition = { x = pos[1], y = pos[2], condition = condition, pivot = pivot }
         end
-        imgui.set_next_item_width = function(width)
-            ui.nextWidth = width
-            ui.events[#ui.events + 1] = { kind = "width", value = width }
+        imgui.begin_window = function(id, open, flags)
+            assert(current == nil, "windows must not be nested")
+            if ui.failBegin and id == FILTER_WINDOW then error("filter begin failed") end
+            current, cursor = id, { x = 24, y = 24 }
+            windows[#windows + 1] = id
+            ui.windows[#ui.windows + 1] = { id = id, flags = flags, placement = pendingPosition }
+            pendingPosition = nil
+            if id == FILTER_WINDOW and ui.nativeClose then return false end
+            return open
         end
-        imgui.same_line = function() ui.sameLines = ui.sameLines + 1 end
-        imgui.combo = function(id, index, labels)
-            assert(ui.events[#ui.events].kind == "width", "width must be set immediately before combo")
-            local item = { id = id, index = index, labels = labels, width = ui.nextWidth, font = fonts[#fonts] }
-            ui.combos[#ui.combos + 1] = item
-            ui.events[#ui.events + 1] = { kind = "combo", value = id }
-            if ui.onCombo then ui.onCombo(item) end
-            local choice = ui.choices[id]
-            ui.choices[id] = nil
-            return choice ~= nil, choice or index
+        imgui.end_window = function()
+            assert(table.remove(windows) == current)
+            current = nil
+        end
+        imgui.get_window_pos = function()
+            if current == FILTER_WINDOW then return { x = 1084, y = 100 } end
+            return { x = ui.reportRect.x, y = ui.reportRect.y }
+        end
+        imgui.get_window_size = function()
+            if current == FILTER_WINDOW then return { x = 528, y = 500 } end
+            return { x = ui.reportRect.width, y = ui.reportRect.height }
+        end
+        imgui.get_cursor_pos = function() return { x = cursor.x, y = cursor.y } end
+        imgui.set_cursor_pos = function(pos)
+            cursor = { x = pos.x or pos[1], y = pos.y or pos[2] }
+            ui.positions[#ui.positions + 1] = { x = cursor.x, y = cursor.y }
+        end
+        imgui.get_cursor_screen_pos = function() return { x = cursor.x, y = cursor.y } end
+        imgui.calc_text_size = function(text) return { x = utf8.len(text) * 8, y = 18 } end
+        local function advance(height)
+            cursor = { x = 24, y = cursor.y + (height or 24) + 10 }
+        end
+        local originalText = imgui.text
+        imgui.text = function(text)
+            if current == FILTER_WINDOW and ui.failText then error("filter text failed") end
+            originalText(text)
+            ui.texts[#ui.texts + 1] = { text = text, window = current }
+            advance()
+        end
+        local originalButton = imgui.button
+        imgui.button = function(label, size)
+            local id = label:match("(##.*)$") or label
+            local color
+            for _, item in ipairs(ui.colors) do if item[1] == 0 then color = item[2] end end
+            ui.items[#ui.items + 1] = { id = id, text = label, window = current, x = cursor.x, y = cursor.y, size = size, color = color }
+            originalButton(label, size)
+            advance(size and size[2])
+            return ui.click ~= nil and (ui.click == label or ui.click == id)
+        end
+        imgui.invisible_button = function(_, size) advance(size[2]) return false end
+        imgui.same_line = function() cursor = { x = cursor.x + 120, y = cursor.y - 34 } end
+        imgui.checkbox = function(label, checked)
+            if ui.failCheckbox then error("filter checkbox failed") end
+            local id = label:match("(##.*)$")
+            ui.checkboxes[#ui.checkboxes + 1] = { id = id, text = label, checked = checked, x = cursor.x, y = cursor.y, font = fonts[#fonts] }
+            advance()
+            local requested = ui.checks[id]
+            ui.checks[id] = nil
+            return requested ~= nil, requested == true
         end
         imgui.begin_child_window = function(id, size)
             ui.children[#ui.children + 1] = { id = id, width = size[1], height = size[2] }
         end
+        local draw = ui.draw
+        ui.draw = function(click)
+            ui.items, ui.windows, ui.checkboxes, ui.children, ui.texts = {}, {}, {}, {}, {}
+            draw(click)
+            assert(current == nil and #windows == 0 and #fonts == 0, "unbalanced windows or fonts")
+        end
+        function ui.openFilters()
+            ReportWindow.showHistory()
+            ui.draw(Locale.text("history_filter"))
+            assert(ReportWindow.filterBounds() ~= nil)
+        end
+        function ui.check(axis, value, checked)
+            ui.checks["##filter" .. axis .. ":" .. tostring(value)] = checked
+            ui.draw()
+        end
+        function ui.item(id)
+            for _, item in ipairs(ui.items) do if item.id == id then return item end end
+        end
+        function ui.checkbox(axis, value)
+            local id = "##filter" .. axis .. ":" .. tostring(value)
+            for _, item in ipairs(ui.checkboxes) do if item.id == id then return item end end
+        end
+        function ui.rows()
+            local count = 0
+            for _, item in ipairs(ui.items) do if item.id:find("^##history%d") then count = count + 1 end end
+            return count
+        end
+        function ui.chips()
+            local result = {}
+            for _, item in ipairs(ui.items) do if item.id:find("^##historyChip") then result[#result + 1] = item end end
+            return result
+        end
         local ok, err = pcall(function()
+            Draw.resetForTests()
             ReportWindow.showHistory()
             ui.draw()
             callback(ui)
         end)
         Fonts.push, Fonts.pop = push, pop
         ui.entries = {}
+        ReportWindow.hide()
         ReportWindow.setNameResolver(nil)
         ReportWindow.setRelabeler(nil)
         ReportWindow.showHistory()
         ui.draw()
+        Draw.resetForTests()
         if not ok then error(err, 0) end
     end)
 end
 
-local function drawnHistoryRows(ui)
-    local count = 0
-    for _, label in ipairs(ui.buttons) do
-        if label:find("^##history%d") then count = count + 1 end
-    end
-    return count
-end
-
-function T.historyFiltersDrawFourThemedBodyCombosBetweenTitleAndRows()
+function T.historyFilterIconIsHistoryOnlyAndTogglesTheSecondWindow()
     withHistoryFilters(function(ui)
-        local Theme = require("MyHuntReport.Theme")
-        local Settings = require("MyHuntReport.Settings")
-        ui.entries = { filterRecord(10, 5, 32, 1) }
-        ui.onCombo = function(item)
-            local colors, vars = {}, {}
-            for _, value in ipairs(ui.colors) do colors[value[1]] = value[2] end
-            for _, value in ipairs(ui.vars) do vars[value[1]] = value[2] end
-            assert(colors[0] == Theme.colors.text and colors[4] == Theme.colors.windowBg)
-            assert(colors[7] == Theme.colors.barTrack and colors[8] == Theme.colors.accentDim)
-            assert(colors[24] == Theme.colors.accentDim and colors[25] == Theme.colors.accentDim)
-            assert(vars[14].x == Theme.metrics.historyGap)
-            assert(item.font.size == Settings.get().fontSize)
-        end
-        for _, size in ipairs({ 18, 24 }) do
-            Settings.get().fontSize = size
-            ReportWindow.showHistory()
-            ui.draw()
-            assert(ReportWindow.isOpen() and #ui.combos == 4 and ui.sameLines == 3)
-            local width = math.floor(720 * size / 18)
-            for index, item in ipairs(ui.combos) do
-                assert(item.id == FILTER_IDS[index])
-                assert(item.width * 4 + Theme.metrics.historyGap * 3 == width)
-                assert(item.index == 1)
-            end
-            local title, combos, rows = false, 0, 0
-            for _, event in ipairs(ui.events) do
-                if event.kind == "text" and event.value == Locale.text("history_title") then title = true end
-                if event.kind == "combo" then
-                    assert(title and rows == 0)
-                    combos = combos + 1
-                end
-                if event.kind == "button" and event.value:find("^##history%d") then
-                    assert(combos == 4)
-                    rows = rows + 1
-                end
-            end
-            assert(title and combos == 4 and rows == 1)
-        end
-    end)
-end
-
-function T.historyFiltersChooseEachAxisAndUseFilteredRowCount()
-    withHistoryFilters(function(ui)
-        ui.entries = { filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2) }
-        ReportWindow.showHistory()
+        ui.entries = { filterRecord(10, 5, 32, 0) }
+        ReportWindow.show(ui.entries[1])
         ui.draw()
-        assert(drawnHistoryRows(ui) == 2 and ui.children[1].height == 76)
-        for axis, index in ipairs({ 3, 3, 2, 2 }) do
-            ui.choices[FILTER_IDS[axis]] = index
+        assert(not ui.item(Locale.text("history_filter")) and #ui.windows == 1)
+        ui.openFilters()
+        assert(#ui.windows == 2 and ui.windows[2].id == FILTER_WINDOW)
+        assert(ui.windows[2].flags == require("MyHuntReport.Theme").WINDOW_FLAGS)
+        local filter, close = ui.item(Locale.text("history_filter")), ui.item("##close")
+        assert(filter.x + filter.size[1] + 8 == close.x)
+        ui.draw(Locale.text("history_filter"))
+        assert(#ui.windows == 1 and ReportWindow.filterBounds() == nil)
+        ui.draw(Locale.text("history_filter"))
+        assert(#ui.windows == 2)
+        ui.draw("##history1")
+        assert(#ui.windows == 1 and ReportWindow.filterBounds() == nil)
+        ui.draw()
+        assert(not ui.item(Locale.text("history_filter")))
+    end)
+end
+
+function T.historyFilterCheckboxesSelectTwoWeaponsWithOrSemantics()
+    withHistoryFilters(function(ui)
+        ui.entries = { filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2), filterRecord(0, 1, 34, 1) }
+        ui.openFilters()
+        ui.check("weapons", 10, true)
+        ui.check("weapons", 3, true)
+        ui.draw()
+        assert(ui.rows() == 2 and ui.children[1].height == 76)
+        assert(ui.checkbox("weapons", 10).checked and ui.checkbox("weapons", 3).checked)
+        assert(not ui.checkbox("weapons", 0).checked)
+        ui.check("weapons", 10, false)
+        ui.draw()
+        assert(ui.rows() == 1 and #ui.chips() == 1)
+        assert(ui.chips()[1].id == "##historyChipweapons:3")
+    end)
+end
+
+function T.historyFilterChipsFollowAxisAndOptionOrderAndClearAllIsLast()
+    withHistoryFilters(function(ui)
+        ui.entries = { filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2) }
+        ui.openFilters()
+        assert(#ui.chips() == 0 and not ui.item("##historyClearAll"))
+        for _, choice in ipairs({ { "variants", "arch" }, { "species", 33 }, { "levels", 5 }, { "weapons", 10 }, { "weapons", 3 }, { "levels", 10 } }) do
+            ui.check(choice[1], choice[2], true)
+        end
+        ui.draw()
+        local expected = { "weapons:3", "weapons:10", "levels:10", "levels:5", "species:33", "variants:arch" }
+        local chips = ui.chips()
+        assert(#chips == #expected)
+        for index, chip in ipairs(chips) do
+            assert(chip.id == "##historyChip" .. expected[index])
+            assert(chip.text:find(" ×##", 1, true))
+        end
+        local clear = ui.item("##historyClearAll")
+        assert(clear and clear.window == REPORT_WINDOW)
+        assert(clear.y > chips[#chips].y or clear.x > chips[#chips].x)
+    end)
+end
+
+function T.historyFilterChipRemovalUnchecksOnlyItsValue()
+    withHistoryFilters(function(ui)
+        ui.entries = { filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2) }
+        ui.openFilters()
+        ui.check("weapons", 10, true)
+        ui.check("weapons", 3, true)
+        ui.draw("##historyChipweapons:10")
+        assert(not ui.checkbox("weapons", 10).checked and ui.checkbox("weapons", 3).checked)
+        assert(ui.rows() == 1)
+        ui.draw()
+        assert(#ui.chips() == 1 and ui.chips()[1].id == "##historyChipweapons:3")
+    end)
+end
+
+function T.historyFilterPerAxisClearAndBothClearAllButtons()
+    withHistoryFilters(function(ui)
+        ui.entries = { filterRecord(10, 5, 32, 0) }
+        ui.openFilters()
+        local choices = { { "weapons", 10 }, { "levels", 5 }, { "species", 32 }, { "variants", "normal" } }
+        for _, choice in ipairs(choices) do ui.check(choice[1], choice[2], true) end
+        for index, choice in ipairs(choices) do
+            ui.draw("##filterClear" .. choice[1])
+            assert(not ui.checkbox(choice[1], choice[2]).checked)
             ui.draw()
-            assert(drawnHistoryRows(ui) == 1 and ui.children[1].height == 40)
-            local texts = {}
-            for _, event in ipairs(ui.events) do
-                if event.kind == "text" then texts[event.value] = true end
-            end
-            assert(texts["Weapon 10"] and texts["Monster 32"])
-            assert(not texts["Weapon 3"] and not texts["Monster 33"])
-            ui.choices[FILTER_IDS[axis]] = 1
+            assert(#ui.chips() == #choices - index)
+            assert(not ui.item("##filterClear" .. choice[1]))
+        end
+        for _, clear in ipairs({ "##historyClearAll", "##filterClearAll" }) do
+            for _, choice in ipairs(choices) do ui.check(choice[1], choice[2], true) end
+            ui.draw(clear)
+            for _, choice in ipairs(choices) do assert(not ui.checkbox(choice[1], choice[2]).checked) end
             ui.draw()
-            assert(drawnHistoryRows(ui) == 2)
+            assert(#ui.chips() == 0 and not ui.item("##historyClearAll"))
+            assert(ui.rows() == 1)
         end
     end)
 end
 
-function T.historyFiltersShowMutedNoMatchLineAndKeepCombos()
+function T.historyFilterNoMatchesKeepsChipsAndCheckboxes()
     withHistoryFilters(function(ui)
-        local Theme = require("MyHuntReport.Theme")
         ui.entries = { filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2) }
-        ReportWindow.showHistory()
-        ui.choices[FILTER_IDS[1]] = 3
-        ui.choices[FILTER_IDS[2]] = 2
-        for _, language in ipairs({ "en", "ko" }) do
+        ui.openFilters()
+        ui.check("weapons", 10, true)
+        ui.check("levels", 10, true)
+        for _, language in ipairs({ "ko", "en" }) do
             Locale.resolve(language)
             ReportWindow.onLanguageChanged()
             ui.draw()
-            assert(#ui.combos == 4 and drawnHistoryRows(ui) == 0)
-            assert(#ui.children == 1 and ui.children[1].height == 40)
+            assert(ui.rows() == 0 and #ui.chips() == 2 and #ui.checkboxes == 8)
+            assert(ui.children[1].height == 40)
             local count = 0
             for _, event in ipairs(ui.events) do
                 if event.kind == "text" and event.value == Locale.text("history_no_matches") then
-                    assert(event.textColor == Theme.colors.textMuted)
+                    assert(event.textColor == require("MyHuntReport.Theme").colors.textMuted)
                     count = count + 1
                 end
-                assert(event.value ~= Locale.text("history_empty"))
             end
             assert(count == 1)
         end
     end)
 end
 
-function T.historyFiltersAreAbsentForEmptyHistory()
+function T.historyFilterEmptyHistoryHasNoChipsOrOptionsAndMutedIcon()
     withHistoryFilters(function(ui)
-        ReportWindow.showHistory()
-        ui.draw()
-        assert(#ui.combos == 0 and #ui.children == 0 and drawnHistoryRows(ui) == 0)
-        local found = false
-        for _, event in ipairs(ui.events) do
-            if event.kind == "text" and event.value == Locale.text("history_empty") then found = true end
+        ui.openFilters()
+        assert(#ui.checkboxes == 0 and #ui.chips() == 0 and ui.rows() == 0)
+        assert(not ui.item("##historyClearAll"))
+        assert(ui.item(Locale.text("history_filter")).color == require("MyHuntReport.Theme").colors.textMuted)
+        local dashes, empty = 0, false
+        for _, item in ipairs(ui.texts) do
+            if item.window == FILTER_WINDOW and item.text == "-" then dashes = dashes + 1 end
+            if item.text == Locale.text("history_empty") then empty = true end
         end
-        assert(found)
+        assert(dashes == 4 and empty)
     end)
 end
 
-function T.historyFiltersSurviveReloadAndTrackValuesWhenIndexesChange()
+function T.historyFilterWindowClosesOnEveryExitWithoutReopening()
+    withHistoryFilters(function(ui)
+        ui.entries = { filterRecord(10, 5, 32, 0) }
+        for _, button in ipairs({ "##filterClose", "##close", "##back", "##history1" }) do
+            ui.openFilters()
+            ui.check("weapons", 10, true)
+            ui.draw(button)
+            assert(ReportWindow.filterBounds() == nil)
+            if button == "##close" then assert(not ReportWindow.isOpen()) end
+            if button == "##history1" then
+                assert(ReportWindow.debugState().snapshot == ui.entries[1])
+                ui.draw("##back")
+            end
+            ReportWindow.showHistory()
+            ui.draw()
+            assert(#ui.windows == 1 and ReportWindow.filterBounds() == nil and #ui.chips() == 1)
+        end
+        ui.openFilters()
+        ReportWindow.hide()
+        assert(ReportWindow.filterBounds() == nil)
+        ReportWindow.toggle(snapshot("clear"))
+        ReportWindow.showHistory()
+        ui.draw()
+        assert(#ui.windows == 1 and #ui.chips() == 1)
+        ui.openFilters()
+        ui.nativeClose = true
+        ui.draw()
+        assert(ReportWindow.filterBounds() == nil and ReportWindow.isOpen())
+    end)
+end
+
+function T.historyFilterFilteredRowOpensTheMatchingRecord()
     withHistoryFilters(function(ui)
         local first, second = filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2)
         ui.entries = { first, second }
-        ReportWindow.showHistory()
-        for axis, index in ipairs({ 3, 3, 2, 2 }) do ui.choices[FILTER_IDS[axis]] = index end
+        ui.openFilters()
+        ui.check("weapons", 10, true)
+        ui.draw("##history1")
+        assert(ReportWindow.debugState().snapshot == first and ReportWindow.debugState().fromHistory)
+        assert(ReportWindow.filterBounds() == nil)
+        ui.draw("##back")
         ui.draw()
-        assert(drawnHistoryRows(ui) == 1)
+        assert(#ui.chips() == 1 and ui.rows() == 1 and #ui.windows == 1)
+    end)
+end
+
+function T.historyFilterSelectionsSurviveReloadAndPruneIndividually()
+    withHistoryFilters(function(ui)
+        local first, second = filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2)
+        ui.entries = { first, second }
+        ui.openFilters()
+        ui.check("weapons", 10, true)
+        ui.check("weapons", 3, true)
+        ui.check("species", 32, true)
         table.insert(ui.entries, filterRecord(0, 15, 1, 1))
         ReportWindow.showHistory()
         ui.draw()
-        for axis, index in ipairs({ 4, 4, 3, 2 }) do assert(ui.combos[axis].index == index, FILTER_IDS[axis]) end
-        assert(drawnHistoryRows(ui) == 1)
-        ui.draw("##history1")
-        assert(ReportWindow.debugState().snapshot == first)
-    end)
-end
-
-function T.historyFiltersPruneAllAxesWhenTheirValuesDisappear()
-    withHistoryFilters(function(ui)
-        ui.entries = { filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2) }
-        ReportWindow.showHistory()
-        for axis, index in ipairs({ 3, 3, 2, 2 }) do ui.choices[FILTER_IDS[axis]] = index end
-        ui.draw()
-        ui.entries = { ui.entries[2] }
+        assert(ui.checkbox("weapons", 3).checked and ui.checkbox("weapons", 10).checked)
+        assert(ui.checkbox("species", 32).checked and ui.rows() == 1)
+        ui.entries = { second }
         ReportWindow.showHistory()
         ui.draw()
-        for _, item in ipairs(ui.combos) do assert(item.index == 1) end
-        assert(drawnHistoryRows(ui) == 1)
+        assert(#ui.chips() == 1 and ui.chips()[1].id == "##historyChipweapons:3")
+        assert(ui.checkbox("weapons", 3).checked and ui.rows() == 1)
         ui.entries = {}
         ReportWindow.onHistoryCleared()
         ui.draw()
-        assert(#ui.combos == 0)
+        assert(#ui.checkboxes == 0 and #ui.chips() == 0)
     end)
 end
 
-function T.historyFiltersOpenTheFilteredRecordAndSurviveBackAndReopen()
-    withHistoryFilters(function(ui)
-        local first, second = filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2)
-        ui.entries = { first, second }
-        ReportWindow.showHistory()
-        ui.choices[FILTER_IDS[1]] = 3
-        ui.draw("##history1")
-        local state = ReportWindow.debugState()
-        assert(state.snapshot == first and state.fromHistory and state.view == "report")
-        ui.draw("<##back")
-        ui.draw()
-        assert(ReportWindow.debugState().view == "history")
-        assert(ui.combos[1].index == 3 and drawnHistoryRows(ui) == 1)
-        ui.draw("X##close")
-        assert(not ReportWindow.isOpen())
-        ReportWindow.toggle(snapshot("clear"))
-        ui.draw(Locale.text("history"))
-        ui.draw()
-        assert(ReportWindow.isOpen() and ui.combos[1].index == 3 and drawnHistoryRows(ui) == 1)
-    end)
-end
-
-function T.historyFiltersResolveBaseNamesSortSpeciesAndRelabelTheSelection()
+function T.historyFilterNamesRelabelAndSortWhileKeepingSelections()
     withHistoryFilters(function(ui)
         local calls = 0
         ui.entries = { filterRecord(10, 5, 32, 1), filterRecord(3, 10, 33, 2) }
         ReportWindow.setNameResolver(function(label)
             calls = calls + 1
             if label.kind == "weapon" then return Locale.current() .. ":" .. label.type end
-            assert(label.kind == "monster" and label.roleId == nil and label.legendaryId == nil)
+            assert(label.roleId == nil and label.legendaryId == nil)
             if Locale.current() == "en" then return label.emId == 32 and "Alpha" or "Zulu" end
             return label.emId == 32 and "Zulu-ko" or "Alpha-ko"
         end)
         Locale.resolve("en")
-        ReportWindow.showHistory()
-        ui.draw()
+        ui.openFilters()
         assert(calls == 4)
-        assert(table.concat(ui.combos[1].labels, "|") == "All weapons|en:3|en:10")
-        assert(table.concat(ui.combos[2].labels, "|") == "All levels|★10|★5")
-        assert(table.concat(ui.combos[3].labels, "|") == "All monsters|Alpha|Zulu")
-        assert(table.concat(ui.combos[4].labels, "|") == "All variants|Tempered|Arch-tempered")
-        ui.choices[FILTER_IDS[3]] = 2
+        assert(ui.checkbox("weapons", 3).text:find("en:3", 1, true))
+        ui.check("species", 32, true)
+        ui.check("species", 33, true)
         ui.draw()
-        assert(calls == 4 and drawnHistoryRows(ui) == 1)
-        ReportWindow.setRelabeler(function(record)
-            record.monsters[1].name = "relabel:" .. record.monsters[1].label.emId
-        end)
+        assert(ui.chips()[1].id == "##historyChipspecies:32" and calls == 4)
+        ReportWindow.setRelabeler(function(record) record.monsters[1].name = "relabel:" .. record.monsters[1].label.emId end)
         Locale.resolve("ko")
         ReportWindow.onLanguageChanged()
         ui.draw()
-        assert(calls == 8 and ui.combos[3].index == 3 and drawnHistoryRows(ui) == 1)
-        assert(table.concat(ui.combos[1].labels, "|") == "모든 무기|ko:3|ko:10")
-        assert(table.concat(ui.combos[3].labels, "|") == "모든 보스|Alpha-ko|Zulu-ko")
-        assert(table.concat(ui.combos[4].labels, "|") == "모든 변종|역전|역전왕")
-        ui.draw("##history1")
-        assert(ReportWindow.debugState().snapshot == ui.entries[1])
-        assert(ReportWindow.debugState().snapshot.monsters[1].name == "relabel:32")
+        assert(calls == 8 and ui.chips()[1].id == "##historyChipspecies:33")
+        assert(ui.checkbox("species", 32).checked and ui.checkbox("species", 33).checked)
+        assert(ui.checkbox("weapons", 10).text:find("ko:10", 1, true))
+        assert(ui.entries[1].monsters[1].name == "relabel:32")
     end)
 end
 
-function T.historyFiltersFallBackToIdentifiersForUnresolvedNames()
+function T.historyFilterNamesFallBackToIdentifiers()
     withHistoryFilters(function(ui)
         ui.entries = { filterRecord(10, 5, 32, 0) }
         for _, resolver in ipairs({ false, function() return nil end, function() return "" end, function() error("unavailable") end }) do
             ReportWindow.setNameResolver(resolver or nil)
-            ReportWindow.showHistory()
-            ui.draw()
-            assert(ReportWindow.isOpen())
-            assert(ui.combos[1].labels[2] == "#10" and ui.combos[3].labels[2] == "#32")
+            ReportWindow.hide()
+            ui.openFilters()
+            assert(ui.checkbox("weapons", 10).text:find("#10##", 1, true))
+            assert(ui.checkbox("species", 32).text:find("#32##", 1, true))
         end
     end)
 end
 
-function T.historyFiltersCacheOptionsLabelsAndMatchesBetweenChanges()
+function T.historyFilterCachesOptionsNamesChipsAndMatchesBetweenChanges()
     withHistoryFilters(function(ui)
         local Filter = require("MyHuntReport.HistoryFilter")
         local options, apply = Filter.options, Filter.apply
         local optionCalls, applyCalls = 0, 0
         Filter.options = function(entries) optionCalls = optionCalls + 1 return options(entries) end
-        Filter.apply = function(entries, selection) applyCalls = applyCalls + 1 return apply(entries, selection) end
+        Filter.apply = function(entries, chosen) applyCalls = applyCalls + 1 return apply(entries, chosen) end
         local ok, err = pcall(function()
             ui.entries = { filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2) }
-            ReportWindow.showHistory()
-            ui.draw()
-            local labels = ui.combos[1].labels
+            ui.openFilters()
             ui.draw()
             ui.draw()
-            assert(optionCalls == 1 and applyCalls == 1 and ui.combos[1].labels == labels)
-            ui.choices[FILTER_IDS[1]] = 3
+            assert(optionCalls == 1 and applyCalls == 1)
+            ui.check("weapons", 10, true)
             ui.draw()
-            assert(optionCalls == 1 and applyCalls == 2 and ui.combos[1].labels == labels)
-            ui.draw()
-            assert(applyCalls == 2)
+            assert(optionCalls == 1 and applyCalls == 2)
             ReportWindow.onLanguageChanged()
             ui.draw()
-            assert(optionCalls == 2 and applyCalls == 3 and ui.combos[1].labels ~= labels)
+            assert(optionCalls == 2 and applyCalls == 3)
             ReportWindow.showHistory()
             ui.draw()
             assert(optionCalls == 3 and applyCalls == 4)
@@ -2543,54 +2657,125 @@ function T.historyFiltersCacheOptionsLabelsAndMatchesBetweenChanges()
     end)
 end
 
-function T.historyFiltersLogEverySelectionChangeOnlyInDeveloperMode()
+function T.historyFilterDiagnosticsReportSetsOncePerChangeWithoutSuppression()
     withHistoryFilters(function(ui)
         local Log = require("MyHuntReport.Log")
         local function lines()
             local result = {}
             for _, line in ipairs(stubs.logLines) do
-                if line:find("history filter ", 1, true) then result[#result + 1] = line end
+                if line:find("history filter weapons=", 1, true) then result[#result + 1] = line end
             end
             return result
         end
         ui.entries = { filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2) }
-        ReportWindow.showHistory()
-        ui.choices[FILTER_IDS[1]] = 3
-        ui.draw()
+        ui.openFilters()
+        ui.check("weapons", 10, true)
         assert(#lines() == 0)
         Log.setDeveloperMode(true)
-        ui.draw()
-        assert(#lines() == 0)
         for index = 1, 12 do
-            ui.choices[FILTER_IDS[1]] = index % 2 == 1 and 1 or 3
-            ui.draw()
+            ui.check("weapons", 10, index % 2 == 0)
             assert(#lines() == index)
         end
-        assert(lines()[12]:find("weapon=10 level=nil emId=nil variant=nil shown=1/2", 1, true))
+        assert(lines()[12]:find("weapons=[10] levels=[] species=[] variants=[] shown=1/2", 1, true))
         ui.draw()
         assert(#lines() == 12)
         ui.entries = { ui.entries[2] }
         ReportWindow.showHistory()
         ui.draw()
         assert(#lines() == 13)
-        assert(lines()[13]:find("weapon=nil level=nil emId=nil variant=nil shown=1/1", 1, true))
-        Log.setDeveloperMode(false)
-        ui.choices[FILTER_IDS[1]] = 2
-        ui.draw()
-        assert(#lines() == 13)
+        assert(lines()[13]:find("weapons=[] levels=[] species=[] variants=[] shown=1/1", 1, true))
     end)
 end
 
-function T.historyFilterErrorsAlwaysPopStylesAndFonts()
-    for _, failing in ipairs({ "set_next_item_width", "combo", "same_line" }) do
+function T.historyFilterPlacementUsesRightThenLeftAndCenterForUnknownBounds()
+    withHistoryFilters(function(ui)
+        local Window = require("MyHuntReport.HistoryFilterWindow")
+        for _, scale in ipairs({ 1, 24 / 18 }) do
+            local width = math.floor(480 * scale) + 48
+            local right = Window.placement({ x = 50, y = 90, width = 768 }, { x = 1920, y = 1080 }, scale)
+            assert(right.x == 834 and right.y == 90 and not right.centered)
+            local left = Window.placement({ x = 1000, y = 90, width = 768 }, { x = 1920, y = 1080 }, scale)
+            assert(left.x + width + 16 == 1000 and left.y == 90 and not left.centered)
+            local center = Window.placement(nil, { x = 1920, y = 1080 }, scale)
+            assert(center.centered and center.x == 960 and center.y == 540)
+        end
+        ui.entries = { filterRecord(10, 5, 32, 0) }
+        ui.openFilters()
+        local place = ui.windows[2].placement
+        assert(place.x == 1084 and place.y == 100 and place.condition == 8)
+        assert(place.pivot[1] == 0 and place.pivot[2] == 0)
+        local x, y, width, height = ReportWindow.filterBounds()
+        assert(x == 1084 and y == 100 and width == 528 and height == 500)
+        ui.draw("##filterClose")
+        assert(ReportWindow.filterBounds() == nil)
+    end)
+end
+
+function T.historyFilterGridsUseFixedColumnsAndChipsWrapAtBothFontSizes()
+    withHistoryFilters(function(ui)
+        local Settings = require("MyHuntReport.Settings")
+        ReportWindow.setNameResolver(function(label)
+            return label.kind == "weapon" and "Weapon number " .. label.type or "Monster number " .. label.emId
+        end)
+        for index = 1, 7 do ui.entries[index] = filterRecord(index, index, index, index % 3) end
+        ui.entries[1].monsters[1].label.roleId = 3
+        for _, fontSize in ipairs({ 18, 24 }) do
+            Settings.get().fontSize = fontSize
+            ReportWindow.hide()
+            ui.openFilters()
+            local contentWidth = math.floor(480 * fontSize / 18)
+            for axis, columns in pairs({ weapons = 3, levels = 5, species = 3, variants = 4 }) do
+                local items = {}
+                for _, item in ipairs(ui.checkboxes) do if item.id:find("##filter" .. axis .. ":", 1, true) then items[#items + 1] = item end end
+                assert(#items >= columns)
+                for index, item in ipairs(items) do
+                    assert(math.abs(item.x - 24 - ((index - 1) % columns) * contentWidth / columns) < 0.001)
+                    assert(item.font.size == fontSize)
+                    if index > columns then assert(item.y > items[index - columns].y) end
+                end
+            end
+            for index = 1, 7 do ui.check("weapons", index, true) end
+            for index = 1, 7 do ui.check("levels", index, true) end
+            ui.draw()
+            local chips = ui.chips()
+            assert(#chips == 14 and chips[#chips].y > chips[1].y)
+            for _, chip in ipairs(chips) do assert(chip.x + chip.size[1] <= 24 + math.floor(720 * fontSize / 18)) end
+        end
+    end)
+end
+
+function T.historyFilterActiveIconUsesAccentAndReturnsToMuted()
+    withHistoryFilters(function(ui)
+        local Draw = require("MyHuntReport.Draw")
+        local Theme = require("MyHuntReport.Theme")
+        ui.entries = { filterRecord(10, 5, 32, 0) }
+        ui.openFilters()
+        ui.check("weapons", 10, true)
+        local list = stubs.drawList()
+        Draw.resetForTests()
+        imgui.get_window_draw_list = function() return list end
+        imgui.is_item_hovered = function() return true end
+        ui.draw()
+        for index = 3, 8 do assert(list.calls[index][3] == Theme.colors.accent) end
+        ui.draw("##historyClearAll")
+        list.calls = {}
+        imgui.is_item_hovered = function() return false end
+        ui.draw()
+        for index = 3, 8 do assert(list.calls[index][3] == Theme.colors.textMuted) end
+    end)
+end
+
+function T.historyFilterWindowErrorsBalanceBothWindowsStylesAndFonts()
+    for _, failure in ipairs({ "failBegin", "failText", "failCheckbox" }) do
         withHistoryFilters(function(ui)
             ui.entries = { filterRecord(10, 5, 32, 0) }
-            imgui[failing] = function() error("filter failure") end
+            ui[failure] = true
             ReportWindow.showHistory()
-            ui.draw()
-            assert(not ReportWindow.isOpen())
+            ui.draw(Locale.text("history_filter"))
+            assert(ReportWindow.isOpen() and ReportWindow.filterBounds() == nil)
             assert(#ui.colors == 0 and #ui.vars == 0)
-            assert(drawnHistoryRows(ui) == 0)
+            ui.draw()
+            assert(#ui.windows == 1)
         end)
     end
 end

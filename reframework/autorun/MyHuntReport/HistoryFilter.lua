@@ -1,7 +1,7 @@
 local HistoryFilter = {}
 
 local VARIANTS = { "normal", "tempered", "arch", "frenzied" }
-local AXES = { weapon = "weapons", level = "levels", emId = "species", variant = "variants" }
+local AXES = { "weapons", "levels", "species", "variants" }
 
 local function weaponTypes(quest)
     local types = {}
@@ -61,17 +61,24 @@ end
 
 function HistoryFilter.matches(entry, selection)
     local quest = entry.quest or {}
-    if selection.weapon ~= nil and not contains(weaponTypes(quest), selection.weapon) then return false end
-    if selection.level ~= nil and (type(quest.level) ~= "number" or quest.level <= 0 or quest.level ~= selection.level) then
-        return false
+    local weapons, levels = selection.weapons or {}, selection.levels or {}
+    local species, variants = selection.species or {}, selection.variants or {}
+    if next(weapons) then
+        local found = false
+        for _, weaponType in ipairs(weaponTypes(quest)) do
+            if weapons[weaponType] then found = true break end
+        end
+        if not found then return false end
     end
-    if selection.emId ~= nil or selection.variant ~= nil then
+    if next(levels) and (type(quest.level) ~= "number" or quest.level <= 0 or not levels[quest.level]) then return false end
+    if next(species) or next(variants) then
         for _, monster in ipairs(entry.monsters or {}) do
             local label = monster.label
-            if type(label) == "table" and type(label.emId) == "number"
-                and (selection.emId == nil or label.emId == selection.emId)
-                and (selection.variant == nil or hasVariant(label, selection.variant)) then
-                return true
+            if type(label) == "table" and type(label.emId) == "number" and (not next(species) or species[label.emId]) then
+                if not next(variants) then return true end
+                for variant in pairs(variants) do
+                    if hasVariant(label, variant) then return true end
+                end
             end
         end
         return false
@@ -89,10 +96,32 @@ end
 
 function HistoryFilter.prune(selection, options)
     local changed = false
-    for axis, name in pairs(AXES) do
-        if selection[axis] ~= nil and not contains(options[name], selection[axis]) then
-            selection[axis] = nil
-            changed = true
+    for _, axis in ipairs(AXES) do
+        for value in pairs(selection[axis] or {}) do
+            if not contains(options[axis], value) then
+                selection[axis][value] = nil
+                changed = true
+            end
+        end
+    end
+    return changed
+end
+
+function HistoryFilter.isActive(selection)
+    for _, axis in ipairs(AXES) do
+        if next(selection[axis] or {}) then return true end
+    end
+    return false
+end
+
+function HistoryFilter.clear(selection, axis)
+    local changed = false
+    for _, name in ipairs(AXES) do
+        if axis == nil or axis == name then
+            for value in pairs(selection[name] or {}) do
+                selection[name][value] = nil
+                changed = true
+            end
         end
     end
     return changed

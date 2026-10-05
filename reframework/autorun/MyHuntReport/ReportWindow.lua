@@ -7,6 +7,7 @@ local Settings = require("MyHuntReport.Settings")
 local Log = require("MyHuntReport.Log")
 local History = require("MyHuntReport.History")
 local HistoryFilter = require("MyHuntReport.HistoryFilter")
+local HistoryFilterWindow = require("MyHuntReport.HistoryFilterWindow")
 local Game = require("MyHuntReport.Game")
 local Hdr = require("MyHuntReport.Hdr")
 
@@ -33,10 +34,13 @@ local state = {
     provider = nil,
     relabeler = nil,
     nameResolver = nil,
-    historySelection = {},
+    historySelection = { weapons = {}, levels = {}, species = {}, variants = {} },
     historyOptions = nil,
     historyLabels = nil,
-    historyIndexes = nil,
+    historyChips = {},
+    historyActive = false,
+    filterOpen = false,
+    filterBounds = nil,
     filteredEntries = nil,
     filterChangeCount = 0,
     pendingAction = nil,
@@ -180,6 +184,7 @@ function ReportWindow.persistPosition()
 end
 
 local function close()
+    state.filterOpen, state.filterBounds = false, nil
     state.open = false
     ReportWindow.persistPosition()
 end
@@ -596,6 +601,7 @@ local function drawBody(snapshot, ctx)
 end
 
 local function returnFromHistory()
+    state.filterOpen, state.filterBounds = false, nil
     if state.view == "history" then
         state.snapshot = state.liveSnapshot
         state.notSaved = state.liveNotSaved
@@ -649,6 +655,28 @@ function ReportWindow.drawTopBar(ctx)
                 Fonts.pop(fontPushed)
             end
         end
+        if state.view == "history" then
+            imgui.set_cursor_pos({ m.padding + ctx.width - m.iconButton * 2 - 8, top.y })
+            local screen = imgui.get_cursor_screen_pos()
+            local active = Draw.active()
+            local color = state.historyActive and Theme.colors.accent or Theme.colors.textMuted
+            local colored = pcall(imgui.push_style_color, 0, color)
+            local okButton, clicked = pcall(imgui.button, active and "##filter" or L("history_filter"), { m.iconButton, m.iconButton })
+            if colored then pcall(imgui.pop_style_color, 1) end
+            if not okButton then error(clicked, 0) end
+            if active then
+                local okHover, hovered = pcall(imgui.is_item_hovered)
+                if not state.historyActive and okHover and hovered then color = Theme.colors.text end
+                local inset = (m.iconButton - m.iconSize) / 2
+                Draw.icon("filter", "filter", screen.x + inset, screen.y + inset, m.iconSize, color, m.iconStroke)
+            end
+            if clicked then
+                action = function()
+                    state.filterOpen = not state.filterOpen
+                    state.filterBounds = nil
+                end
+            end
+        end
         imgui.set_cursor_pos({ m.padding + ctx.width - m.iconButton, top.y })
         local screen = imgui.get_cursor_screen_pos()
         local active = Draw.active()
@@ -697,12 +725,7 @@ local function relabelSnapshot(value)
     if not ok then Log.error("snapshot relabel failed: " .. tostring(err), "report:relabel") end
 end
 
-local FILTER_AXES = {
-    { key = "weapon", options = "weapons", label = "history_all_weapons", id = "##historyFilterWeapon" },
-    { key = "level", options = "levels", label = "history_all_levels", id = "##historyFilterLevel" },
-    { key = "emId", options = "species", label = "history_all_monsters", id = "##historyFilterMonster" },
-    { key = "variant", options = "variants", label = "history_all_variants", id = "##historyFilterVariant" },
-}
+local FILTER_AXES = { "weapons", "levels", "species", "variants" }
 
 local function filterName(label, id)
     if state.nameResolver then
@@ -714,13 +737,42 @@ end
 
 local function updateFilteredHistory(changed)
     state.filteredEntries = HistoryFilter.apply(state.entries, state.historySelection)
+    state.historyActive = HistoryFilter.isActive(state.historySelection)
+    state.historyChips = {}
+    local selected = {}
+    for _, axis in ipairs(FILTER_AXES) do
+        local values = {}
+        for _, value in ipairs(state.historyOptions[axis]) do
+            if state.historySelection[axis][value] then
+                state.historyChips[#state.historyChips + 1] = {
+                    axis = axis, value = value, text = state.historyLabels[axis][value],
+                    id = "##historyChip" .. axis .. ":" .. tostring(value),
+                }
+                values[#values + 1] = tostring(value)
+            end
+        end
+        selected[#selected + 1] = axis .. "=[" .. table.concat(values, ",") .. "]"
+    end
+    if state.historyActive then
+        state.historyChips[#state.historyChips + 1] = { text = L("history_filter_clear_all"), id = "##historyClearAll" }
+    end
     if changed and Log.isDeveloperMode() then
         state.filterChangeCount = state.filterChangeCount + 1
-        local s = state.historySelection
-        Log.debug(string.format("history filter weapon=%s level=%s emId=%s variant=%s shown=%d/%d",
-            tostring(s.weapon), tostring(s.level), tostring(s.emId), tostring(s.variant),
+        Log.debug(string.format("history filter %s shown=%d/%d", table.concat(selected, " "),
             #state.filteredEntries, #state.entries), "history:filter:" .. state.filterChangeCount)
     end
+end
+
+local function changeHistoryFilter(axis, value, checked)
+    local changed
+    if value == nil then
+        changed = HistoryFilter.clear(state.historySelection, axis)
+    else
+        local selected = state.historySelection[axis]
+        changed = (selected[value] == true) ~= (checked == true)
+        selected[value] = checked and true or nil
+    end
+    if changed then updateFilteredHistory(true) end
 end
 
 local function rebuildHistoryFilters()
@@ -736,58 +788,54 @@ local function rebuildHistoryFilters()
         return names.species[a] < names.species[b]
     end)
     local changed = HistoryFilter.prune(state.historySelection, options)
-    state.historyOptions, state.historyLabels, state.historyIndexes = options, {}, {}
-    for _, axis in ipairs(FILTER_AXES) do
-        local labels, selected = { L(axis.label) }, 1
-        for index, value in ipairs(options[axis.options]) do
-            labels[index + 1] = names[axis.options][value]
-            if value == state.historySelection[axis.key] then selected = index + 1 end
-        end
-        state.historyLabels[axis.key] = labels
-        state.historyIndexes[axis.key] = selected
-    end
+    state.historyOptions, state.historyLabels = options, names
     updateFilteredHistory(changed)
 end
 
-local function drawHistoryFilters(ctx)
-    local token = Theme.pushHistoryFilters()
+local function drawHistoryChips(ctx)
+    if not state.historyActive then return end
     local pushed = Fonts.push(ctx.fonts.body)
     local ok, err = pcall(function()
-        local width = (ctx.width - Theme.metrics.historyGap * 3) / 4
-        for index, axis in ipairs(FILTER_AXES) do
-            if index > 1 then imgui.same_line() end
-            local okWidth, widthErr = pcall(imgui.set_next_item_width, width)
-            if not okWidth then error(widthErr, 0) end
-            local okCombo, changed, value = pcall(imgui.combo, axis.id, state.historyIndexes[axis.key], state.historyLabels[axis.key])
-            if not okCombo then error(changed, 0) end
-            if changed and value ~= state.historyIndexes[axis.key] then
-                state.historySelection[axis.key] = state.historyOptions[axis.options][value - 1]
-                state.historyIndexes[axis.key] = value
-                updateFilteredHistory(true)
+        local m = Theme.metrics
+        local origin = imgui.get_cursor_pos()
+        local x, y = 0, origin.y
+        local height = ctx.sizes.body + m.itemSpacing
+        for _, chip in ipairs(state.historyChips) do
+            local suffix = chip.axis and " ×" or ""
+            local suffixWidth = textWidth(suffix) or ctx.sizes.body
+            local text = clipName(chip.text, ctx.width - m.itemSpacing * 2 - suffixWidth) .. suffix
+            local width = math.min(ctx.width, (textWidth(text) or ctx.width - m.itemSpacing * 2) + m.itemSpacing * 2)
+            if x > 0 and x + width > ctx.width then
+                x, y = 0, y + height + m.itemSpacing
             end
+            imgui.set_cursor_pos(Vector2f.new(origin.x + x, y))
+            if imgui.button(text .. chip.id, { width, height }) then changeHistoryFilter(chip.axis, chip.value, false) end
+            x = x + width + m.historyGap
         end
+        imgui.set_cursor_pos(Vector2f.new(origin.x, y + height + m.itemSpacing))
     end)
     Fonts.pop(pushed)
-    Theme.popHistoryFilters(token)
     if not ok then error(err, 0) end
 end
 
-local function drawHistory(ctx)
-    if state.entries == nil then
-        local entries = History.readAll()
-        state.entries = {}
-        for index = #entries, 1, -1 do
-            local entry = entries[index]
-            relabelSnapshot(entry)
-            state.entries[#state.entries + 1] = entry
-        end
-        rebuildHistoryFilters()
+local function loadHistory()
+    if state.entries ~= nil then return end
+    local entries = History.readAll()
+    state.entries = {}
+    for index = #entries, 1, -1 do
+        local entry = entries[index]
+        relabelSnapshot(entry)
+        state.entries[#state.entries + 1] = entry
     end
+    rebuildHistoryFilters()
+end
+
+local function drawHistory(ctx)
     if #state.entries == 0 then
         textIn(ctx.fonts.meta, L("history_empty"), Theme.colors.textMuted)
         return
     end
-    drawHistoryFilters(ctx)
+    drawHistoryChips(ctx)
     local m = Theme.metrics
     local layout = ReportWindow.rowAreaLayout(#state.filteredEntries, displayHeight(), ctx.scale, m.historyRowHeight)
     local columns = ReportWindow.historyColumns(ctx.width, ctx.scale, layout.scrolls)
@@ -805,6 +853,7 @@ local function drawHistory(ctx)
             local top = imgui.get_cursor_pos()
             if imgui.button("##history" .. index, { columns.buttonWidth, layout.rowHeight }) then
                 state.pendingAction = function()
+                    state.filterOpen, state.filterBounds = false, nil
                     state.snapshot = entry
                     state.view = "report"
                     state.fromHistory = true
@@ -832,6 +881,7 @@ end
 local function drawContents(settings, fonts, sizes)
     local scale = (settings.fontSize or 18) / 18
     local ctx = { fonts = fonts, sizes = sizes, width = math.floor(Theme.metrics.minWindowWidth * scale), scale = scale }
+    if state.view == "history" then loadHistory() end
     ReportWindow.drawTopBar(ctx)
     if state.view == "history" then
         textIn(ctx.fonts.header, L("history_title"))
@@ -873,6 +923,7 @@ function ReportWindow.refreshLive(now)
 end
 
 function ReportWindow.show(snapshot)
+    state.filterOpen, state.filterBounds = false, nil
     Locale.refresh()
     state.placementLogged = false
     state.positionSettledAt = nil
@@ -981,7 +1032,14 @@ function ReportWindow.bounds()
     return bounds.x, bounds.y, bounds.width, bounds.height
 end
 
+function ReportWindow.filterBounds()
+    local bounds = state.filterBounds
+    if not state.open or state.view ~= "history" or not state.filterOpen or not bounds then return nil end
+    return bounds.x, bounds.y, bounds.width, bounds.height
+end
+
 function ReportWindow.draw()
+    state.filterBounds = nil
     state.bounds = nil
     if not state.open then return end
     local settings = Settings.get()
@@ -1039,6 +1097,12 @@ function ReportWindow.draw()
     if pending then
         state.pendingAction = nil
         pending()
+    end
+    if not state.open or state.view ~= "history" then state.filterOpen = false end
+    if state.filterOpen then
+        local ctx = { fonts = fonts, sizes = sizes, scale = size / 18 }
+        state.filterOpen, state.filterBounds = HistoryFilterWindow.draw(ctx, state.historyOptions, state.historyLabels,
+            state.historySelection, changeHistoryFilter, state.bounds, clipName)
     end
 end
 

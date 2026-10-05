@@ -11,6 +11,7 @@ local SET_SHOW = "set_ShowCursor(System.Boolean)"
 
 local function withProbe(callback)
     local callStatic, uptime, bounds = Game.callStatic, Game.uptime, ReportWindow.bounds
+    local filterBounds = ReportWindow.filterBounds
     local originalImgui, originalFramework = imgui, reframework
     local developerMode = Log.isDeveloperMode()
     local c = {
@@ -45,6 +46,11 @@ local function withProbe(callback)
             if not c.bounds then return nil end
             return c.bounds[1], c.bounds[2], c.bounds[3], c.bounds[4]
         end
+        ReportWindow.filterBounds = function()
+            c.reads = c.reads + 1
+            if not c.filterBounds then return nil end
+            return table.unpack(c.filterBounds)
+        end
         imgui = setmetatable({
             get_mouse = function()
                 c.reads = c.reads + 1
@@ -77,6 +83,7 @@ local function withProbe(callback)
         callback(c)
     end)
     Game.callStatic, Game.uptime, ReportWindow.bounds = callStatic, uptime, bounds
+    ReportWindow.filterBounds = filterBounds
     imgui, reframework = originalImgui, originalFramework
     Log.setDeveloperMode(developerMode)
     if not ok then error(err, 0) end
@@ -450,6 +457,37 @@ function T.pendingRestoreRetriesWithDeveloperModeOffAndThenBecomesInert()
         Log.setDeveloperMode(true)
         c.frame()
         assert(c.count("snapshot at") == 2 and #c.sets == 4)
+    end)
+end
+
+function T.hoverOverEitherWindowKeepsTheCursorVisible()
+    withProbe(function(c)
+        c.filterBounds = { 450, 200, 300, 400 }
+        c.inside()
+        c.frame()
+        assert(#c.sets == 1 and c.show)
+        c.mouse = { x = 500, y = 250 }
+        c.frame()
+        assert(#c.sets == 1 and c.show and c.count("hover end") == 0)
+        c.bounds = nil
+        c.frame()
+        assert(#c.sets == 1 and c.show)
+        c.filterBounds = nil
+        c.frame()
+        assert(#c.sets == 2 and not c.show and c.count("hover end") == 1)
+    end)
+end
+
+function T.filterBoundsAloneCanStartHoverAndRespectEdges()
+    withProbe(function(c)
+        c.bounds = nil
+        c.filterBounds = { 450, 200, 300, 400 }
+        c.mouse = { x = 450, y = 200 }
+        c.frame()
+        assert(c.show and c.count("hover start at") == 1)
+        c.mouse = { x = 750, y = 200 }
+        c.frame()
+        assert(not c.show and c.count("hover end") == 1)
     end)
 end
 

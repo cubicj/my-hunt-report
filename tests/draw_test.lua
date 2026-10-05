@@ -100,7 +100,7 @@ function T.iconsReturnFalseWithoutDrawingInFallback()
             button = function() buttons = buttons + 1 end,
         }, function()
             Draw.setForced(forced)
-            for _, name in ipairs({ "back", "close" }) do
+            for _, name in ipairs({ "back", "close", "filter" }) do
                 assert(Draw.icon("icon", name, 0, 0, 16, Theme.colors.text, 2) == false)
             end
             assert(#list.calls == 0 and buttons == 0)
@@ -295,6 +295,25 @@ function T.probeTreatsIndexingErrorsAsUnavailable()
         assert(Draw.active() == false)
         assert(Draw.statusText() == "unavailable")
     end)
+end
+
+function T.filterIconDrawsAClosedScaledFunnelWithSixStrokes()
+    for _, size in ipairs({ 20, 32 }) do
+        local list = stubs.drawList()
+        withImgui({ get_window_draw_list = function() return list end }, function()
+            assert(Draw.icon("filter", "filter", 30, 40, size, Theme.colors.accent, 2))
+            local points = { { 3, 5 }, { 21, 5 }, { 14, 13 }, { 14, 20 }, { 10, 18 }, { 10, 13 }, { 3, 5 } }
+            assert(#list.calls == 6)
+            for index, call in ipairs(list.calls) do
+                assert(call.name == "add_line" and call[3] == Theme.colors.accent and call[4] == 2)
+                for coord = 1, 2 do
+                    local offset = coord == 1 and 30 or 40
+                    assert(call[1][coord] == offset + points[index][coord] * size / 24)
+                    assert(call[2][coord] == offset + points[index + 1][coord] * size / 24)
+                end
+            end
+        end)
+    end
 end
 
 return T

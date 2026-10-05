@@ -113,6 +113,13 @@ function Draw.icon(id, name, x, y, size, color, stroke)
         if name == "back" then
             list:add_line(point(15, 18), point(9, 12), color, stroke)
             list:add_line(point(9, 12), point(15, 6), color, stroke)
+        elseif name == "filter" then
+            list:add_line(point(3, 5), point(21, 5), color, stroke)
+            list:add_line(point(21, 5), point(14, 13), color, stroke)
+            list:add_line(point(14, 13), point(14, 20), color, stroke)
+            list:add_line(point(14, 20), point(10, 18), color, stroke)
+            list:add_line(point(10, 18), point(10, 13), color, stroke)
+            list:add_line(point(10, 13), point(3, 5), color, stroke)
         elseif name == "close" then
             list:add_line(point(18, 6), point(6, 18), color, stroke)
             list:add_line(point(6, 6), point(18, 18), color, stroke)
