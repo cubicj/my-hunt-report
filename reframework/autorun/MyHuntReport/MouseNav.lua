@@ -18,8 +18,8 @@ end
 
 local function hovered()
     local x, y, width, height = ReportWindow.bounds()
+    if x == nil then return false end
     local fx, fy, fw, fh = ReportWindow.filterBounds()
-    if x == nil and fx == nil then return false end
     local ok, result = pcall(function()
         local mouse = imgui.get_mouse()
         return inside(x, y, width, height, mouse) or inside(fx, fy, fw, fh, mouse)

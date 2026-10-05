@@ -133,6 +133,24 @@ function T.hoveringTheFilterWindowCounts()
     end)
 end
 
+function T.filterHoverWithoutMainBoundsIsIgnoredAndNotReplayed()
+    withNav(function(c)
+        c.bounds = nil
+        c.filterBounds = { 420, 200, 100, 100 }
+        c.mouse = { x = 450, y = 250 }
+        c.keys[BACK] = true
+        c.update()
+        assert(#c.calls == 0)
+        local lines = navLines()
+        assert(#lines == 1)
+        assert(lines[1]:find("button=back hover=false from=history to=history applied=false reason=not_hovered", 1, true), lines[1])
+        c.bounds = { 100, 200, 300, 400 }
+        c.update()
+        assert(#c.calls == 0)
+        assert(#navLines() == 1)
+    end)
+end
+
 function T.hotkeyCaptureSuppressesNavigation()
     withNav(function(c)
         c.capturing = true
