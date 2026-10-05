@@ -85,6 +85,7 @@ Theme.metrics = {
     historyTimeWidth = 150,
     historyStarsWidth = 48,
     historyGap = 16,
+    historyWeaponShare = 0.4,
 }
 
 Theme.WINDOW_FLAGS = 1 | 2 | 8 | 32 | 64 | 256

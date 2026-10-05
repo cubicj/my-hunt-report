@@ -239,16 +239,16 @@ function ReportWindow.historyColumns(width, scale, scrolls)
     local time = math.floor(m.historyTimeWidth * scale + 0.5)
     local stars = math.floor(m.historyStarsWidth * scale + 0.5)
     local rest = inner - time - stars - m.historyGap * 3
-    local half = math.floor(rest / 2)
+    local weapons = math.floor(rest * m.historyWeaponShare)
     local x = m.historyPadding
     local columns = { buttonWidth = buttonWidth }
     columns.time = { x = x, width = time }
     x = x + time + m.historyGap
     columns.stars = { x = x, width = stars }
     x = x + stars + m.historyGap
-    columns.weapons = { x = x, width = half }
-    x = x + half + m.historyGap
-    columns.monsters = { x = x, width = rest - half }
+    columns.weapons = { x = x, width = weapons }
+    x = x + weapons + m.historyGap
+    columns.monsters = { x = x, width = rest - weapons }
     return columns
 end
 
