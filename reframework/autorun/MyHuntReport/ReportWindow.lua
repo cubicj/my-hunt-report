@@ -244,10 +244,10 @@ function ReportWindow.historyColumns(width, scale, scrolls)
     local columns = { buttonWidth = buttonWidth }
     columns.time = { x = x, width = time }
     x = x + time + m.historyGap
-    columns.stars = { x = x, width = stars }
-    x = x + stars + m.historyGap
     columns.weapons = { x = x, width = weapons }
     x = x + weapons + m.historyGap
+    columns.stars = { x = x, width = stars }
+    x = x + stars + m.historyGap
     columns.monsters = { x = x, width = rest - weapons }
     return columns
 end
@@ -727,10 +727,10 @@ local function drawHistory(ctx)
             local metaY = top.y + math.floor((layout.rowHeight - ctx.sizes.meta) / 2)
             imgui.set_cursor_pos(Vector2f.new(top.x + columns.time.x, metaY))
             textIn(ctx.fonts.meta, row.time, Theme.colors.textMuted)
-            imgui.set_cursor_pos(Vector2f.new(top.x + columns.stars.x, bodyY))
-            textIn(ctx.fonts.body, row.stars, Theme.colors.accent)
             imgui.set_cursor_pos(Vector2f.new(top.x + columns.weapons.x, bodyY))
             textIn(ctx.fonts.body, clipName(row.weapons, columns.weapons.width))
+            imgui.set_cursor_pos(Vector2f.new(top.x + columns.stars.x, bodyY))
+            textIn(ctx.fonts.body, row.stars, Theme.colors.accent)
             imgui.set_cursor_pos(Vector2f.new(top.x + columns.monsters.x, bodyY))
             textIn(ctx.fonts.body, clipName(row.monsters, columns.monsters.width))
             imgui.set_cursor_pos(Vector2f.new(top.x, top.y + layout.rowHeight))

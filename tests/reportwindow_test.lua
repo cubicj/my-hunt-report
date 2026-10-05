@@ -238,7 +238,7 @@ function T.historyRowsDrawFourColumnsOverATransparentButton()
             if event.kind == "button" and event.value == "##history1" then afterRow = true end
             if afterRow and event.kind == "text" then texts[#texts + 1] = event.value end
         end
-        assert(table.concat(texts, "|") == "2026-09-23 21:36|★5|조충곤|아자라칸", table.concat(texts, "|"))
+        assert(table.concat(texts, "|") == "2026-09-23 21:36|조충곤|★5|아자라칸", table.concat(texts, "|"))
         local columns = ReportWindow.historyColumns(720, 1, false)
         local xs = {}
         for _, pos in ipairs(ui.positions) do xs[pos.x or pos[1]] = true end
@@ -1296,8 +1296,8 @@ function T.historyColumnsSplitTheRow()
     local columns = ReportWindow.historyColumns(680, 1, false)
     assert(columns.buttonWidth == 680)
     assert(columns.time.x == 10 and columns.time.width == 150)
-    assert(columns.stars.x == 176 and columns.stars.width == 48)
-    assert(columns.weapons.x == 240 and columns.weapons.width == 165)
+    assert(columns.stars.x == 357 and columns.stars.width == 48)
+    assert(columns.weapons.x == 176 and columns.weapons.width == 165)
     assert(columns.monsters.x == 421 and columns.monsters.width == 249)
     assert(columns.monsters.x + columns.monsters.width == 680 - 10)
     local scrolling = ReportWindow.historyColumns(680, 1, true)
