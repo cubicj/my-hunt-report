@@ -14,6 +14,7 @@ local Locale = tryRequire("MyHuntReport.Locale")
 local Game = tryRequire("MyHuntReport.Game")
 local Fonts = tryRequire("MyHuntReport.Fonts")
 local ReportWindow = tryRequire("MyHuntReport.ReportWindow")
+local CursorProbe = tryRequire("MyHuntReport.CursorProbe")
 local SettingsPanel = tryRequire("MyHuntReport.SettingsPanel")
 local ShellTracker = tryRequire("MyHuntReport.ShellTracker")
 local AttackLog = tryRequire("MyHuntReport.AttackLog")
@@ -87,6 +88,7 @@ re.on_frame(function()
         if event.toggle then ReportWindow.toggle(nil) end
     end
     ReportWindow.draw()
+    CursorProbe.update()
 end)
 
 re.on_config_save(function()

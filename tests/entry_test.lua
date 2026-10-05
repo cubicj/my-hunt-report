@@ -222,4 +222,35 @@ function T.entryInstallsThePalicoCaptureAfterHitCaptureAndNotTheRetiredProbe()
     if not ok then error(err, 0) end
 end
 
+function T.entryUpdatesTheCursorProbeDirectlyAfterTheReportWindowDraw()
+    local noop = function() end
+    local calls, required = {}, {}
+    local frame
+    local function module(name)
+        return setmetatable({}, { __index = function(_, method)
+            return function() calls[#calls + 1] = name .. "." .. method end
+        end })
+    end
+    local modules = {
+        ["MyHuntReport.Settings"] = {
+            load = noop,
+            get = function() return { language = "en", fontSize = 18, developerMode = false, skillProcCapture = false } end,
+        },
+    }
+    local environment = setmetatable({
+        require = function(name)
+            required[name] = true
+            return modules[name] or module(name)
+        end,
+        re = { on_draw_ui = noop, on_frame = function(callback) frame = callback end, on_config_save = noop },
+    }, { __index = _G })
+    assert(loadfile("reframework/autorun/my_hunt_report.lua", "t", environment))()
+    assert(required["MyHuntReport.CursorProbe"] == true)
+    assert(type(frame) == "function")
+    calls = {}
+    frame()
+    assert(calls[#calls - 1] == "MyHuntReport.ReportWindow.draw", table.concat(calls, ","))
+    assert(calls[#calls] == "MyHuntReport.CursorProbe.update", table.concat(calls, ","))
+end
+
 return T
