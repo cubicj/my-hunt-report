@@ -33,7 +33,7 @@ function Format.duration(seconds)
 end
 
 function Format.clock(epoch)
-    return os.date("%Y-%m-%d %H:%M", epoch)
+    return os.date("%y-%m-%d %H:%M", epoch)
 end
 
 function Format.decimal(value, digits)

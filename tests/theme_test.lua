@@ -32,7 +32,7 @@ function T.metricsMatchTheSpec()
     assert(m.iconSize == 20 and m.iconStroke == 2)
     assert(m.sectionGap == 16 and m.labelGap == 2 and m.ruleGap == 12 and m.footerGap == 12)
     assert(m.dotRadius == 4 and m.legendGap == 28 and m.procGap == 20)
-    assert(m.historyRowHeight == 36 and m.historyPadding == 10 and m.historyTimeWidth == 150)
+    assert(m.historyRowHeight == 36 and m.historyPadding == 10 and m.historyTimeWidth == 132)
     assert(m.historyStarsWidth == 48 and m.historyGap == 16)
 end
 

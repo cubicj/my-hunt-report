@@ -34,7 +34,7 @@ end
 
 function T.clockFormatsEpoch()
     local text = Format.clock(os.time({ year = 2026, month = 9, day = 23, hour = 21, min = 5 }))
-    assert(text == "2026-09-23 21:05", text)
+    assert(text == "26-09-23 21:05", text)
 end
 
 function T.decimalAndRateHandleNil()

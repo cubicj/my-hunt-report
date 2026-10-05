@@ -15,6 +15,7 @@ local SUITES = {
     "draw_test",
     "fonts_test",
     "history_test",
+    "historyfilter_test",
     "session_test",
     "skillstate_test",
     "skillextras_test",

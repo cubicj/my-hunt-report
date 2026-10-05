@@ -238,7 +238,7 @@ function T.historyRowsDrawFourColumnsOverATransparentButton()
             if event.kind == "button" and event.value == "##history1" then afterRow = true end
             if afterRow and event.kind == "text" then texts[#texts + 1] = event.value end
         end
-        assert(table.concat(texts, "|") == "2026-09-23 21:36|조충곤|★5|아자라칸", table.concat(texts, "|"))
+        assert(table.concat(texts, "|") == "26-09-23 21:36|조충곤|★5|아자라칸", table.concat(texts, "|"))
         local columns = ReportWindow.historyColumns(720, 1, false)
         local xs = {}
         for _, pos in ipairs(ui.positions) do xs[pos.x or pos[1]] = true end
@@ -1102,7 +1102,7 @@ function T.historyRowSplitsTimeStarsWeaponsMonsters()
     entry.monsters = { { name = "아자라칸" }, { id = 3 } }
     entry.quest.level = 5
     local row = ReportWindow.historyRow(entry)
-    assert(row.time == "2026-09-23 21:36" and row.stars == "★5")
+    assert(row.time == "26-09-23 21:36" and row.stars == "★5")
     assert(row.weapons == "조충곤, 라이트보우건" and row.monsters == "아자라칸, 3")
     entry.quest.weapons = {}
     assert(ReportWindow.historyRow(entry).weapons == "대검")
@@ -1295,17 +1295,17 @@ end
 function T.historyColumnsSplitTheRow()
     local columns = ReportWindow.historyColumns(680, 1, false)
     assert(columns.buttonWidth == 680)
-    assert(columns.time.x == 10 and columns.time.width == 150)
-    assert(columns.stars.x == 357 and columns.stars.width == 48)
-    assert(columns.weapons.x == 176 and columns.weapons.width == 165)
-    assert(columns.monsters.x == 421 and columns.monsters.width == 249)
+    assert(columns.time.x == 10 and columns.time.width == 132)
+    assert(columns.stars.x == 346 and columns.stars.width == 48)
+    assert(columns.weapons.x == 158 and columns.weapons.width == 172)
+    assert(columns.monsters.x == 410 and columns.monsters.width == 260)
     assert(columns.monsters.x + columns.monsters.width == 680 - 10)
     local scrolling = ReportWindow.historyColumns(680, 1, true)
-    assert(scrolling.buttonWidth == 666 and scrolling.weapons.width == 160 and scrolling.monsters.width == 240)
+    assert(scrolling.buttonWidth == 666 and scrolling.weapons.width == 167 and scrolling.monsters.width == 251)
     assert(scrolling.monsters.x + scrolling.monsters.width == 666 - 10)
     local scaled = ReportWindow.historyColumns(1057, 28 / 18, false)
-    assert(scaled.time.width == 233 and scaled.stars.width == 75)
-    assert(scaled.weapons.width == 272 and scaled.monsters.width == 409)
+    assert(scaled.time.width == 205 and scaled.stars.width == 75)
+    assert(scaled.weapons.width == 283 and scaled.monsters.width == 426)
 end
 
 function T.rowAreaLayoutGrowsToTheDataAndCapsAtHalfScreen()
@@ -2221,6 +2221,378 @@ function T.boundsAreNilWhenThePositionReadFails()
         ui.draw()
         assert(ReportWindow.bounds() == nil)
     end)
+end
+
+local FILTER_IDS = {
+    "##historyFilterWeapon", "##historyFilterLevel", "##historyFilterMonster", "##historyFilterVariant",
+}
+
+local function filterRecord(weaponType, level, emId, legendaryId)
+    local record = snapshot("clear")
+    record.quest.level = level
+    record.quest.weapons = { { type = weaponType, name = "Weapon " .. weaponType } }
+    record.monsters = { { name = "Monster " .. emId, label = { kind = "monster", emId = emId, legendaryId = legendaryId } } }
+    return record
+end
+
+local function withHistoryFilters(callback)
+    withNavigation(function(ui)
+        local Fonts = require("MyHuntReport.Fonts")
+        local push, pop = Fonts.push, Fonts.pop
+        local fonts = {}
+        Fonts.push = function(desc)
+            local token = push(desc)
+            if token then fonts[#fonts + 1] = desc end
+            return token
+        end
+        Fonts.pop = function(token)
+            if token then assert(table.remove(fonts)) end
+            pop(token)
+        end
+        local draw = ui.draw
+        ui.choices = {}
+        ui.draw = function(click)
+            ui.combos, ui.children, ui.sameLines = {}, {}, 0
+            draw(click)
+            assert(#fonts == 0, "unbalanced fonts")
+        end
+        imgui.set_next_item_width = function(width)
+            ui.nextWidth = width
+            ui.events[#ui.events + 1] = { kind = "width", value = width }
+        end
+        imgui.same_line = function() ui.sameLines = ui.sameLines + 1 end
+        imgui.combo = function(id, index, labels)
+            assert(ui.events[#ui.events].kind == "width", "width must be set immediately before combo")
+            local item = { id = id, index = index, labels = labels, width = ui.nextWidth, font = fonts[#fonts] }
+            ui.combos[#ui.combos + 1] = item
+            ui.events[#ui.events + 1] = { kind = "combo", value = id }
+            if ui.onCombo then ui.onCombo(item) end
+            local choice = ui.choices[id]
+            ui.choices[id] = nil
+            return choice ~= nil, choice or index
+        end
+        imgui.begin_child_window = function(id, size)
+            ui.children[#ui.children + 1] = { id = id, width = size[1], height = size[2] }
+        end
+        local ok, err = pcall(function()
+            ReportWindow.showHistory()
+            ui.draw()
+            callback(ui)
+        end)
+        Fonts.push, Fonts.pop = push, pop
+        ui.entries = {}
+        ReportWindow.setNameResolver(nil)
+        ReportWindow.setRelabeler(nil)
+        ReportWindow.showHistory()
+        ui.draw()
+        if not ok then error(err, 0) end
+    end)
+end
+
+local function drawnHistoryRows(ui)
+    local count = 0
+    for _, label in ipairs(ui.buttons) do
+        if label:find("^##history%d") then count = count + 1 end
+    end
+    return count
+end
+
+function T.historyFiltersDrawFourThemedBodyCombosBetweenTitleAndRows()
+    withHistoryFilters(function(ui)
+        local Theme = require("MyHuntReport.Theme")
+        local Settings = require("MyHuntReport.Settings")
+        ui.entries = { filterRecord(10, 5, 32, 1) }
+        ui.onCombo = function(item)
+            local colors, vars = {}, {}
+            for _, value in ipairs(ui.colors) do colors[value[1]] = value[2] end
+            for _, value in ipairs(ui.vars) do vars[value[1]] = value[2] end
+            assert(colors[0] == Theme.colors.text and colors[4] == Theme.colors.windowBg)
+            assert(colors[7] == Theme.colors.barTrack and colors[8] == Theme.colors.accentDim)
+            assert(colors[24] == Theme.colors.accentDim and colors[25] == Theme.colors.accentDim)
+            assert(vars[14].x == Theme.metrics.historyGap)
+            assert(item.font.size == Settings.get().fontSize)
+        end
+        for _, size in ipairs({ 18, 24 }) do
+            Settings.get().fontSize = size
+            ReportWindow.showHistory()
+            ui.draw()
+            assert(ReportWindow.isOpen() and #ui.combos == 4 and ui.sameLines == 3)
+            local width = math.floor(720 * size / 18)
+            for index, item in ipairs(ui.combos) do
+                assert(item.id == FILTER_IDS[index])
+                assert(item.width * 4 + Theme.metrics.historyGap * 3 == width)
+                assert(item.index == 1)
+            end
+            local title, combos, rows = false, 0, 0
+            for _, event in ipairs(ui.events) do
+                if event.kind == "text" and event.value == Locale.text("history_title") then title = true end
+                if event.kind == "combo" then
+                    assert(title and rows == 0)
+                    combos = combos + 1
+                end
+                if event.kind == "button" and event.value:find("^##history%d") then
+                    assert(combos == 4)
+                    rows = rows + 1
+                end
+            end
+            assert(title and combos == 4 and rows == 1)
+        end
+    end)
+end
+
+function T.historyFiltersChooseEachAxisAndUseFilteredRowCount()
+    withHistoryFilters(function(ui)
+        ui.entries = { filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2) }
+        ReportWindow.showHistory()
+        ui.draw()
+        assert(drawnHistoryRows(ui) == 2 and ui.children[1].height == 76)
+        for axis, index in ipairs({ 3, 3, 2, 2 }) do
+            ui.choices[FILTER_IDS[axis]] = index
+            ui.draw()
+            assert(drawnHistoryRows(ui) == 1 and ui.children[1].height == 40)
+            local texts = {}
+            for _, event in ipairs(ui.events) do
+                if event.kind == "text" then texts[event.value] = true end
+            end
+            assert(texts["Weapon 10"] and texts["Monster 32"])
+            assert(not texts["Weapon 3"] and not texts["Monster 33"])
+            ui.choices[FILTER_IDS[axis]] = 1
+            ui.draw()
+            assert(drawnHistoryRows(ui) == 2)
+        end
+    end)
+end
+
+function T.historyFiltersShowMutedNoMatchLineAndKeepCombos()
+    withHistoryFilters(function(ui)
+        local Theme = require("MyHuntReport.Theme")
+        ui.entries = { filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2) }
+        ReportWindow.showHistory()
+        ui.choices[FILTER_IDS[1]] = 3
+        ui.choices[FILTER_IDS[2]] = 2
+        for _, language in ipairs({ "en", "ko" }) do
+            Locale.resolve(language)
+            ReportWindow.onLanguageChanged()
+            ui.draw()
+            assert(#ui.combos == 4 and drawnHistoryRows(ui) == 0)
+            assert(#ui.children == 1 and ui.children[1].height == 40)
+            local count = 0
+            for _, event in ipairs(ui.events) do
+                if event.kind == "text" and event.value == Locale.text("history_no_matches") then
+                    assert(event.textColor == Theme.colors.textMuted)
+                    count = count + 1
+                end
+                assert(event.value ~= Locale.text("history_empty"))
+            end
+            assert(count == 1)
+        end
+    end)
+end
+
+function T.historyFiltersAreAbsentForEmptyHistory()
+    withHistoryFilters(function(ui)
+        ReportWindow.showHistory()
+        ui.draw()
+        assert(#ui.combos == 0 and #ui.children == 0 and drawnHistoryRows(ui) == 0)
+        local found = false
+        for _, event in ipairs(ui.events) do
+            if event.kind == "text" and event.value == Locale.text("history_empty") then found = true end
+        end
+        assert(found)
+    end)
+end
+
+function T.historyFiltersSurviveReloadAndTrackValuesWhenIndexesChange()
+    withHistoryFilters(function(ui)
+        local first, second = filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2)
+        ui.entries = { first, second }
+        ReportWindow.showHistory()
+        for axis, index in ipairs({ 3, 3, 2, 2 }) do ui.choices[FILTER_IDS[axis]] = index end
+        ui.draw()
+        assert(drawnHistoryRows(ui) == 1)
+        table.insert(ui.entries, filterRecord(0, 15, 1, 1))
+        ReportWindow.showHistory()
+        ui.draw()
+        for axis, index in ipairs({ 4, 4, 3, 2 }) do assert(ui.combos[axis].index == index, FILTER_IDS[axis]) end
+        assert(drawnHistoryRows(ui) == 1)
+        ui.draw("##history1")
+        assert(ReportWindow.debugState().snapshot == first)
+    end)
+end
+
+function T.historyFiltersPruneAllAxesWhenTheirValuesDisappear()
+    withHistoryFilters(function(ui)
+        ui.entries = { filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2) }
+        ReportWindow.showHistory()
+        for axis, index in ipairs({ 3, 3, 2, 2 }) do ui.choices[FILTER_IDS[axis]] = index end
+        ui.draw()
+        ui.entries = { ui.entries[2] }
+        ReportWindow.showHistory()
+        ui.draw()
+        for _, item in ipairs(ui.combos) do assert(item.index == 1) end
+        assert(drawnHistoryRows(ui) == 1)
+        ui.entries = {}
+        ReportWindow.onHistoryCleared()
+        ui.draw()
+        assert(#ui.combos == 0)
+    end)
+end
+
+function T.historyFiltersOpenTheFilteredRecordAndSurviveBackAndReopen()
+    withHistoryFilters(function(ui)
+        local first, second = filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2)
+        ui.entries = { first, second }
+        ReportWindow.showHistory()
+        ui.choices[FILTER_IDS[1]] = 3
+        ui.draw("##history1")
+        local state = ReportWindow.debugState()
+        assert(state.snapshot == first and state.fromHistory and state.view == "report")
+        ui.draw("<##back")
+        ui.draw()
+        assert(ReportWindow.debugState().view == "history")
+        assert(ui.combos[1].index == 3 and drawnHistoryRows(ui) == 1)
+        ui.draw("X##close")
+        assert(not ReportWindow.isOpen())
+        ReportWindow.toggle(snapshot("clear"))
+        ui.draw(Locale.text("history"))
+        ui.draw()
+        assert(ReportWindow.isOpen() and ui.combos[1].index == 3 and drawnHistoryRows(ui) == 1)
+    end)
+end
+
+function T.historyFiltersResolveBaseNamesSortSpeciesAndRelabelTheSelection()
+    withHistoryFilters(function(ui)
+        local calls = 0
+        ui.entries = { filterRecord(10, 5, 32, 1), filterRecord(3, 10, 33, 2) }
+        ReportWindow.setNameResolver(function(label)
+            calls = calls + 1
+            if label.kind == "weapon" then return Locale.current() .. ":" .. label.type end
+            assert(label.kind == "monster" and label.roleId == nil and label.legendaryId == nil)
+            if Locale.current() == "en" then return label.emId == 32 and "Alpha" or "Zulu" end
+            return label.emId == 32 and "Zulu-ko" or "Alpha-ko"
+        end)
+        Locale.resolve("en")
+        ReportWindow.showHistory()
+        ui.draw()
+        assert(calls == 4)
+        assert(table.concat(ui.combos[1].labels, "|") == "All weapons|en:3|en:10")
+        assert(table.concat(ui.combos[2].labels, "|") == "All levels|★10|★5")
+        assert(table.concat(ui.combos[3].labels, "|") == "All monsters|Alpha|Zulu")
+        assert(table.concat(ui.combos[4].labels, "|") == "All variants|Tempered|Arch-tempered")
+        ui.choices[FILTER_IDS[3]] = 2
+        ui.draw()
+        assert(calls == 4 and drawnHistoryRows(ui) == 1)
+        ReportWindow.setRelabeler(function(record)
+            record.monsters[1].name = "relabel:" .. record.monsters[1].label.emId
+        end)
+        Locale.resolve("ko")
+        ReportWindow.onLanguageChanged()
+        ui.draw()
+        assert(calls == 8 and ui.combos[3].index == 3 and drawnHistoryRows(ui) == 1)
+        assert(table.concat(ui.combos[1].labels, "|") == "모든 무기|ko:3|ko:10")
+        assert(table.concat(ui.combos[3].labels, "|") == "모든 보스|Alpha-ko|Zulu-ko")
+        assert(table.concat(ui.combos[4].labels, "|") == "모든 변종|역전|역전왕")
+        ui.draw("##history1")
+        assert(ReportWindow.debugState().snapshot == ui.entries[1])
+        assert(ReportWindow.debugState().snapshot.monsters[1].name == "relabel:32")
+    end)
+end
+
+function T.historyFiltersFallBackToIdentifiersForUnresolvedNames()
+    withHistoryFilters(function(ui)
+        ui.entries = { filterRecord(10, 5, 32, 0) }
+        for _, resolver in ipairs({ false, function() return nil end, function() return "" end, function() error("unavailable") end }) do
+            ReportWindow.setNameResolver(resolver or nil)
+            ReportWindow.showHistory()
+            ui.draw()
+            assert(ReportWindow.isOpen())
+            assert(ui.combos[1].labels[2] == "#10" and ui.combos[3].labels[2] == "#32")
+        end
+    end)
+end
+
+function T.historyFiltersCacheOptionsLabelsAndMatchesBetweenChanges()
+    withHistoryFilters(function(ui)
+        local Filter = require("MyHuntReport.HistoryFilter")
+        local options, apply = Filter.options, Filter.apply
+        local optionCalls, applyCalls = 0, 0
+        Filter.options = function(entries) optionCalls = optionCalls + 1 return options(entries) end
+        Filter.apply = function(entries, selection) applyCalls = applyCalls + 1 return apply(entries, selection) end
+        local ok, err = pcall(function()
+            ui.entries = { filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2) }
+            ReportWindow.showHistory()
+            ui.draw()
+            local labels = ui.combos[1].labels
+            ui.draw()
+            ui.draw()
+            assert(optionCalls == 1 and applyCalls == 1 and ui.combos[1].labels == labels)
+            ui.choices[FILTER_IDS[1]] = 3
+            ui.draw()
+            assert(optionCalls == 1 and applyCalls == 2 and ui.combos[1].labels == labels)
+            ui.draw()
+            assert(applyCalls == 2)
+            ReportWindow.onLanguageChanged()
+            ui.draw()
+            assert(optionCalls == 2 and applyCalls == 3 and ui.combos[1].labels ~= labels)
+            ReportWindow.showHistory()
+            ui.draw()
+            assert(optionCalls == 3 and applyCalls == 4)
+        end)
+        Filter.options, Filter.apply = options, apply
+        if not ok then error(err, 0) end
+    end)
+end
+
+function T.historyFiltersLogEverySelectionChangeOnlyInDeveloperMode()
+    withHistoryFilters(function(ui)
+        local Log = require("MyHuntReport.Log")
+        local function lines()
+            local result = {}
+            for _, line in ipairs(stubs.logLines) do
+                if line:find("history filter ", 1, true) then result[#result + 1] = line end
+            end
+            return result
+        end
+        ui.entries = { filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2) }
+        ReportWindow.showHistory()
+        ui.choices[FILTER_IDS[1]] = 3
+        ui.draw()
+        assert(#lines() == 0)
+        Log.setDeveloperMode(true)
+        ui.draw()
+        assert(#lines() == 0)
+        for index = 1, 12 do
+            ui.choices[FILTER_IDS[1]] = index % 2 == 1 and 1 or 3
+            ui.draw()
+            assert(#lines() == index)
+        end
+        assert(lines()[12]:find("weapon=10 level=nil emId=nil variant=nil shown=1/2", 1, true))
+        ui.draw()
+        assert(#lines() == 12)
+        ui.entries = { ui.entries[2] }
+        ReportWindow.showHistory()
+        ui.draw()
+        assert(#lines() == 13)
+        assert(lines()[13]:find("weapon=nil level=nil emId=nil variant=nil shown=1/1", 1, true))
+        Log.setDeveloperMode(false)
+        ui.choices[FILTER_IDS[1]] = 2
+        ui.draw()
+        assert(#lines() == 13)
+    end)
+end
+
+function T.historyFilterErrorsAlwaysPopStylesAndFonts()
+    for _, failing in ipairs({ "set_next_item_width", "combo", "same_line" }) do
+        withHistoryFilters(function(ui)
+            ui.entries = { filterRecord(10, 5, 32, 0) }
+            imgui[failing] = function() error("filter failure") end
+            ReportWindow.showHistory()
+            ui.draw()
+            assert(not ReportWindow.isOpen())
+            assert(#ui.colors == 0 and #ui.vars == 0)
+            assert(drawnHistoryRows(ui) == 0)
+        end)
+    end
 end
 
 return T

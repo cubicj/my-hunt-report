@@ -6,6 +6,7 @@ local Format = require("MyHuntReport.Format")
 local Settings = require("MyHuntReport.Settings")
 local Log = require("MyHuntReport.Log")
 local History = require("MyHuntReport.History")
+local HistoryFilter = require("MyHuntReport.HistoryFilter")
 local Game = require("MyHuntReport.Game")
 local Hdr = require("MyHuntReport.Hdr")
 
@@ -31,6 +32,13 @@ local state = {
     fromHistory = false,
     provider = nil,
     relabeler = nil,
+    nameResolver = nil,
+    historySelection = {},
+    historyOptions = nil,
+    historyLabels = nil,
+    historyIndexes = nil,
+    filteredEntries = nil,
+    filterChangeCount = 0,
     pendingAction = nil,
     liveRefreshAt = nil,
     bounds = nil,
@@ -689,6 +697,81 @@ local function relabelSnapshot(value)
     if not ok then Log.error("snapshot relabel failed: " .. tostring(err), "report:relabel") end
 end
 
+local FILTER_AXES = {
+    { key = "weapon", options = "weapons", label = "history_all_weapons", id = "##historyFilterWeapon" },
+    { key = "level", options = "levels", label = "history_all_levels", id = "##historyFilterLevel" },
+    { key = "emId", options = "species", label = "history_all_monsters", id = "##historyFilterMonster" },
+    { key = "variant", options = "variants", label = "history_all_variants", id = "##historyFilterVariant" },
+}
+
+local function filterName(label, id)
+    if state.nameResolver then
+        local ok, name = pcall(state.nameResolver, label)
+        if ok and type(name) == "string" and #name > 0 then return name end
+    end
+    return "#" .. tostring(id)
+end
+
+local function updateFilteredHistory(changed)
+    state.filteredEntries = HistoryFilter.apply(state.entries, state.historySelection)
+    if changed and Log.isDeveloperMode() then
+        state.filterChangeCount = state.filterChangeCount + 1
+        local s = state.historySelection
+        Log.debug(string.format("history filter weapon=%s level=%s emId=%s variant=%s shown=%d/%d",
+            tostring(s.weapon), tostring(s.level), tostring(s.emId), tostring(s.variant),
+            #state.filteredEntries, #state.entries), "history:filter:" .. state.filterChangeCount)
+    end
+end
+
+local function rebuildHistoryFilters()
+    if state.entries == nil then return end
+    local options = HistoryFilter.options(state.entries)
+    local names = { weapons = {}, levels = {}, species = {}, variants = {} }
+    for _, id in ipairs(options.weapons) do names.weapons[id] = filterName({ kind = "weapon", type = id }, id) end
+    for _, id in ipairs(options.species) do names.species[id] = filterName({ kind = "monster", emId = id }, id) end
+    for _, level in ipairs(options.levels) do names.levels[level] = "★" .. level end
+    for _, variant in ipairs(options.variants) do names.variants[variant] = L("history_variant_" .. variant) end
+    table.sort(options.species, function(a, b)
+        if names.species[a] == names.species[b] then return a < b end
+        return names.species[a] < names.species[b]
+    end)
+    local changed = HistoryFilter.prune(state.historySelection, options)
+    state.historyOptions, state.historyLabels, state.historyIndexes = options, {}, {}
+    for _, axis in ipairs(FILTER_AXES) do
+        local labels, selected = { L(axis.label) }, 1
+        for index, value in ipairs(options[axis.options]) do
+            labels[index + 1] = names[axis.options][value]
+            if value == state.historySelection[axis.key] then selected = index + 1 end
+        end
+        state.historyLabels[axis.key] = labels
+        state.historyIndexes[axis.key] = selected
+    end
+    updateFilteredHistory(changed)
+end
+
+local function drawHistoryFilters(ctx)
+    local token = Theme.pushHistoryFilters()
+    local pushed = Fonts.push(ctx.fonts.body)
+    local ok, err = pcall(function()
+        local width = (ctx.width - Theme.metrics.historyGap * 3) / 4
+        for index, axis in ipairs(FILTER_AXES) do
+            if index > 1 then imgui.same_line() end
+            local okWidth, widthErr = pcall(imgui.set_next_item_width, width)
+            if not okWidth then error(widthErr, 0) end
+            local okCombo, changed, value = pcall(imgui.combo, axis.id, state.historyIndexes[axis.key], state.historyLabels[axis.key])
+            if not okCombo then error(changed, 0) end
+            if changed and value ~= state.historyIndexes[axis.key] then
+                state.historySelection[axis.key] = state.historyOptions[axis.options][value - 1]
+                state.historyIndexes[axis.key] = value
+                updateFilteredHistory(true)
+            end
+        end
+    end)
+    Fonts.pop(pushed)
+    Theme.popHistoryFilters(token)
+    if not ok then error(err, 0) end
+end
+
 local function drawHistory(ctx)
     if state.entries == nil then
         local entries = History.readAll()
@@ -698,13 +781,15 @@ local function drawHistory(ctx)
             relabelSnapshot(entry)
             state.entries[#state.entries + 1] = entry
         end
+        rebuildHistoryFilters()
     end
     if #state.entries == 0 then
         textIn(ctx.fonts.meta, L("history_empty"), Theme.colors.textMuted)
         return
     end
+    drawHistoryFilters(ctx)
     local m = Theme.metrics
-    local layout = ReportWindow.rowAreaLayout(#state.entries, displayHeight(), ctx.scale, m.historyRowHeight)
+    local layout = ReportWindow.rowAreaLayout(#state.filteredEntries, displayHeight(), ctx.scale, m.historyRowHeight)
     local columns = ReportWindow.historyColumns(ctx.width, ctx.scale, layout.scrolls)
     local token = Theme.pushListRows()
     local okBegin, beginErr = pcall(imgui.begin_child_window, "history##rows", { ctx.width, layout.height }, false, 0)
@@ -713,7 +798,10 @@ local function drawHistory(ctx)
         error(beginErr, 0)
     end
     local ok, err = pcall(function()
-        for index, entry in ipairs(state.entries) do
+        if #state.filteredEntries == 0 then
+            textIn(ctx.fonts.meta, L("history_no_matches"), Theme.colors.textMuted)
+        end
+        for index, entry in ipairs(state.filteredEntries) do
             local top = imgui.get_cursor_pos()
             if imgui.button("##history" .. index, { columns.buttonWidth, layout.rowHeight }) then
                 state.pendingAction = function()
@@ -846,10 +934,16 @@ function ReportWindow.setRelabeler(relabeler)
     state.relabeler = relabeler
 end
 
+function ReportWindow.setNameResolver(resolve)
+    state.nameResolver = resolve
+    rebuildHistoryFilters()
+end
+
 function ReportWindow.onLanguageChanged()
     relabelSnapshot(state.snapshot)
     relabelSnapshot(state.liveSnapshot)
     for _, entry in ipairs(state.entries or {}) do relabelSnapshot(entry) end
+    rebuildHistoryFilters()
     state.liveRefreshAt = nil
 end
 
