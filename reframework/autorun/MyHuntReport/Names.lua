@@ -9,11 +9,32 @@ local Names = {}
 local LEGENDARY_NORMAL = 1
 local LEGENDARY_KING = 2
 local ROLE_FRENZY = 3
+local LIGHT_BOWGUN = 13
+local SPECIAL_AMMO_TYPES = { cCatchAmmoShoot = 1, cSetBomb = 0 }
 
 local monsters = {}
 local items = {}
 local weapons = {}
 local echoWaves = {}
+local specialAmmo = {}
+
+local function specialAmmoName(ammoType)
+    local key = Locale.textKey() .. ":" .. tostring(ammoType)
+    if specialAmmo[key] then return specialAmmo[key] end
+    local ok, name = pcall(function()
+        local guid = Game.callStatic("app.WeaponUtil",
+            "getWp13SpecialAmmoName(app.Wp13Def.SPECIAL_AMMO_TYPE)", ammoType)
+        return Game.messageText(guid)
+    end)
+    if not ok or not Game.isUsableText(name) then name = nil end
+    local logKey = "special:ammo:name:" .. key .. (name and ":ok" or ":fallback")
+    if Log.count(logKey) == 0 then
+        Log.debug("special ammo name " .. tostring(ammoType)
+            .. (name and " via WeaponUtil -> " .. name or " unavailable, guide fallback"), logKey)
+    end
+    if name then specialAmmo[key] = name end
+    return name
+end
 
 local function echoWaveName(highFreq)
     local key = Locale.textKey() .. ":" .. tostring(highFreq)
@@ -95,6 +116,11 @@ function Names.resolve(label)
     if label.kind == "echoWave" then return echoWaveName(label.highFreq) end
     if label.kind == "monster" then return monsterName(label) end
     if label.kind == "motion" then
+        local ammoType = label.weaponType == LIGHT_BOWGUN and SPECIAL_AMMO_TYPES[label.className]
+        if ammoType then
+            local name = specialAmmoName(ammoType)
+            if name then return name end
+        end
         if label.itemRole == "ammo" then
             local name = Names.item(label.itemId)
             if label.className:find("Variable", 1, true) or label.className:find("StepDodge", 1, true) then
@@ -129,6 +155,7 @@ function Names.reset()
     items = {}
     weapons = {}
     echoWaves = {}
+    specialAmmo = {}
 end
 
 return Names

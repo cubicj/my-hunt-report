@@ -86,6 +86,145 @@ function T.motionAppendsResolvedItem()
     end)
 end
 
+function T.adhesiveAmmoUsesSpecialAmmoName()
+    withNames(function(Names, calls)
+        Game.messageText = function(guid)
+            assert(guid == "app.WeaponUtil:1")
+            return "Adhesive Ammo"
+        end
+        MotionNames.nameFor = function() error("special ammo must not resolve a guide name") end
+        assert(Names.resolve({ kind = "motion", className = "cCatchAmmoShoot", guideId = 99602184,
+            weaponType = 13 }) == "Adhesive Ammo")
+        assert(#calls == 1 and calls[1][1] == "app.WeaponUtil" and calls[1][3] == 1)
+        assert(calls[1][2] == "getWp13SpecialAmmoName(app.Wp13Def.SPECIAL_AMMO_TYPE)")
+    end)
+end
+
+function T.wyvernblastUsesSpecialAmmoTypeZero()
+    withNames(function(Names, calls)
+        Game.messageText = function(guid)
+            assert(guid == "app.WeaponUtil:0")
+            return "Wyvernblast"
+        end
+        MotionNames.nameFor = function() error("special ammo must not resolve a guide name") end
+        assert(Names.resolve({ kind = "motion", className = "cSetBomb", weaponType = 13 }) == "Wyvernblast")
+        assert(#calls == 1 and calls[1][1] == "app.WeaponUtil" and calls[1][3] == 0)
+        assert(calls[1][2] == "getWp13SpecialAmmoName(app.Wp13Def.SPECIAL_AMMO_TYPE)")
+    end)
+end
+
+function T.specialAmmoRequiresLightBowgunAndKnownClass()
+    withNames(function(Names, calls)
+        MotionNames.nameFor = function(_, guideId)
+            assert(guideId == 99602184)
+            return "Fire"
+        end
+        for _, className in ipairs({ "cSetBomb", "cCatchAmmoShoot" }) do
+            local label = { kind = "motion", className = className, guideId = 99602184 }
+            assert(Names.resolve(label) == "Fire")
+            label.weaponType = 12
+            assert(Names.resolve(label) == "Fire")
+        end
+        assert(Names.resolve({ kind = "motion", className = "cShootRapidLight", guideId = 99602184,
+            weaponType = 13 }) == "Fire")
+        assert(#calls == 0)
+    end)
+end
+
+function T.specialAmmoRetriesUnusableNames()
+    withNames(function(Names, calls)
+        MotionNames.nameFor = function() return "Fire" end
+        local label = { kind = "motion", className = "cCatchAmmoShoot", guideId = 99602184, weaponType = 13 }
+        for _, value in ipairs({ false, 123, "", "#Rejected#guid", "name---", "nil" }) do
+            Names.reset()
+            Game.messageText = function()
+                if value == "nil" then return nil end
+                return value
+            end
+            local before = #calls
+            for _ = 1, 2 do assert(Names.resolve(label) == "Fire") end
+            Game.messageText = function() return "Adhesive Ammo" end
+            for _ = 1, 2 do assert(Names.resolve(label) == "Adhesive Ammo") end
+            assert(#calls == before + 3)
+        end
+    end)
+end
+
+function T.specialAmmoRetriesFailedLookups()
+    withNames(function(Names)
+        MotionNames.nameFor = function() return "Fire" end
+        local label = { kind = "motion", className = "cCatchAmmoShoot", guideId = 99602184, weaponType = 13 }
+        for _, failure in ipairs({ "call", "missing", "message" }) do
+            Names.reset()
+            local attempts = 0
+            Game.callStatic = function()
+                attempts = attempts + 1
+                if failure == "call" then error("unavailable") end
+                if failure == "missing" then return nil, "method missing" end
+                return "guid"
+            end
+            Game.messageText = function(guid)
+                if failure == "message" then error("message unavailable") end
+                assert(guid == nil)
+                return nil
+            end
+            for _ = 1, 2 do assert(Names.resolve(label) == "Fire") end
+            Game.callStatic = function()
+                attempts = attempts + 1
+                return "guid"
+            end
+            Game.messageText = function() return "Adhesive Ammo" end
+            for _ = 1, 2 do assert(Names.resolve(label) == "Adhesive Ammo") end
+            assert(attempts == 3)
+        end
+    end)
+end
+
+function T.specialAmmoCacheUsesTextKeyTypeAndReset()
+    withNames(function(Names, calls)
+        for _, language in ipairs({ "en", "ko", "auto", "en" }) do
+            Locale.resolve(language)
+            for _, ammo in ipairs({ { "cCatchAmmoShoot", 1 }, { "cSetBomb", 0 } }) do
+                local label = { kind = "motion", className = ammo[1], weaponType = 13 }
+                for _ = 1, 2 do
+                    assert(Names.resolve(label) == Locale.textKey() .. ":app.WeaponUtil:" .. ammo[2])
+                end
+            end
+        end
+        assert(#calls == 6)
+        Names.reset()
+        Names.resolve({ kind = "motion", className = "cSetBomb", weaponType = 13 })
+        assert(#calls == 7)
+    end)
+end
+
+function T.specialAmmoDebugIsGatedAndDeduplicatedByTypeAndLanguage()
+    withNames(function(Names)
+        MotionNames.nameFor = function() return "Fire" end
+        Game.messageText = function() return nil end
+        Log.setDeveloperMode(false)
+        local label = { kind = "motion", className = "cCatchAmmoShoot", weaponType = 13 }
+        Names.resolve(label)
+        assert(#stubs.logLines == 0)
+        Log.setDeveloperMode(true)
+        for _, language in ipairs({ "en", "ko" }) do
+            Locale.resolve(language)
+            Game.messageText = function() return nil end
+            for _ = 1, 2 do assert(Names.resolve(label) == "Fire") end
+            assert(stubs.logLines[#stubs.logLines] == "[MyHuntReport] special ammo name 1 unavailable, guide fallback")
+            Game.messageText = function() return "Special Ammo" end
+            assert(Names.resolve(label) == "Special Ammo")
+            local bomb = { kind = "motion", className = "cSetBomb", weaponType = 13 }
+            for _ = 1, 2 do assert(Names.resolve(bomb) == "Special Ammo") end
+            assert(stubs.logLines[#stubs.logLines] == "[MyHuntReport] special ammo name 0 via WeaponUtil -> Special Ammo")
+            assert(Log.count("special:ammo:name:" .. Locale.textKey() .. ":1:fallback") == 1)
+            assert(Log.count("special:ammo:name:" .. Locale.textKey() .. ":1:ok") == 1)
+            assert(Log.count("special:ammo:name:" .. Locale.textKey() .. ":0:ok") == 1)
+        end
+        assert(#stubs.logLines == 6)
+    end)
+end
+
 function T.ammoNameOmitsOrdinaryAction()
     withNames(function(Names)
         Game.messageText = function() return "Normal Ammo Lv1" end
