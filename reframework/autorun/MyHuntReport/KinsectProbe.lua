@@ -7,7 +7,7 @@ local KinsectProbe = {}
 
 local WEAPON_GLAIVE = 10
 local SUMMARY_EVERY = 20
-local COUNTER_ORDER = { "hits", "noRecord", "mismatchedOpen", "startNonAttack", "differ", "spanned" }
+local COUNTER_ORDER = { "hits", "noRecord", "unseenStart", "mismatchedOpen", "startNonAttack", "differ", "spanned" }
 local GETTERS = {
     { name = "main", label = "HunterCharacter.get_Wp10Insect",
         read = function(hunter) return hunter:call("get_Wp10Insect") end },
@@ -19,6 +19,7 @@ local GETTERS = {
 
 local instances = {}
 local hunterAction = nil
+local knownHunter = nil
 local lastAttack = nil
 local record = nil
 local wasGlaive = false
@@ -32,6 +33,7 @@ for _, name in ipairs(COUNTER_ORDER) do counters[name] = 0 end
 local function clearTracking()
     instances = {}
     hunterAction = nil
+    knownHunter = nil
     lastAttack = nil
     record = nil
     wasGlaive = false
@@ -106,7 +108,7 @@ end
 
 local function sameAction(previous, className, guideId)
     if previous == nil or previous.class ~= className then return false end
-    return previous.knownGuide == nil or guideId == nil or previous.knownGuide == guideId
+    return previous.guide == nil or guideId == nil or previous.guide == guideId
 end
 
 local function kinsectClass(insect)
@@ -158,19 +160,32 @@ end
 local function updateHunter(hunter, now)
     local className, guideId = describeAction(controllerAction(hunter, "get_BaseActionController"))
     local subClass = MotionNames.className(controllerAction(hunter, "get_SubActionController"))
-    if sameAction(hunterAction, className, guideId) then
-        hunterAction.sub = subClass
-        hunterAction.guide = guideId
-        if guideId ~= nil then hunterAction.knownGuide = guideId end
+    local wasUnknown = hunterAction ~= nil and hunterAction.class == nil
+    hunterAction = { class = className, guide = guideId, sub = subClass }
+    local attack = KinsectProbe.attackState(className)
+    local function line(suffix)
+        trace(string.format("hunter t=%.2f base=%s sub=%s attack=%s%s",
+            now, actionText(className, guideId), show(subClass), show(attack), suffix))
+    end
+    if className == nil then
+        if not wasUnknown then line("") end
         return
     end
-    hunterAction = { class = className, guide = guideId, knownGuide = guideId, sub = subClass }
-    local attack = KinsectProbe.attackState(className)
-    trace(string.format("hunter t=%.2f base=%s sub=%s attack=%s",
-        now, actionText(className, guideId), show(subClass), show(attack)))
+    if sameAction(knownHunter, className, guideId) then
+        if guideId ~= nil then knownHunter.guide = guideId end
+        if wasUnknown then line(" recovered=same") end
+        return
+    end
+    local first = knownHunter == nil
+    knownHunter = { class = className, guide = guideId }
+    if wasUnknown then
+        line(first and " recovered=first" or " recovered=changed")
+    else
+        line("")
+    end
     if attack then
         lastAttack = { class = className, guide = guideId }
-        if record then record.spans = record.spans + 1 end
+        if record and not first then record.spans = record.spans + 1 end
     end
 end
 
@@ -189,7 +204,8 @@ end
 local function updateKinsect(now)
     local insect, via = activeInsect()
     local className = kinsectClass(insect)
-    if className == nil then
+    local address = insect and readField(function() return insect:get_address() end) or nil
+    if className == nil or address == nil then
         if record ~= nil then
             trace(string.format("kact t=%.2f via=%s from=%s to=? dur=%s spans=%s",
                 now, show(via), record.class, seconds(now - record.start), show(record.spans)))
@@ -197,18 +213,19 @@ local function updateKinsect(now)
         end
         return
     end
-    if record and record.class == className then return end
+    local seen = record ~= nil and record.insect == address
+    if seen and record.class == className then return end
     local actType = show(readField(function() return insect._ActType end))
-    local start = hunterAction or {}
+    local start = seen and hunterAction or {}
     local startAttack = KinsectProbe.attackState(start.class)
-    trace(string.format("kact t=%.2f via=%s from=%s to=%s dur=%s spans=%s actType=%s start=%s sub=%s attack=%s last=%s",
+    trace(string.format("kact t=%.2f via=%s from=%s to=%s dur=%s spans=%s actType=%s start=%s sub=%s attack=%s last=%s seen=%s",
         now, via, show(record and record.class), className,
         seconds(record and (now - record.start)), show(record and record.spans), actType,
         actionText(start.class, start.guide), show(start.sub), show(startAttack),
-        actionText(lastAttack and lastAttack.class, lastAttack and lastAttack.guide)))
+        actionText(lastAttack and lastAttack.class, lastAttack and lastAttack.guide), tostring(seen)))
     record = {
-        class = className, start = now, startClass = start.class, startGuide = start.guide,
-        startSub = start.sub, startAttack = startAttack, spans = 0,
+        class = className, insect = address, seen = seen, start = now, startClass = start.class,
+        startGuide = start.guide, startSub = start.sub, startAttack = startAttack, spans = 0,
     }
 end
 
@@ -232,13 +249,14 @@ function KinsectProbe.update()
     updateKinsect(now)
 end
 
-local function countHit(kact, differ)
+local function countHit(open, kact, differ)
     counters.hits = counters.hits + 1
-    if record == nil then counters.noRecord = counters.noRecord + 1 end
-    if record and kact ~= nil and kact ~= record.class then counters.mismatchedOpen = counters.mismatchedOpen + 1 end
-    if record and record.startAttack == false then counters.startNonAttack = counters.startNonAttack + 1 end
+    if open == nil then counters.noRecord = counters.noRecord + 1 end
+    if open and not open.seen then counters.unseenStart = counters.unseenStart + 1 end
+    if open and kact ~= nil and kact ~= open.class then counters.mismatchedOpen = counters.mismatchedOpen + 1 end
+    if open and open.startAttack == false then counters.startNonAttack = counters.startNonAttack + 1 end
     if differ then counters.differ = counters.differ + 1 end
-    local spanned = record ~= nil and record.spans > 0
+    local spanned = open ~= nil and open.spans > 0
     if spanned then counters.spanned = counters.spanned + 1 end
     local key = kact or "?"
     local entry = classCounts[key]
@@ -281,20 +299,22 @@ function KinsectProbe.handleHit(insect, hitInfo)
         hitClass, hitGuide = describeAction(controllerAction(hunter, "get_BaseActionController"))
         hitSub = MotionNames.className(controllerAction(hunter, "get_SubActionController"))
     end
-    local ruleS = KinsectProbe.ruleS(record, lastAttack)
+    local open = record
+    if open and (address == nil or open.insect ~= address) then open = nil end
+    local ruleS = KinsectProbe.ruleS(open, lastAttack)
     local ruleH = KinsectProbe.ruleH(hitClass, lastAttack)
     local same = nil
     if ruleS ~= nil and ruleH ~= nil then same = ruleS == ruleH end
     trace(string.format(
-        "hit t=%.2f em=%s obj=%s mv=%s kact=%s open=%s age=%s eq=%s start=%s startAttack=%s spans=%s hit=%s sub=%s last=%s S=%s H=%s same=%s",
-        now, show(enemyIndex), show(objectName), show(motionValue), show(kact), show(record and record.class),
-        seconds(record and (now - record.start)), equalText(address),
-        actionText(record and record.startClass, record and record.startGuide),
-        show(record and record.startAttack), show(record and record.spans),
+        "hit t=%.2f em=%s obj=%s mv=%s kact=%s open=%s age=%s eq=%s start=%s startAttack=%s spans=%s seen=%s hit=%s sub=%s last=%s S=%s H=%s same=%s",
+        now, show(enemyIndex), show(objectName), show(motionValue), show(kact), show(open and open.class),
+        seconds(open and (now - open.start)), equalText(address),
+        actionText(open and open.startClass, open and open.startGuide),
+        show(open and open.startAttack), show(open and open.spans), show(open and open.seen),
         actionText(hitClass, hitGuide), show(hitSub),
         actionText(lastAttack and lastAttack.class, lastAttack and lastAttack.guide),
         show(ruleS), show(ruleH), show(same)))
-    countHit(kact, same == false)
+    countHit(open, kact, same == false)
     if counters.hits % SUMMARY_EVERY == 0 then printSummary() end
 end
 
