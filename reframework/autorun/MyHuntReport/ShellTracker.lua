@@ -58,6 +58,8 @@ local function readControllerAction(hunter, getter)
     return nil
 end
 
+ShellTracker.readControllerAction = readControllerAction
+
 function ShellTracker.currentAction(hunter, hitTime)
     if not hunter then return nil, nil, "base" end
     local sub = readControllerAction(hunter, "get_SubActionController")

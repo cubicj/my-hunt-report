@@ -24,6 +24,7 @@ local SUITES = {
     "shelltracker_test",
     "hitcapture_test",
     "kinsectprobe_test",
+    "kinsecttracker_test",
     "palico_test",
     "attacklog_test",
     "quest_test",
