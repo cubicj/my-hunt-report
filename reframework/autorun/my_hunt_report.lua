@@ -29,7 +29,7 @@ local Quest = tryRequire("MyHuntReport.Quest")
 local SkillState = tryRequire("MyHuntReport.SkillState")
 local Session = tryRequire("MyHuntReport.Session")
 local Names = tryRequire("MyHuntReport.Names")
-local KinsectProbe = tryRequire("MyHuntReport.KinsectProbe")
+local KinsectTracker = tryRequire("MyHuntReport.KinsectTracker")
 
 if #loadErrors > 0 then
     for _, err in ipairs(loadErrors) do
@@ -66,7 +66,6 @@ if Settings.get().skillProcCapture then Procs.installSkillProcs() end
 SkillExtras.install()
 HealTracker.install()
 Quest.install()
-KinsectProbe.install()
 SkillState.install()
 Quest.adoptCurrentState(Game.uptime())
 ReportWindow.setRelabeler(function(snapshot)
@@ -96,7 +95,7 @@ end
 re.on_frame(function()
     ShellTracker.update()
     AttackLog.update()
-    KinsectProbe.update()
+    KinsectTracker.update()
     Pulse.tick()
     local event = Hotkey.update(isKeyDown, Settings.get().toggleKey)
     if event then

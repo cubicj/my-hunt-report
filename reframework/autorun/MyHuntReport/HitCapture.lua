@@ -3,6 +3,7 @@ local Log = require("MyHuntReport.Log")
 local Session = require("MyHuntReport.Session")
 local SkillState = require("MyHuntReport.SkillState")
 local ShellTracker = require("MyHuntReport.ShellTracker")
+local KinsectTracker = require("MyHuntReport.KinsectTracker")
 local SkillExtras = require("MyHuntReport.SkillExtras")
 local MotionNames = require("MyHuntReport.MotionNames")
 local Names = require("MyHuntReport.Names")
@@ -10,6 +11,7 @@ local Names = require("MyHuntReport.Names")
 local HitCapture = {}
 
 local KINSECT_WEAPON_TYPE = -1
+local GLAIVE_WEAPON_TYPE = 10
 local KINSECT_KEY = "kinsect"
 local HIDE_FIXED_THRESHOLD = 1.1
 local ELEMENT_FIELDS = { [1] = "_Fire", [2] = "_Water", [3] = "_Thunder", [4] = "_Ice", [5] = "_Dragon" }
@@ -98,7 +100,7 @@ local function crimsonGuideIdFor(weaponType, guideId)
     return nil
 end
 
-local function actionMotion(name, weaponType, hitTime, audit)
+local function actionMotion(attackObj, name, weaponType, hitTime, audit)
     local className, guideId, source, kind = ShellTracker.currentAction(Game.masterHunter(), hitTime)
     if kind == "slinger" then
         audit.path = "slinger"
@@ -107,6 +109,11 @@ local function actionMotion(name, weaponType, hitTime, audit)
     if weaponType == KINSECT_WEAPON_TYPE then
         if isKinsectObject(name) then
             audit.path = "kinsect"
+            local triggerClass, triggerGuideId = KinsectTracker.triggerFor(attackObj)
+            if triggerClass then
+                return HitCapture.motionKey(GLAIVE_WEAPON_TYPE, triggerClass),
+                    { kind = "motion", className = triggerClass, guideId = triggerGuideId }
+            end
             return KINSECT_KEY, { kind = "kinsect" }
         end
         if Log.count("hit:wp-1:" .. tostring(name)) == 0 then
@@ -148,7 +155,7 @@ local function motionFor(hitInfo, weaponType)
         audit.path = "slinger"
         return "slinger", { kind = "slinger" }, audit
     end
-    local motionKey, motionLabel = actionMotion(name, weaponType, hitTime, audit)
+    local motionKey, motionLabel = actionMotion(okObj and attackObj or nil, name, weaponType, hitTime, audit)
     return motionKey, motionLabel, audit
 end
 

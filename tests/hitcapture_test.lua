@@ -818,6 +818,46 @@ function T.kinsectAndUnknownHitsCarryLabels()
     if not ok then error(err, 0) end
 end
 
+function T.kinsectHitsTakeTheTriggerRowAndKeepTheKinsectPath()
+    local ShellTracker = require("MyHuntReport.ShellTracker")
+    local KinsectTracker = require("MyHuntReport.KinsectTracker")
+    local originalCurrent, originalTrigger = ShellTracker.currentAction, KinsectTracker.triggerFor
+    local ok, err = pcall(function()
+        local asked = {}
+        ShellTracker.currentAction = function() return "cBatonMoveAttack", 11 end
+        KinsectTracker.triggerFor = function(object)
+            asked[#asked + 1] = object
+            return "cBatonMoveAttack", 11
+        end
+        withCapture(function(hits)
+            local object = { get_Name = function() return "it1003_test" end }
+            local own = hitInfo(1, 1, { _WeaponType = 10 })
+            HitCapture.handleStockDamageDetail(own)
+            complete(own, { FinalDamage = 50, Physical = 50, Element = 0 })
+            local kinsect = hitInfo(2, 1, { _WeaponType = -1, _ActionType = 2 }, nil, object)
+            HitCapture.handleStockDamageDetail(kinsect)
+            complete(kinsect, { FinalDamage = 20, Physical = 20, Element = 0 })
+            assert(#asked == 1 and asked[1] == object)
+            assert(hits[2].motionKey == "10:cBatonMoveAttack")
+            assert(hits[2].motionLabel.kind == "motion")
+            assert(hits[2].motionLabel.className == "cBatonMoveAttack" and hits[2].motionLabel.guideId == 11)
+            assert(hits[2].attribution == "kinsect")
+            assert(hits[2].weaponType == -1)
+            local motions = Session.snapshot().motions
+            assert(#motions == 1, #motions)
+            assert(motions[1].key == "10:cBatonMoveAttack" and motions[1].hits == 2 and motions[1].damage == 70)
+            KinsectTracker.triggerFor = function() return nil end
+            local fallback = hitInfo(3, 1, { _WeaponType = -1, _ActionType = 2 }, nil, object)
+            HitCapture.handleStockDamageDetail(fallback)
+            complete(fallback, { FinalDamage = 20, Physical = 20, Element = 0 })
+            assert(hits[3].motionKey == "kinsect" and hits[3].motionLabel.kind == "kinsect")
+            assert(hits[3].attribution == "kinsect")
+        end)
+    end)
+    ShellTracker.currentAction, KinsectTracker.triggerFor = originalCurrent, originalTrigger
+    if not ok then error(err, 0) end
+end
+
 function T.kinsectNameAndUnreadableFallbackRespectLastWeapon()
     for _, weaponType in ipairs({ 7, 10 }) do
         for _, case in ipairs({

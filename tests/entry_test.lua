@@ -222,6 +222,40 @@ function T.entryInstallsThePalicoCaptureAfterHitCaptureAndNotTheRetiredProbe()
     if not ok then error(err, 0) end
 end
 
+function T.entryUpdatesTheKinsectTrackerAfterTheAttackLogAndNotTheRetiredProbe()
+    local noop = function() end
+    local calls, required = {}, {}
+    local frame
+    local function module(name)
+        return setmetatable({}, { __index = function(_, method)
+            return function() calls[#calls + 1] = name .. "." .. method end
+        end })
+    end
+    local modules = {
+        ["MyHuntReport.Settings"] = {
+            load = noop,
+            get = function() return { language = "en", fontSize = 18, developerMode = false, skillProcCapture = false } end,
+        },
+    }
+    local environment = setmetatable({
+        require = function(name)
+            required[name] = true
+            return modules[name] or module(name)
+        end,
+        re = { on_draw_ui = noop, on_frame = function(callback) frame = callback end, on_config_save = noop },
+    }, { __index = _G })
+    assert(loadfile("reframework/autorun/my_hunt_report.lua", "t", environment))()
+    assert(required["MyHuntReport.KinsectTracker"] == true)
+    assert(required["MyHuntReport.KinsectProbe"] == nil)
+    assert(loadfile("reframework/autorun/MyHuntReport/KinsectProbe.lua") == nil)
+    assert(loadfile("tests/kinsectprobe_test.lua") == nil)
+    for _, call in ipairs(calls) do assert(not call:find("^MyHuntReport%.KinsectTracker%."), call) end
+    calls = {}
+    frame()
+    assert(calls[2] == "MyHuntReport.AttackLog.update", table.concat(calls, ","))
+    assert(calls[3] == "MyHuntReport.KinsectTracker.update", table.concat(calls, ","))
+end
+
 function T.entryUpdatesTheHoverCursorDirectlyAfterTheReportWindowDraw()
     local noop = function() end
     local calls, required = {}, {}
