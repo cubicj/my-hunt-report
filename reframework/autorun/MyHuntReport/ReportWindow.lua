@@ -10,6 +10,7 @@ local HistoryFilter = require("MyHuntReport.HistoryFilter")
 local HistoryFilterWindow = require("MyHuntReport.HistoryFilterWindow")
 local Game = require("MyHuntReport.Game")
 local Hdr = require("MyHuntReport.Hdr")
+local Version = require("MyHuntReport.Version")
 
 local ReportWindow = {}
 
@@ -382,6 +383,12 @@ function ReportWindow.metaText(snapshot)
     return monsters .. " · " .. time
 end
 
+function ReportWindow.versionText(snapshot)
+    local stored = type(snapshot) == "table" and snapshot.modVersion
+    if type(stored) == "string" and stored ~= "" then return "v" .. stored end
+    return string.format(L("mod_version_legacy"), Version.FIRST_RECORDED)
+end
+
 function ReportWindow.historyRow(entry)
     entry = entry or {}
     local quest = entry.quest or {}
@@ -452,6 +459,10 @@ end
 
 local function drawMeta(snapshot, ctx)
     textIn(ctx.fonts.meta, ReportWindow.metaText(snapshot), Theme.colors.textMuted)
+end
+
+local function drawVersion(snapshot, ctx)
+    textIn(ctx.fonts.meta, ReportWindow.versionText(snapshot), Theme.colors.textMuted)
 end
 
 local function drawStats(snapshot, ctx)
@@ -904,6 +915,7 @@ local function drawContents(settings, fonts, sizes)
     end
     drawHeader(snapshot, ctx)
     drawMeta(snapshot, ctx)
+    drawVersion(snapshot, ctx)
     drawStats(snapshot, ctx)
     drawDamage(snapshot, ctx)
     drawBody(snapshot, ctx)

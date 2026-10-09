@@ -1,5 +1,6 @@
 local Game = require("MyHuntReport.Game")
 local MotionNames = require("MyHuntReport.MotionNames")
+local Version = require("MyHuntReport.Version")
 
 local Session = {}
 
@@ -428,6 +429,7 @@ function Session.snapshot(options)
     local weapons = weaponRows(options.weapons)
     local snapshot = {
         version = 2,
+        modVersion = Version.CURRENT,
         quest = {
             level = options.questLevel,
             result = options.result or "running",

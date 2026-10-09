@@ -2910,4 +2910,45 @@ function T.forwardRelabelsThePastReportItReopens()
     end)
 end
 
+function T.versionTextShowsStoredVersion()
+    assert(ReportWindow.versionText({ modVersion = "1.15.0" }) == "v1.15.0")
+    assert(ReportWindow.versionText({ modVersion = "1.16.2" }) == "v1.16.2")
+end
+
+function T.versionTextLabelsEntriesWithoutVersionAsLegacy()
+    local Version = require("MyHuntReport.Version")
+    local legacy = string.format(Locale.text("mod_version_legacy"), Version.FIRST_RECORDED)
+    assert(ReportWindow.versionText({}) == legacy, ReportWindow.versionText({}))
+    assert(ReportWindow.versionText({ modVersion = "" }) == legacy)
+    assert(ReportWindow.versionText(nil) == legacy)
+end
+
+function T.versionLegacyTextIsLocalized()
+    Locale.init({ gameLanguage = function() return "en" end })
+    Locale.resolve("en")
+    assert(ReportWindow.versionText({}) == "Before v1.15.0", ReportWindow.versionText({}))
+    Locale.resolve("ko")
+    assert(ReportWindow.versionText({}) == "v1.15.0 이전", ReportWindow.versionText({}))
+    Locale.resolve("en")
+end
+
+function T.reportDrawsVersionBetweenMetaAndStats()
+    withNavigation(function(ui)
+        local shown = snapshot("clear")
+        shown.modVersion = "1.15.0"
+        shown.quest.weapons = { { name = "태도" } }
+        shown.quest.elapsedSeconds = 754
+        shown.monsters = { { name = "미즈츠네" } }
+        ReportWindow.show(shown)
+        ui.draw()
+        local texts = {}
+        for _, event in ipairs(ui.events) do
+            if event.kind == "text" then texts[#texts + 1] = event.value end
+        end
+        assert(texts[3] == "미즈츠네 · 12:34", texts[3])
+        assert(texts[4] == "v1.15.0", texts[4])
+        assert(texts[5] == ReportWindow.statTiles(shown)[1].label, texts[5])
+    end)
+end
+
 return T

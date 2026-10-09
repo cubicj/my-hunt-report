@@ -897,4 +897,13 @@ function T.palicoDamageAloneIsNotReportData()
     assert(Session.snapshotHasData(Session.snapshot()) == false)
 end
 
+function T.snapshotCarriesModVersion()
+    local Version = require("MyHuntReport.Version")
+    Session.reset(0)
+    Session.addHit(hit())
+    local s = Session.snapshot()
+    assert(s.modVersion == Version.CURRENT, tostring(s.modVersion))
+    assert(s.version == 2)
+end
+
 return T
