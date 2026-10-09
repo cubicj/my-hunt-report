@@ -384,9 +384,11 @@ function ReportWindow.metaText(snapshot)
 end
 
 function ReportWindow.versionText(snapshot)
-    local stored = type(snapshot) == "table" and snapshot.modVersion
-    if type(stored) == "string" and stored ~= "" then return "v" .. stored end
-    return string.format(L("mod_version_legacy"), Version.FIRST_RECORDED)
+    local version = type(snapshot) == "table" and snapshot.modVersion
+    if type(version) ~= "string" or version == "" then
+        version = string.format(L("mod_version_legacy"), Version.LAST_UNRECORDED)
+    end
+    return string.format(L("mod_version"), version)
 end
 
 function ReportWindow.historyRow(entry)

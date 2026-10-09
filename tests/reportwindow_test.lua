@@ -2911,24 +2911,27 @@ function T.forwardRelabelsThePastReportItReopens()
 end
 
 function T.versionTextShowsStoredVersion()
-    assert(ReportWindow.versionText({ modVersion = "1.15.0" }) == "v1.15.0")
-    assert(ReportWindow.versionText({ modVersion = "1.16.2" }) == "v1.16.2")
+    local label = Locale.text("mod_version")
+    assert(ReportWindow.versionText({ modVersion = "1.15.0" }) == string.format(label, "1.15.0"))
+    assert(ReportWindow.versionText({ modVersion = "1.16.2" }) == string.format(label, "1.16.2"))
 end
 
 function T.versionTextLabelsEntriesWithoutVersionAsLegacy()
     local Version = require("MyHuntReport.Version")
-    local legacy = string.format(Locale.text("mod_version_legacy"), Version.FIRST_RECORDED)
+    local legacy = string.format(Locale.text("mod_version"), string.format(Locale.text("mod_version_legacy"), Version.LAST_UNRECORDED))
     assert(ReportWindow.versionText({}) == legacy, ReportWindow.versionText({}))
     assert(ReportWindow.versionText({ modVersion = "" }) == legacy)
     assert(ReportWindow.versionText(nil) == legacy)
 end
 
-function T.versionLegacyTextIsLocalized()
+function T.versionTextIsLocalized()
     Locale.init({ gameLanguage = function() return "en" end })
     Locale.resolve("en")
-    assert(ReportWindow.versionText({}) == "Before v1.15.0", ReportWindow.versionText({}))
+    assert(ReportWindow.versionText({ modVersion = "1.15.0" }) == "Mod version: 1.15.0", ReportWindow.versionText({ modVersion = "1.15.0" }))
+    assert(ReportWindow.versionText({}) == "Mod version: 1.14.1 or earlier", ReportWindow.versionText({}))
     Locale.resolve("ko")
-    assert(ReportWindow.versionText({}) == "v1.15.0 이전", ReportWindow.versionText({}))
+    assert(ReportWindow.versionText({ modVersion = "1.15.0" }) == "모드 버전: 1.15.0", ReportWindow.versionText({ modVersion = "1.15.0" }))
+    assert(ReportWindow.versionText({}) == "모드 버전: 1.14.1 이하", ReportWindow.versionText({}))
     Locale.resolve("en")
 end
 
@@ -2946,7 +2949,7 @@ function T.reportDrawsVersionBetweenMetaAndStats()
             if event.kind == "text" then texts[#texts + 1] = event.value end
         end
         assert(texts[3] == "미즈츠네 · 12:34", texts[3])
-        assert(texts[4] == "v1.15.0", texts[4])
+        assert(texts[4] == "모드 버전: 1.15.0", texts[4])
         assert(texts[5] == ReportWindow.statTiles(shown)[1].label, texts[5])
     end)
 end
