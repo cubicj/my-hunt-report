@@ -9,9 +9,10 @@ local WEAPON_GLAIVE = 10
 local SUMMARY_EVERY = 20
 local INHERIT_FROM = { cAimAttackPre = true, cAimAttackAirPre = true, cPreDiveAttack = true, cHit = true, cWander = true }
 local INHERIT_TO = { cHit = true, cWander = true }
+local MARK_SHOT_TRIGGER = { className = "cGunShot", guideId = -1726610048 }
 local COUNTER_ORDER = {
     "hits", "trigger", "noRecord", "otherKinsect", "stale", "unknownTrigger", "unreadable",
-    "inherit", "sub", "base", "last",
+    "inherit", "mark", "sub", "base", "last",
 }
 
 local record = nil
@@ -63,6 +64,7 @@ end
 function KinsectTracker.decide(previous, className, seen, hunter, last)
     if not seen then return nil, "unseen" end
     if INHERIT_FROM[previous.class] or INHERIT_TO[className] then return previous.trigger, "inherit" end
+    if className == "cAutoAttack" then return MARK_SHOT_TRIGGER, "mark" end
     if hunter.baseClass == nil or hunter.subClass == nil then return nil, "unreadable" end
     if hunter.subClass:find("^cInsect") then
         return { className = hunter.subClass, guideId = hunter.subGuide }, "sub"
@@ -90,7 +92,15 @@ local function trackHunter(state)
     if state.baseClass == nil then return end
     local changed = knownBase == nil or knownBase.className ~= state.baseClass
         or (knownBase.guideId ~= -1 and state.baseGuide ~= -1 and knownBase.guideId ~= state.baseGuide)
-    if not changed then return end
+    if not changed then
+        if knownBase.guideId == -1 and state.baseGuide ~= -1 then
+            knownBase.guideId = state.baseGuide
+            if lastAttack and lastAttack.className == state.baseClass and lastAttack.guideId == -1 then
+                lastAttack.guideId = state.baseGuide
+            end
+        end
+        return
+    end
     local first = knownBase == nil
     knownBase = { className = state.baseClass, guideId = state.baseGuide }
     if not KinsectTracker.isAttackBase(state.baseClass) then return end

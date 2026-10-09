@@ -834,6 +834,7 @@ function T.kinsectHitsTakeTheTriggerRowAndKeepTheKinsectPath()
             local own = hitInfo(1, 1, { _WeaponType = 10 })
             HitCapture.handleStockDamageDetail(own)
             complete(own, { FinalDamage = 50, Physical = 50, Element = 0 })
+            ShellTracker.currentAction = function() return "cSlingerShot", 61, "sub", "slinger" end
             local kinsect = hitInfo(2, 1, { _WeaponType = -1, _ActionType = 2 }, nil, object)
             HitCapture.handleStockDamageDetail(kinsect)
             complete(kinsect, { FinalDamage = 20, Physical = 20, Element = 0 })
@@ -847,11 +848,19 @@ function T.kinsectHitsTakeTheTriggerRowAndKeepTheKinsectPath()
             assert(#motions == 1, #motions)
             assert(motions[1].key == "10:cBatonMoveAttack" and motions[1].hits == 2 and motions[1].damage == 70)
             KinsectTracker.triggerFor = function() return nil end
+            ShellTracker.currentAction = function() return "cBatonMoveAttack2", 21 end
             local fallback = hitInfo(3, 1, { _WeaponType = -1, _ActionType = 2 }, nil, object)
             HitCapture.handleStockDamageDetail(fallback)
             complete(fallback, { FinalDamage = 20, Physical = 20, Element = 0 })
             assert(hits[3].motionKey == "kinsect" and hits[3].motionLabel.kind == "kinsect")
             assert(hits[3].attribution == "kinsect")
+            ShellTracker.currentAction = function() return "cSlingerShot", 61, "sub", "slinger" end
+            local unnamed = hitInfo(4, 1, { _WeaponType = -1, _ActionType = 2 }, nil,
+                { get_Name = function() error("name unavailable") end })
+            HitCapture.handleStockDamageDetail(unnamed)
+            complete(unnamed, { FinalDamage = 20, Physical = 20, Element = 0 })
+            assert(hits[4].motionKey == "slinger" and hits[4].attribution == "slinger")
+            assert(#asked == 1)
         end)
     end)
     ShellTracker.currentAction, KinsectTracker.triggerFor = originalCurrent, originalTrigger

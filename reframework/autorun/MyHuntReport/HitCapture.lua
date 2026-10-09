@@ -100,22 +100,27 @@ local function crimsonGuideIdFor(weaponType, guideId)
     return nil
 end
 
+local function kinsectMotion(attackObj, audit)
+    audit.path = "kinsect"
+    local triggerClass, triggerGuideId = KinsectTracker.triggerFor(attackObj)
+    if triggerClass then
+        return HitCapture.motionKey(GLAIVE_WEAPON_TYPE, triggerClass),
+            { kind = "motion", className = triggerClass, guideId = triggerGuideId }
+    end
+    return KINSECT_KEY, { kind = "kinsect" }
+end
+
 local function actionMotion(attackObj, name, weaponType, hitTime, audit)
+    if weaponType == KINSECT_WEAPON_TYPE and type(name) == "string" and isKinsectObject(name) then
+        return kinsectMotion(attackObj, audit)
+    end
     local className, guideId, source, kind = ShellTracker.currentAction(Game.masterHunter(), hitTime)
     if kind == "slinger" then
         audit.path = "slinger"
         return "slinger", { kind = "slinger" }
     end
     if weaponType == KINSECT_WEAPON_TYPE then
-        if isKinsectObject(name) then
-            audit.path = "kinsect"
-            local triggerClass, triggerGuideId = KinsectTracker.triggerFor(attackObj)
-            if triggerClass then
-                return HitCapture.motionKey(GLAIVE_WEAPON_TYPE, triggerClass),
-                    { kind = "motion", className = triggerClass, guideId = triggerGuideId }
-            end
-            return KINSECT_KEY, { kind = "kinsect" }
-        end
+        if isKinsectObject(name) then return kinsectMotion(attackObj, audit) end
         if Log.count("hit:wp-1:" .. tostring(name)) == 0 then
             Log.debug("hit weaponType=-1 object=" .. tostring(name), "hit:wp-1:" .. tostring(name))
         end
