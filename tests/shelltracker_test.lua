@@ -520,6 +520,22 @@ function T.shellCurrentActionSlingerPrecedesBaseAndLaunchAmmoReads()
     end)
 end
 
+function T.shellLaunchedDuringABaseSlingerActionIsASlingerShell()
+    withShellTracker(function(tracker, hooks, hunter)
+        for _, className in ipairs({ "cSlingerShoot", "cCatchSlingerShoot" }) do
+            hunter.sub = fakeAction("cNothing", -1)
+            hunter.base = fakeAction(className, -1)
+            hunter.get_WeaponType = function() error("slinger must not read weapon type") end
+            local object = shell(1)
+            hooks.doOnSetUp({ [2] = object })
+            local launchKey, label = tracker.nameForAttackObject(object)
+            assert(launchKey == "slinger" and stubs.encode(label) == stubs.encode({ kind = "slinger" }), className)
+            local key, _, _, kind = tracker.currentAction(hunter, true)
+            assert(key == className and kind == nil)
+        end
+    end)
+end
+
 function T.shellCurrentActionRidingUsesAnyNonNothingSubAndLaunchGuide()
     withShellTracker(function(tracker, hooks, hunter)
         hunter.weaponType = 7

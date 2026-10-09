@@ -121,7 +121,9 @@ local function launchName()
     local hunter = Game.masterHunter()
     if not hunter then return nil, nil end
     local className, guideId, _, kind = ShellTracker.currentAction(hunter)
-    if kind == "slinger" then return "slinger", { kind = "slinger" } end
+    if kind == "slinger" or (className and (className:find("^cSlinger") or className:find("^cCatchSlinger"))) then
+        return "slinger", { kind = "slinger" }
+    end
     if not className then return nil, nil end
     local label = { kind = "motion", className = className, guideId = guideId }
     local okType, weaponType = pcall(function() return hunter:get_WeaponType() end)
