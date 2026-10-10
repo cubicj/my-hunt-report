@@ -31,6 +31,7 @@ local SUITES = {
     "motionnames_test",
     "names_test",
     "pulse_test",
+    "reportlayout_test",
     "reportwindow_test",
     "hovercursor_test",
     "mousenav_test",

@@ -11,8 +11,16 @@ local HistoryFilterWindow = require("MyHuntReport.HistoryFilterWindow")
 local Game = require("MyHuntReport.Game")
 local Hdr = require("MyHuntReport.Hdr")
 local Version = require("MyHuntReport.Version")
+local ReportLayout = require("MyHuntReport.ReportLayout")
 
 local ReportWindow = {}
+
+ReportWindow.placement = ReportLayout.placement
+ReportWindow.rowAreaLayout = ReportLayout.rowAreaLayout
+ReportWindow.barSegments = ReportLayout.barSegments
+ReportWindow.historyColumns = ReportLayout.historyColumns
+ReportWindow.tileLayout = ReportLayout.tileLayout
+ReportWindow.wrapBreaks = ReportLayout.wrapBreaks
 
 local WINDOW_ID = "##MyHuntReportWindow"
 local COND_APPEARING = 8
@@ -144,16 +152,6 @@ local function labeledValue(ctx, name, value)
     textIn(ctx.fonts.meta, value, Theme.colors.textMuted)
 end
 
-local EDGE_MARGIN = 64
-
-function ReportWindow.placement(settings, display)
-    local x, y = tonumber(settings.windowX) or -1, tonumber(settings.windowY) or -1
-    if x < 0 or y < 0 then return { centered = true } end
-    local maxX = math.max(0, (display and display.x or 0) - EDGE_MARGIN)
-    local maxY = math.max(0, (display and display.y or 0) - EDGE_MARGIN)
-    return { centered = false, x = math.min(x, maxX), y = math.min(y, maxY) }
-end
-
 function ReportWindow.rememberPosition(x, y)
     if type(x) ~= "number" or type(y) ~= "number" then return end
     state.livePosition = { x = x, y = y }
@@ -203,76 +201,6 @@ local function displayHeight()
     return 1080
 end
 
-function ReportWindow.rowAreaLayout(rowCount, displayHeight_, scale, rowHeightPx)
-    scale = scale or 1
-    local count = rowCount or 0
-    local rowHeight
-    if rowHeightPx then
-        rowHeight = math.floor(rowHeightPx * scale + 0.5)
-    else
-        rowHeight = math.floor(18 * scale + 0.5) + Theme.metrics.rowSpacing
-    end
-    local cap = math.max(1, math.floor((displayHeight_ or 1080) * 0.5 / rowHeight))
-    local visible = math.max(1, math.min(count, cap))
-    return {
-        rowHeight = rowHeight,
-        visibleRows = visible,
-        scrolls = count > cap,
-        height = rowHeight * visible + 4,
-        scale = scale,
-    }
-end
-
-function ReportWindow.barSegments(width, shares, gap)
-    local segments = {}
-    for _, item in ipairs(shares or {}) do
-        local w = math.floor((item.share or 0) * width)
-        if w >= 1 then segments[#segments + 1] = { id = item.id, color = item.color, width = w } end
-    end
-    local gaps = math.max(0, #segments - 1) * gap
-    local used = gaps
-    for _, segment in ipairs(segments) do used = used + segment.width end
-    while used > width and #segments > 0 do
-        local last = segments[#segments]
-        local trimmed = last.width - (used - width)
-        if trimmed >= 1 then
-            last.width = trimmed
-            used = width
-        else
-            used = used - last.width
-            if #segments > 1 then used = used - gap end
-            table.remove(segments)
-        end
-    end
-    local x = 0
-    for index, segment in ipairs(segments) do
-        segment.x = x
-        x = x + segment.width
-        if index < #segments then x = x + gap end
-    end
-    return { segments = segments, track = { x = x, width = math.max(0, width - x) } }
-end
-
-function ReportWindow.historyColumns(width, scale, scrolls)
-    local m = Theme.metrics
-    local buttonWidth = width - (scrolls and m.scrollbarWidth or 0)
-    local inner = buttonWidth - m.historyPadding * 2
-    local time = math.floor(m.historyTimeWidth * scale + 0.5)
-    local stars = math.floor(m.historyStarsWidth * scale + 0.5)
-    local rest = inner - time - stars - m.historyGap * 3
-    local weapons = math.floor(rest * m.historyWeaponShare)
-    local x = m.historyPadding
-    local columns = { buttonWidth = buttonWidth }
-    columns.time = { x = x, width = time }
-    x = x + time + m.historyGap
-    columns.weapons = { x = x, width = weapons }
-    x = x + weapons + m.historyGap
-    columns.stars = { x = x, width = stars }
-    x = x + stars + m.historyGap
-    columns.monsters = { x = x, width = rest - weapons }
-    return columns
-end
-
 function ReportWindow.statTiles(snapshot)
     local stats = snapshot.stats or {}
     local tiles = {}
@@ -294,43 +222,6 @@ function ReportWindow.statTiles(snapshot)
         tiles[#tiles + 1] = { label = L(key), value = Format.decimal(stats.avgAttributeHitzone, 1) }
     end
     return tiles
-end
-
-function ReportWindow.tileLayout(widths, totalWidth, minGap)
-    local layout = {}
-    local count = #widths
-    if count == 0 then return layout end
-    local maxWidth = 0
-    for _, width in ipairs(widths) do
-        if width > maxWidth then maxWidth = width end
-    end
-    local columns = count
-    if maxWidth + minGap > math.floor(totalWidth / count) then
-        columns = math.max(1, math.floor(totalWidth / (maxWidth + minGap)))
-    end
-    local columnWidth = math.floor(totalWidth / columns)
-    for index = 1, count do
-        layout[index] = { row = (index - 1) // columns + 1, x = columnWidth * ((index - 1) % columns) }
-    end
-    return layout
-end
-
-function ReportWindow.wrapBreaks(widths, totalWidth, gap)
-    local breaks = {}
-    local used = 0
-    for index, width in ipairs(widths) do
-        if index == 1 then
-            breaks[index] = false
-            used = width
-        elseif used + gap + width > totalWidth then
-            breaks[index] = true
-            used = width
-        else
-            breaks[index] = false
-            used = used + gap + width
-        end
-    end
-    return breaks
 end
 
 local function resultLabel(result)
@@ -507,7 +398,7 @@ local function drawStats(snapshot, ctx)
         for index = 1, #tiles do widths[index] = 0 end
         minGap = 0
     end
-    local layout = ReportWindow.tileLayout(widths, ctx.width, minGap)
+    local layout = ReportLayout.tileLayout(widths, ctx.width, minGap)
     local origin = imgui.get_cursor_pos()
     local first = 1
     while first <= #tiles do
@@ -543,7 +434,7 @@ local function drawDamageBar(damage, ctx)
         local value = damage[kind.field] or 0
         shares[index] = { id = kind.id, color = Theme.colors[kind.color], share = total > 0 and value / total or 0 }
     end
-    local layout = ReportWindow.barSegments(ctx.width, shares, m.barGap)
+    local layout = ReportLayout.barSegments(ctx.width, shares, m.barGap)
     local screen = imgui.get_cursor_screen_pos()
     imgui.invisible_button("##damagebar", { ctx.width, m.barHeight })
     local radius = m.barHeight / 2
@@ -604,7 +495,7 @@ local function drawSkillDamage(snapshot, ctx)
             measured = false
         end
     end
-    local breaks = measured and ReportWindow.wrapBreaks(widths, ctx.width, Theme.metrics.procGap) or {}
+    local breaks = measured and ReportLayout.wrapBreaks(widths, ctx.width, Theme.metrics.procGap) or {}
     for index, item in ipairs(items) do
         if index > 1 and not breaks[index] then sameLineGap(Theme.metrics.procGap) end
         labeledValue(ctx, item.name, item.value)
@@ -622,7 +513,7 @@ end
 local function drawBody(snapshot, ctx)
     local columnWidth = math.floor((ctx.width - Theme.metrics.columnGap) / 2)
     local skills, motions = snapshot.skills or {}, snapshot.motions or {}
-    local layout = ReportWindow.rowAreaLayout(math.max(#skills, #motions), displayHeight(), ctx.scale)
+    local layout = ReportLayout.rowAreaLayout(math.max(#skills, #motions), displayHeight(), ctx.scale)
     imgui.begin_group()
     local ok, err = pcall(function()
         sectionLabel("skills", L("skills_header"), ctx, columnWidth)
@@ -877,8 +768,8 @@ local function drawHistory(ctx)
     end
     drawHistoryChips(ctx)
     local m = Theme.metrics
-    local layout = ReportWindow.rowAreaLayout(#state.filteredEntries, displayHeight(), ctx.scale, m.historyRowHeight)
-    local columns = ReportWindow.historyColumns(ctx.width, ctx.scale, layout.scrolls)
+    local layout = ReportLayout.rowAreaLayout(#state.filteredEntries, displayHeight(), ctx.scale, m.historyRowHeight)
+    local columns = ReportLayout.historyColumns(ctx.width, ctx.scale, layout.scrolls)
     local token = Theme.pushListRows()
     local okBegin, beginErr = pcall(imgui.begin_child_window, "history##rows", { ctx.width, layout.height }, false, 0)
     if not okBegin then
@@ -1141,7 +1032,7 @@ function ReportWindow.draw()
     local sizes = { header = Fonts.size("header", size), body = size, meta = Fonts.size("meta", size), small = Fonts.size("small", size) }
     pcall(function()
         local display = imgui.get_display_size()
-        local place = ReportWindow.placement(settings, display)
+        local place = ReportLayout.placement(settings, display)
         if not state.placementLogged then
             state.placementLogged = true
             Log.debug(string.format("window placement centered=%s x=%s y=%s settings=%s,%s display=%s,%s",
