@@ -10,8 +10,8 @@ local HistoryFilter = require("MyHuntReport.HistoryFilter")
 local HistoryFilterWindow = require("MyHuntReport.HistoryFilterWindow")
 local Game = require("MyHuntReport.Game")
 local Hdr = require("MyHuntReport.Hdr")
-local Version = require("MyHuntReport.Version")
 local ReportLayout = require("MyHuntReport.ReportLayout")
+local ReportText = require("MyHuntReport.ReportText")
 
 local ReportWindow = {}
 
@@ -21,15 +21,20 @@ ReportWindow.barSegments = ReportLayout.barSegments
 ReportWindow.historyColumns = ReportLayout.historyColumns
 ReportWindow.tileLayout = ReportLayout.tileLayout
 ReportWindow.wrapBreaks = ReportLayout.wrapBreaks
+ReportWindow.statTiles = ReportText.statTiles
+ReportWindow.resultText = ReportText.resultText
+ReportWindow.outcomeText = ReportText.outcomeText
+ReportWindow.headerWeaponText = ReportText.headerWeaponText
+ReportWindow.metaText = ReportText.metaText
+ReportWindow.versionText = ReportText.versionText
+ReportWindow.historyRow = ReportText.historyRow
+ReportWindow.shareText = ReportText.shareText
+ReportWindow.skillDamageName = ReportText.skillDamageName
 
 local WINDOW_ID = "##MyHuntReportWindow"
 local COND_APPEARING = 8
 local REFRESH_INTERVAL = 0.25
 local POSITION_SETTLE_SECONDS = 1.0
-local ELEMENT_LABELS = {
-    [1] = "avg_hitzone_fire", [2] = "avg_hitzone_water", [3] = "avg_hitzone_thunder",
-    [4] = "avg_hitzone_ice", [5] = "avg_hitzone_dragon",
-}
 
 local state = {
     open = false,
@@ -201,120 +206,6 @@ local function displayHeight()
     return 1080
 end
 
-function ReportWindow.statTiles(snapshot)
-    local stats = snapshot.stats or {}
-    local tiles = {}
-    if not (snapshot.quest and snapshot.quest.result == "training") then
-        tiles[#tiles + 1] = { label = L("combat_dps"), value = Format.decimal(stats.combatDps, 1) }
-    end
-    tiles[#tiles + 1] = { label = L("crit_rate"), value = Format.rate(stats.critRate) }
-    if type(stats.negativeCritRate) == "number" and stats.negativeCritRate > 0 then
-        tiles[#tiles + 1] = { label = L("negative_crit_rate"), value = Format.rate(stats.negativeCritRate) }
-    end
-    tiles[#tiles + 1] = { label = L("avg_attack"), value = Format.decimal(stats.avgAttack, 1) }
-    tiles[#tiles + 1] = { label = L("avg_hitzone"), value = Format.decimal(stats.avgHitzone, 1) }
-    if stats.attributeHitzones then
-        for _, entry in ipairs(stats.attributeHitzones) do
-            tiles[#tiles + 1] = { label = L(ELEMENT_LABELS[entry.attribute] or "avg_attribute_hitzone"), value = Format.decimal(entry.avgHitzone, 1) }
-        end
-    elseif (stats.attribute or 0) > 0 then
-        local key = ELEMENT_LABELS[stats.attribute] or "avg_attribute_hitzone"
-        tiles[#tiles + 1] = { label = L(key), value = Format.decimal(stats.avgAttributeHitzone, 1) }
-    end
-    return tiles
-end
-
-local function resultLabel(result)
-    if result == "training" then return L("result_training"), Theme.colors.accent end
-    return L("result_quest"), Theme.colors.accent
-end
-
-function ReportWindow.resultText(quest)
-    quest = quest or {}
-    local label, color = resultLabel(quest.result)
-    local stars = ""
-    if quest.result ~= "training" and type(quest.level) == "number" and quest.level > 0 then
-        stars = "★" .. quest.level
-        label = label .. " " .. stars
-    end
-    return label, color, stars
-end
-
-local OUTCOMES = {
-    clear = { "result_clear", "success" },
-    fail = { "result_fail", "warning" },
-    abandon = { "result_abandon", "textMuted" },
-}
-
-function ReportWindow.outcomeText(quest)
-    local outcome = type(quest) == "table" and OUTCOMES[quest.result]
-    if not outcome then return nil end
-    return L(outcome[1]), Theme.colors[outcome[2]]
-end
-
-local function weaponNames(quest)
-    quest = quest or {}
-    local names = {}
-    for _, weapon in ipairs(type(quest.weapons) == "table" and quest.weapons or {}) do
-        if type(weapon.name) == "string" and #weapon.name > 0 then names[#names + 1] = weapon.name end
-    end
-    if #names > 0 then return table.concat(names, ", ") end
-    if type(quest.weapon) == "table" and type(quest.weapon.name) == "string" and #quest.weapon.name > 0 then
-        return quest.weapon.name
-    end
-    return L("weapon_unknown")
-end
-
-local function monsterNames(list)
-    local names = {}
-    for _, monster in ipairs(type(list) == "table" and list or {}) do
-        names[#names + 1] = tostring(monster.name or monster.id)
-    end
-    return table.concat(names, ", ")
-end
-
-function ReportWindow.headerWeaponText(quest)
-    return weaponNames(quest)
-end
-
-function ReportWindow.metaText(snapshot)
-    snapshot = snapshot or {}
-    local quest = snapshot.quest or {}
-    local time = Format.duration(quest.elapsedSeconds or 0)
-    local monsters = monsterNames(snapshot.monsters)
-    if monsters == "" then return time end
-    return monsters .. " · " .. time
-end
-
-function ReportWindow.versionText(snapshot)
-    local version = type(snapshot) == "table" and snapshot.modVersion
-    if type(version) ~= "string" or version == "" then
-        version = string.format(L("mod_version_legacy"), Version.LAST_UNRECORDED)
-    end
-    return string.format(L("mod_version"), version)
-end
-
-function ReportWindow.historyRow(entry)
-    entry = entry or {}
-    local quest = entry.quest or {}
-    local _, _, stars = ReportWindow.resultText(quest)
-    return {
-        time = Format.clock(quest.endedAt or 0),
-        stars = stars,
-        weapons = weaponNames(quest),
-        monsters = monsterNames(entry.monsters),
-    }
-end
-
-function ReportWindow.shareText(value, total)
-    if type(value) ~= "number" then return "-" end
-    return Format.percent(total > 0 and value / total or 0)
-end
-
-function ReportWindow.skillDamageName(kind)
-    return L("skill_damage_" .. tostring(kind))
-end
-
 local function drawRows(idPrefix, rows, columnWidth, layout)
     local token = Theme.pushRows()
     local okBegin, beginErr = pcall(imgui.begin_child_window, idPrefix .. "##rows", { columnWidth, layout.height }, false, 0)
@@ -361,24 +252,24 @@ end
 
 local function drawHeader(snapshot, ctx)
     local quest = snapshot.quest or {}
-    textIn(ctx.fonts.header, ReportWindow.headerWeaponText(quest))
-    local label, color = ReportWindow.resultText(quest)
+    textIn(ctx.fonts.header, ReportText.headerWeaponText(quest))
+    local label, color = ReportText.resultText(quest)
     headerBodyText(ctx, label, color)
-    local outcome, outcomeColor = ReportWindow.outcomeText(quest)
+    local outcome, outcomeColor = ReportText.outcomeText(quest)
     if outcome then headerBodyText(ctx, outcome, outcomeColor) end
 end
 
 local function drawMeta(snapshot, ctx)
-    textIn(ctx.fonts.meta, ReportWindow.metaText(snapshot), Theme.colors.textMuted)
+    textIn(ctx.fonts.meta, ReportText.metaText(snapshot), Theme.colors.textMuted)
 end
 
 local function drawVersion(snapshot, ctx)
-    textIn(ctx.fonts.meta, ReportWindow.versionText(snapshot), Theme.colors.textMuted)
+    textIn(ctx.fonts.meta, ReportText.versionText(snapshot), Theme.colors.textMuted)
 end
 
 local function drawStats(snapshot, ctx)
     verticalGap(Theme.metrics.sectionGap)
-    local tiles = ReportWindow.statTiles(snapshot)
+    local tiles = ReportText.statTiles(snapshot)
     local widths, measured = {}, true
     for index, tile in ipairs(tiles) do
         local pushed = Fonts.push(ctx.fonts.small)
@@ -463,7 +354,7 @@ local function drawLegend(damage, ctx)
         imgui.invisible_button("##dot" .. kind.id, { m.dotRadius * 2, ctx.sizes.body })
         Draw.dot("dot" .. kind.id, screen.x + m.dotRadius, screen.y + ctx.sizes.body / 2, m.dotRadius, Theme.colors[kind.color])
         imgui.set_cursor_pos(Vector2f.new(origin.x + m.dotRadius * 2 + 8, origin.y))
-        labeledValue(ctx, L(kind.key), ReportWindow.shareText(damage[kind.field], total))
+        labeledValue(ctx, L(kind.key), ReportText.shareText(damage[kind.field], total))
     end
 end
 
@@ -474,7 +365,7 @@ local function drawSkillDamage(snapshot, ctx)
     end
     if type(snapshot.skillDamage) == "table" then
         for _, row in ipairs(snapshot.skillDamage) do
-            items[#items + 1] = { name = ReportWindow.skillDamageName(row.kind), value = Format.percent(row.share) }
+            items[#items + 1] = { name = ReportText.skillDamageName(row.kind), value = Format.percent(row.share) }
         end
     end
     local palico = snapshot.palico
@@ -791,7 +682,7 @@ local function drawHistory(ctx)
                     state.fromHistory = true
                 end
             end
-            local row = ReportWindow.historyRow(entry)
+            local row = ReportText.historyRow(entry)
             local bodyY = top.y + math.floor((layout.rowHeight - ctx.sizes.body) / 2)
             local metaY = top.y + math.floor((layout.rowHeight - ctx.sizes.meta) / 2)
             imgui.set_cursor_pos(Vector2f.new(top.x + columns.time.x, metaY))

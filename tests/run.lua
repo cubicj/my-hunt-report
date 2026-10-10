@@ -32,6 +32,7 @@ local SUITES = {
     "names_test",
     "pulse_test",
     "reportlayout_test",
+    "reporttext_test",
     "reportwindow_test",
     "hovercursor_test",
     "mousenav_test",
