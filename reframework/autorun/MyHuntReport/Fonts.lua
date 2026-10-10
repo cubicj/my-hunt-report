@@ -79,9 +79,20 @@ function Fonts.mode()
 end
 
 local function roleFont(role)
+    local descriptors = {}
     return function(base)
+        local cached = descriptors[base]
+        if cached then return cached end
         local size = Fonts.size(role, base)
-        return { handle = load(FILES[ROLES[role].file], size), size = size }
+        local path = FILES[ROLES[role].file]
+        local desc = {
+            handle = load(path, size),
+            size = size,
+            fontContext = "font:" .. path .. ":" .. size,
+            sizeContext = "size:" .. size,
+        }
+        descriptors[base] = desc
+        return desc
     end
 end
 

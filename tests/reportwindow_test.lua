@@ -2941,4 +2941,76 @@ function T.reportMeasuresUnchangedRowTextOnceAcrossFrames()
     end)
 end
 
+local function countReportText(callback)
+    local ReportText = require("MyHuntReport.ReportText")
+    local statTiles = ReportText.statTiles
+    local calls = 0
+    ReportText.statTiles = function(value)
+        calls = calls + 1
+        return statTiles(value)
+    end
+    local ok, err = pcall(callback, function() return calls end)
+    ReportText.statTiles = statTiles
+    if not ok then error(err, 0) end
+end
+
+function T.reportTextIsBuiltOncePerSnapshotAcrossFrames()
+    countReportText(function(calls)
+        withNavigation(function(ui)
+            ReportWindow.show(snapshot("clear"))
+            ui.draw()
+            ui.draw()
+            ui.draw()
+            assert(calls() == 1, calls())
+        end)
+    end)
+end
+
+function T.liveRefreshRebuildsReportTextEvenForTheSameObject()
+    local Game = require("MyHuntReport.Game")
+    local uptime = Game.uptime
+    local now = 10
+    local ok, err = pcall(countReportText, function(calls)
+        withNavigation(function(ui)
+            Game.uptime = function() return now end
+            local live = snapshot("running")
+            ReportWindow.setSnapshotProvider(function() return live end)
+            ReportWindow.show(live)
+            ui.draw()
+            assert(calls() == 1, calls())
+            ui.draw()
+            assert(calls() == 1, calls())
+            now = 10.5
+            ui.draw()
+            assert(calls() == 2, calls())
+        end)
+    end)
+    Game.uptime = uptime
+    ReportWindow.setSnapshotProvider(nil)
+    if not ok then error(err, 0) end
+end
+
+function T.mutatedResultSnapshotRedrawsItsMetaAfterNotification()
+    withNavigation(function(ui)
+        Locale.resolve("en")
+        local shown = snapshot("unknown")
+        shown.quest.elapsedSeconds = 10
+        local function hasText(value)
+            for _, event in ipairs(ui.events) do
+                if event.kind == "text" and event.value == value then return true end
+            end
+            return false
+        end
+        ReportWindow.show(shown)
+        ui.draw()
+        assert(hasText("0:10"))
+        shown.quest.elapsedSeconds = 754
+        ui.draw()
+        assert(hasText("0:10") and not hasText("12:34"))
+        ReportWindow.onSnapshotMutated()
+        ui.draw()
+        assert(hasText("12:34") and not hasText("0:10"))
+    end)
+end
+
 return T

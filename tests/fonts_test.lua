@@ -139,4 +139,18 @@ function T.fontsContextIgnoresFailedAndEmptyPushes()
     assert(Fonts.context() == "base")
 end
 
+function T.fontsRoleDescriptorsAreSharedAndNameTheirContext()
+    local Fonts, calls = loadFontsWith()
+    assert(Fonts.body(18) == Fonts.body(18) and Fonts.header(18) == Fonts.header(18))
+    assert(Fonts.body(18) ~= Fonts.meta(18) and Fonts.body(18) ~= Fonts.body(20))
+    local token = Fonts.push(Fonts.body(18))
+    assert(Fonts.context() == "font:MyHuntReport/Pretendard-Regular.otf:18", Fonts.context())
+    Fonts.pop(token)
+    Fonts.setMode(false)
+    token = Fonts.push(Fonts.header(18))
+    assert(Fonts.context() == "base+size:26", Fonts.context())
+    Fonts.pop(token)
+    assert(table.concat(calls, ",") == "push_font:7,pop_font,push_font_size:26,pop_font_size", table.concat(calls, ","))
+end
+
 return T

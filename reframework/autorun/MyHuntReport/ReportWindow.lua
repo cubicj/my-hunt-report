@@ -73,11 +73,30 @@ local function L(key)
 end
 
 local historyRows = {}
+local reportText = nil
+local frameFonts = nil
 local presented = {}
+
+local function dropReportText()
+    reportText = nil
+end
 
 local function invalidatePresentation()
     historyRows = {}
+    reportText = nil
+    frameFonts = nil
     UiText.resetCache()
+end
+
+local function fontsFor(size)
+    if frameFonts == nil or frameFonts.size ~= size then
+        frameFonts = {
+            size = size,
+            fonts = { header = Fonts.header(size), body = Fonts.body(size), meta = Fonts.meta(size), small = Fonts.small(size) },
+            sizes = { header = Fonts.size("header", size), body = size, meta = Fonts.size("meta", size), small = Fonts.size("small", size) },
+        }
+    end
+    return frameFonts.fonts, frameFonts.sizes
 end
 
 local function syncPresentation(textKey, size, mode, displayX, displayY)
@@ -187,7 +206,7 @@ local function displayHeight()
     return 1080
 end
 
-local function drawRows(idPrefix, rows, columnWidth, layout)
+local function drawRows(idPrefix, rows, percents, columnWidth, layout)
     local token = Theme.pushRows()
     local okBegin, beginErr = pcall(imgui.begin_child_window, idPrefix .. "##rows", { columnWidth, layout.height }, false, 0)
     if not okBegin then
@@ -206,8 +225,7 @@ local function drawRows(idPrefix, rows, columnWidth, layout)
                         columnWidth - (layout.scrolls and Theme.metrics.scrollbarWidth or 0), layout.rowHeight,
                         Theme.colors.rowStripe, Theme.metrics.stripeRounding, Draw.CORNERS.all)
                 end
-                local percent = Format.percent(row.share)
-                if row.valueKind == "hp" then percent = "HP " .. percent end
+                local percent = percents[index]
                 local w = UiText.width(percent)
                 local nameWidth = rightEdge - math.max(percentWidth, w or 0) - 8
                 imgui.text(UiText.clip(tostring(row.name), nameWidth))
@@ -231,26 +249,26 @@ local function headerBodyText(ctx, text, color)
     UiText.inFont(ctx.fonts.body, text, color)
 end
 
-local function drawHeader(snapshot, ctx)
+local function drawHeader(snapshot, ctx, text)
     local quest = snapshot.quest or {}
-    UiText.inFont(ctx.fonts.header, ReportText.headerWeaponText(quest))
+    UiText.inFont(ctx.fonts.header, text.weapon)
     local label, color = ReportText.resultText(quest)
     headerBodyText(ctx, label, color)
     local outcome, outcomeColor = ReportText.outcomeText(quest)
     if outcome then headerBodyText(ctx, outcome, outcomeColor) end
 end
 
-local function drawMeta(snapshot, ctx)
-    UiText.inFont(ctx.fonts.meta, ReportText.metaText(snapshot), Theme.colors.textMuted)
+local function drawMeta(ctx, text)
+    UiText.inFont(ctx.fonts.meta, text.meta, Theme.colors.textMuted)
 end
 
-local function drawVersion(snapshot, ctx)
-    UiText.inFont(ctx.fonts.meta, ReportText.versionText(snapshot), Theme.colors.textMuted)
+local function drawVersion(ctx, text)
+    UiText.inFont(ctx.fonts.meta, text.version, Theme.colors.textMuted)
 end
 
-local function drawStats(snapshot, ctx)
+local function drawStats(ctx, text)
     verticalGap(Theme.metrics.sectionGap)
-    local tiles = ReportText.statTiles(snapshot)
+    local tiles = text.tiles
     local widths, measured = {}, true
     for index, tile in ipairs(tiles) do
         local pushed = Fonts.push(ctx.fonts.small)
@@ -298,6 +316,53 @@ local DAMAGE_TYPES = {
     { id = "stat", key = "status", field = "status", color = "status" },
 }
 
+local function rowPercents(rows)
+    local percents = {}
+    for index, row in ipairs(rows) do
+        local percent = Format.percent(row.share)
+        if row.valueKind == "hp" then percent = "HP " .. percent end
+        percents[index] = percent
+    end
+    return percents
+end
+
+local function skillDamageItems(snapshot)
+    local items = {}
+    for _, row in ipairs(snapshot.sources or {}) do
+        items[#items + 1] = { name = row.name, value = Format.percent(row.share) }
+    end
+    if type(snapshot.skillDamage) == "table" then
+        for _, row in ipairs(snapshot.skillDamage) do
+            items[#items + 1] = { name = ReportText.skillDamageName(row.kind), value = Format.percent(row.share) }
+        end
+    end
+    local palico = snapshot.palico
+    if type(palico) == "table" and type(palico.share) == "number" and palico.share > 0 then
+        items[#items + 1] = { name = L("palico_share"), value = Format.percent(palico.share) }
+    end
+    return items
+end
+
+local function presentation(snapshot)
+    if reportText and reportText.snapshot == snapshot then return reportText end
+    local damage = snapshot.damage or {}
+    local total = damage.total or 0
+    local shares = {}
+    for index, kind in ipairs(DAMAGE_TYPES) do shares[index] = ReportText.shareText(damage[kind.field], total) end
+    reportText = {
+        snapshot = snapshot,
+        weapon = ReportText.headerWeaponText(snapshot.quest or {}),
+        meta = ReportText.metaText(snapshot),
+        version = ReportText.versionText(snapshot),
+        tiles = ReportText.statTiles(snapshot),
+        shares = shares,
+        items = skillDamageItems(snapshot),
+        skills = rowPercents(snapshot.skills or {}),
+        motions = rowPercents(snapshot.motions or {}),
+    }
+    return reportText
+end
+
 local function drawDamageBar(damage, ctx)
     local m = Theme.metrics
     local total = damage.total or 0
@@ -325,9 +390,8 @@ local function drawDamageBar(damage, ctx)
     end
 end
 
-local function drawLegend(damage, ctx)
+local function drawLegend(ctx, text)
     local m = Theme.metrics
-    local total = damage.total or 0
     for index, kind in ipairs(DAMAGE_TYPES) do
         if index > 1 then sameLineGap(m.legendGap) end
         local origin = imgui.get_cursor_pos()
@@ -335,24 +399,12 @@ local function drawLegend(damage, ctx)
         imgui.invisible_button("##dot" .. kind.id, { m.dotRadius * 2, ctx.sizes.body })
         Draw.dot("dot" .. kind.id, screen.x + m.dotRadius, screen.y + ctx.sizes.body / 2, m.dotRadius, Theme.colors[kind.color])
         imgui.set_cursor_pos(Vector2f.new(origin.x + m.dotRadius * 2 + 8, origin.y))
-        labeledValue(ctx, L(kind.key), ReportText.shareText(damage[kind.field], total))
+        labeledValue(ctx, L(kind.key), text.shares[index])
     end
 end
 
-local function drawSkillDamage(snapshot, ctx)
-    local items, widths, measured = {}, {}, true
-    for _, row in ipairs(snapshot.sources or {}) do
-        items[#items + 1] = { name = row.name, value = Format.percent(row.share) }
-    end
-    if type(snapshot.skillDamage) == "table" then
-        for _, row in ipairs(snapshot.skillDamage) do
-            items[#items + 1] = { name = ReportText.skillDamageName(row.kind), value = Format.percent(row.share) }
-        end
-    end
-    local palico = snapshot.palico
-    if type(palico) == "table" and type(palico.share) == "number" and palico.share > 0 then
-        items[#items + 1] = { name = L("palico_share"), value = Format.percent(palico.share) }
-    end
+local function drawSkillDamage(ctx, text)
+    local items, widths, measured = text.items, {}, true
     if #items == 0 then return end
     for index, item in ipairs(items) do
         local pushed = Fonts.push(ctx.fonts.body)
@@ -374,22 +426,22 @@ local function drawSkillDamage(snapshot, ctx)
     end
 end
 
-local function drawDamage(snapshot, ctx)
+local function drawDamage(snapshot, ctx, text)
     local damage = snapshot.damage or {}
     sectionLabel("damage", L("damage_types"), ctx)
     drawDamageBar(damage, ctx)
-    drawLegend(damage, ctx)
-    drawSkillDamage(snapshot, ctx)
+    drawLegend(ctx, text)
+    drawSkillDamage(ctx, text)
 end
 
-local function drawBody(snapshot, ctx)
+local function drawBody(snapshot, ctx, text)
     local columnWidth = math.floor((ctx.width - Theme.metrics.columnGap) / 2)
     local skills, motions = snapshot.skills or {}, snapshot.motions or {}
     local layout = ReportLayout.rowAreaLayout(math.max(#skills, #motions), displayHeight(), ctx.scale)
     imgui.begin_group()
     local ok, err = pcall(function()
         sectionLabel("skills", L("skills_header"), ctx, columnWidth)
-        drawRows("skill", skills, columnWidth, layout)
+        drawRows("skill", skills, text.skills, columnWidth, layout)
     end)
     imgui.end_group()
     if not ok then error(err, 0) end
@@ -398,7 +450,7 @@ local function drawBody(snapshot, ctx)
     imgui.begin_group()
     ok, err = pcall(function()
         sectionLabel("motions", L("motions_header"), ctx, columnWidth)
-        drawRows("motion", motions, columnWidth, layout)
+        drawRows("motion", motions, text.motions, columnWidth, layout)
     end)
     imgui.end_group()
     if not ok then error(err, 0) end
@@ -702,12 +754,13 @@ local function drawContents(settings, fonts, sizes)
         drawFooter(snapshot, ctx)
         return
     end
-    drawHeader(snapshot, ctx)
-    drawMeta(snapshot, ctx)
-    drawVersion(snapshot, ctx)
-    drawStats(snapshot, ctx)
-    drawDamage(snapshot, ctx)
-    drawBody(snapshot, ctx)
+    local text = presentation(snapshot)
+    drawHeader(snapshot, ctx, text)
+    drawMeta(ctx, text)
+    drawVersion(ctx, text)
+    drawStats(ctx, text)
+    drawDamage(snapshot, ctx, text)
+    drawBody(snapshot, ctx, text)
     drawFooter(snapshot, ctx)
 end
 
@@ -726,7 +779,10 @@ function ReportWindow.refreshLive(now)
         Log.error("snapshot provider failed: " .. tostring(produced), "report:provider")
         return false
     end
-    if produced then state.snapshot = produced end
+    if produced then
+        state.snapshot = produced
+        dropReportText()
+    end
     return true
 end
 
@@ -760,7 +816,12 @@ function ReportWindow.replaceLiveView(snapshot)
     state.snapshot = snapshot
     state.notSaved = false
     state.liveRefreshAt = nil
+    dropReportText()
     return true
+end
+
+function ReportWindow.onSnapshotMutated()
+    invalidatePresentation()
 end
 
 local function enterHistory()
@@ -927,8 +988,7 @@ function ReportWindow.draw()
         end
     end)
     syncPresentation(refreshedKey, size, Fonts.mode(), displayX, displayY)
-    local fonts = { header = Fonts.header(size), body = Fonts.body(size), meta = Fonts.meta(size), small = Fonts.small(size) }
-    local sizes = { header = Fonts.size("header", size), body = size, meta = Fonts.size("meta", size), small = Fonts.size("small", size) }
+    local fonts, sizes = fontsFor(size)
     local token = Theme.pushWindow()
     local okBegin, opened = pcall(imgui.begin_window, WINDOW_ID, state.open, Theme.WINDOW_FLAGS)
     if okBegin then

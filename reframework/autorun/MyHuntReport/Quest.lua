@@ -190,6 +190,7 @@ function Quest.handleResultInfo(fields, now)
     end
     snapshot.quest.playerCount = fields.joinMemberNum
     Session.relabel(snapshot, Names.resolve)
+    ReportWindow.onSnapshotMutated()
     if Session.hasData() then
         local ok = History.append(snapshot)
         ReportWindow.setNotSaved(not ok)
