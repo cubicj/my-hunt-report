@@ -3,10 +3,12 @@ local UiText = require("MyHuntReport.UiText")
 local T = {}
 
 local function withImgui(overrides, callback)
+    UiText.resetCache()
     local original = imgui
     imgui = setmetatable(overrides, { __index = original })
     local ok, err = pcall(callback)
     imgui = original
+    UiText.resetCache()
     if not ok then error(err, 0) end
 end
 
@@ -77,6 +79,63 @@ function T.clipReturnsTheOriginalTextWhenAMeasurementFails()
     end }, function()
         assert(UiText.clip("가나다", 30) == "가나다")
         assert(calls == 2)
+    end)
+end
+
+function T.widthIsMeasuredOncePerTextAndFontContext()
+    local Fonts = require("MyHuntReport.Fonts")
+    local calls = 0
+    withImgui({ calc_text_size = function(text) calls = calls + 1 return { x = #text * 10, y = 18 } end }, function()
+        assert(UiText.width("abc") == 30 and UiText.width("abc") == 30 and calls == 1, calls)
+        local token = Fonts.push({ size = 22 })
+        assert(token == "size")
+        assert(UiText.width("abc") == 30 and UiText.width("abc") == 30 and calls == 2, calls)
+        Fonts.pop(token)
+        assert(UiText.width("abc") == 30 and calls == 2, calls)
+        UiText.resetCache()
+        assert(UiText.width("abc") == 30 and calls == 3, calls)
+    end)
+end
+
+function T.failedMeasurementsAreNeverCached()
+    local calls, fail = 0, true
+    withImgui({ calc_text_size = function()
+        calls = calls + 1
+        if fail then return nil end
+        return { x = 40, y = 18 }
+    end }, function()
+        assert(UiText.width("abc") == nil and UiText.width("abc") == nil and calls == 2, calls)
+        assert(UiText.clip("abc", 10) == "abc" and calls == 3, calls)
+        fail = false
+        assert(UiText.width("abc") == 40 and calls == 4, calls)
+        assert(UiText.clip("abc", 50) == "abc" and calls == 5, calls)
+        assert(UiText.clip("abc", 50) == "abc" and calls == 5, calls)
+    end)
+end
+
+function T.clippedTextIsCachedPerWidthAndFontContext()
+    local Fonts = require("MyHuntReport.Fonts")
+    local calls = 0
+    withImgui({ calc_text_size = function(text) calls = calls + 1 return byCharacters(text) end }, function()
+        assert(UiText.clip("가나다라", 35) == "가나…")
+        local measured = calls
+        assert(UiText.clip("가나다라", 35) == "가나…" and calls == measured)
+        assert(UiText.clip("가나다라", 25) == "가…" and calls > measured)
+        measured = calls
+        local token = Fonts.push({ size = 22 })
+        assert(UiText.clip("가나다라", 35) == "가나…" and calls > measured)
+        Fonts.pop(token)
+    end)
+end
+
+function T.measurementCacheIsBounded()
+    local calls = 0
+    withImgui({ calc_text_size = function() calls = calls + 1 return { x = 1, y = 18 } end }, function()
+        UiText.width("first")
+        for index = 1, 4096 do UiText.width("filler" .. index) end
+        local measured = calls
+        UiText.width("first")
+        assert(calls == measured + 1, calls)
     end)
 end
 

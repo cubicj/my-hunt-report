@@ -2920,4 +2920,25 @@ function T.historyRowCacheIsDroppedWhenFontSizeOrDisplayChanges()
     end)
 end
 
+function T.reportMeasuresUnchangedRowTextOnceAcrossFrames()
+    withNavigation(function(ui)
+        local measured = {}
+        imgui.calc_text_size = function(text)
+            measured[text] = (measured[text] or 0) + 1
+            return { x = #text * 8, y = 18 }
+        end
+        local shown = snapshot("clear")
+        shown.skills = { { name = "Agitator", share = 0.5 } }
+        ReportWindow.show(shown)
+        ui.draw()
+        ui.draw()
+        ui.draw()
+        assert(measured["Agitator"] == 1, tostring(measured["Agitator"]))
+        assert(measured["50.0%"] == 1, tostring(measured["50.0%"]))
+        ReportWindow.show(shown)
+        ui.draw()
+        assert(measured["Agitator"] == 2, tostring(measured["Agitator"]))
+    end)
+end
+
 return T

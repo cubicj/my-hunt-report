@@ -77,6 +77,7 @@ local presented = {}
 
 local function invalidatePresentation()
     historyRows = {}
+    UiText.resetCache()
 end
 
 local function syncPresentation(textKey, size, mode, displayX, displayY)

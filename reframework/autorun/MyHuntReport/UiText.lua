@@ -4,6 +4,9 @@ local Fonts = require("MyHuntReport.Fonts")
 local UiText = {}
 
 local ELLIPSIS = "…"
+local CACHE_LIMIT = 4096
+
+local widths, clips, cached = {}, {}, 0
 
 function UiText.colored(text, color)
     local pushed = pcall(imgui.push_style_color, 0, color)
@@ -25,8 +28,35 @@ local function measure(text)
     return nil
 end
 
+function UiText.resetCache()
+    widths, clips, cached = {}, {}, 0
+end
+
+local function reserve()
+    if cached >= CACHE_LIMIT then UiText.resetCache() end
+    cached = cached + 1
+end
+
+local function bucket(store, key)
+    local found = store[key]
+    if found == nil then
+        found = {}
+        store[key] = found
+    end
+    return found
+end
+
 function UiText.width(text)
-    return measure(text)
+    if type(text) ~= "string" then return measure(text) end
+    local context = Fonts.context()
+    local known = widths[context]
+    local width = known and known[text]
+    if width ~= nil then return width end
+    width = measure(text)
+    if width == nil then return nil end
+    reserve()
+    bucket(widths, context)[text] = width
+    return width
 end
 
 local function trimUtf8(text)
@@ -41,18 +71,34 @@ local function trimUtf8(text)
     return text:sub(1, cut - 1)
 end
 
-function UiText.clip(text, maxWidth)
+local function clipText(text, maxWidth)
     local width = measure(text)
-    if not width or width <= maxWidth then return text end
+    if not width then return text, false end
+    if width <= maxWidth then return text, true end
     local body = text
     while #body > 0 do
         body = trimUtf8(body)
         local candidate = body .. ELLIPSIS
         local w = measure(candidate)
-        if not w then return text end
-        if w <= maxWidth then return candidate end
+        if not w then return text, false end
+        if w <= maxWidth then return candidate, true end
     end
-    return ELLIPSIS
+    return ELLIPSIS, true
+end
+
+function UiText.clip(text, maxWidth)
+    if type(text) ~= "string" then return (clipText(text, maxWidth)) end
+    local context = Fonts.context()
+    local byContext = clips[context]
+    local byWidth = byContext and byContext[maxWidth]
+    local clipped = byWidth and byWidth[text]
+    if clipped ~= nil then return clipped end
+    local complete
+    clipped, complete = clipText(text, maxWidth)
+    if not complete then return clipped end
+    reserve()
+    bucket(bucket(clips, context), maxWidth)[text] = clipped
+    return clipped
 end
 
 return UiText
