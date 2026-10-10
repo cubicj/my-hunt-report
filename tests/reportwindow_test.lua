@@ -2838,4 +2838,86 @@ function T.historyFilterWindowClipsLongLabelsWithoutAClipCallback()
     if not ok then error(err, 0) end
 end
 
+local function countHistoryRows(callback)
+    local ReportText = require("MyHuntReport.ReportText")
+    local historyRow = ReportText.historyRow
+    local calls = 0
+    ReportText.historyRow = function(entry)
+        calls = calls + 1
+        return historyRow(entry)
+    end
+    local ok, err = pcall(callback, function() return calls end)
+    ReportText.historyRow = historyRow
+    if not ok then error(err, 0) end
+end
+
+function T.historyRowsAreFormattedOncePerEntryAcrossFrames()
+    countHistoryRows(function(calls)
+        withNavigation(function(ui)
+            ui.entries = { snapshot("clear"), snapshot("fail") }
+            ReportWindow.showHistory()
+            ui.draw()
+            assert(calls() == 2, calls())
+            ui.draw()
+            ui.draw()
+            assert(calls() == 2, calls())
+        end)
+    end)
+end
+
+function T.historyRowCacheIsDroppedOnLanguageReloadAndClear()
+    countHistoryRows(function(calls)
+        withNavigation(function(ui)
+            ui.entries = { snapshot("clear") }
+            ReportWindow.showHistory()
+            ui.draw()
+            assert(calls() == 1, calls())
+            ReportWindow.onLanguageChanged()
+            ui.draw()
+            assert(calls() == 2, calls())
+            ReportWindow.onHistoryCleared()
+            ui.draw()
+            assert(calls() == 3, calls())
+            Locale.resolve("en")
+            ui.draw()
+            assert(calls() == 4, calls())
+        end)
+    end)
+end
+
+function T.historyRowCacheIsDroppedWhenTheFilterChanges()
+    countHistoryRows(function(calls)
+        withHistoryFilters(function(ui)
+            ui.entries = { filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2) }
+            ui.openFilters()
+            local before = calls()
+            ui.draw()
+            assert(calls() == before, calls())
+            ui.check("weapons", 10, true)
+            ui.draw()
+            assert(calls() == before + 1, calls())
+        end)
+    end)
+end
+
+function T.historyRowCacheIsDroppedWhenFontSizeOrDisplayChanges()
+    countHistoryRows(function(calls)
+        withNavigation(function(ui)
+            local Settings = require("MyHuntReport.Settings")
+            ui.entries = { snapshot("clear") }
+            ReportWindow.showHistory()
+            ui.draw()
+            assert(calls() == 1, calls())
+            Settings.get().fontSize = 20
+            ui.draw()
+            assert(calls() == 2, calls())
+            imgui.get_display_size = function() return { x = 2560, y = 1440 } end
+            ui.draw()
+            assert(calls() == 3, calls())
+            ui.draw()
+            assert(calls() == 3, calls())
+        end)
+    end)
+end
+
 return T

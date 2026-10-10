@@ -72,6 +72,31 @@ local function L(key)
     return Locale.text(key)
 end
 
+local historyRows = {}
+local presented = {}
+
+local function invalidatePresentation()
+    historyRows = {}
+end
+
+local function syncPresentation(textKey, size, mode, displayX, displayY)
+    if presented.textKey == textKey and presented.size == size and presented.mode == mode
+        and presented.displayX == displayX and presented.displayY == displayY then
+        return
+    end
+    invalidatePresentation()
+    presented = { textKey = textKey, size = size, mode = mode, displayX = displayX, displayY = displayY }
+end
+
+local function historyRowFor(entry)
+    local row = historyRows[entry]
+    if row == nil then
+        row = ReportText.historyRow(entry)
+        historyRows[entry] = row
+    end
+    return row
+end
+
 local function moveCursor(dx, dy)
     local pos = imgui.get_cursor_pos()
     imgui.set_cursor_pos(Vector2f.new(pos.x + dx, pos.y + dy))
@@ -150,6 +175,7 @@ end
 local function close()
     state.filterOpen, state.filterBounds = false, nil
     clearForward()
+    invalidatePresentation()
     state.open = false
     ReportWindow.persistPosition()
 end
@@ -379,6 +405,7 @@ end
 
 local function returnFromHistory()
     state.filterOpen, state.filterBounds = false, nil
+    invalidatePresentation()
     if state.view == "history" then
         state.snapshot = state.liveSnapshot
         state.notSaved = state.liveNotSaved
@@ -515,6 +542,7 @@ local function filterName(label, id)
 end
 
 local function updateFilteredHistory(changed)
+    invalidatePresentation()
     state.filteredEntries = HistoryFilter.apply(state.entries, state.historySelection)
     state.historyActive = HistoryFilter.isActive(state.historySelection)
     state.historyChips = {}
@@ -631,12 +659,13 @@ local function drawHistory(ctx)
                 state.pendingAction = function()
                     clearForward()
                     state.filterOpen, state.filterBounds = false, nil
+                    invalidatePresentation()
                     state.snapshot = entry
                     state.view = "report"
                     state.fromHistory = true
                 end
             end
-            local row = ReportText.historyRow(entry)
+            local row = historyRowFor(entry)
             local bodyY = top.y + math.floor((layout.rowHeight - ctx.sizes.body) / 2)
             local metaY = top.y + math.floor((layout.rowHeight - ctx.sizes.meta) / 2)
             imgui.set_cursor_pos(Vector2f.new(top.x + columns.time.x, metaY))
@@ -703,6 +732,7 @@ end
 function ReportWindow.show(snapshot)
     state.filterOpen, state.filterBounds = false, nil
     clearForward()
+    invalidatePresentation()
     Locale.refresh()
     state.placementLogged = false
     state.positionSettledAt = nil
@@ -740,6 +770,7 @@ local function enterHistory()
     state.view = "history"
     state.fromHistory = false
     state.entries = nil
+    invalidatePresentation()
     state.open = true
 end
 
@@ -750,6 +781,7 @@ end
 
 function ReportWindow.onHistoryCleared()
     state.entries = nil
+    invalidatePresentation()
     clearForward()
 end
 
@@ -784,6 +816,7 @@ function ReportWindow.forward()
         if snapshot == nil then return false end
         state.forwardSnapshot = nil
         state.filterOpen, state.filterBounds = false, nil
+        invalidatePresentation()
         relabelSnapshot(snapshot)
         state.snapshot = snapshot
         state.view = "report"
@@ -818,6 +851,7 @@ function ReportWindow.onLanguageChanged()
     relabelSnapshot(state.liveSnapshot)
     for _, entry in ipairs(state.entries or {}) do relabelSnapshot(entry) end
     rebuildHistoryFilters()
+    invalidatePresentation()
     state.liveRefreshAt = nil
 end
 
@@ -869,14 +903,15 @@ function ReportWindow.draw()
     Theme.apply(Hdr.targetNits(settings.hdrCorrection))
     local textKey = Locale.textKey()
     Locale.refresh()
-    if Locale.textKey() ~= textKey then ReportWindow.onLanguageChanged() end
+    local refreshedKey = Locale.textKey()
+    if refreshedKey ~= textKey then ReportWindow.onLanguageChanged() end
     ReportWindow.refreshLive(Game.uptime())
     local size = settings.fontSize or 18
     Fonts.setMode(Locale.bundledFontCovers())
-    local fonts = { header = Fonts.header(size), body = Fonts.body(size), meta = Fonts.meta(size), small = Fonts.small(size) }
-    local sizes = { header = Fonts.size("header", size), body = size, meta = Fonts.size("meta", size), small = Fonts.size("small", size) }
+    local displayX, displayY
     pcall(function()
         local display = imgui.get_display_size()
+        displayX, displayY = display.x, display.y
         local place = ReportLayout.placement(settings, display)
         if not state.placementLogged then
             state.placementLogged = true
@@ -890,6 +925,9 @@ function ReportWindow.draw()
             imgui.set_next_window_pos({ place.x, place.y }, COND_APPEARING, { 0, 0 })
         end
     end)
+    syncPresentation(refreshedKey, size, Fonts.mode(), displayX, displayY)
+    local fonts = { header = Fonts.header(size), body = Fonts.body(size), meta = Fonts.meta(size), small = Fonts.small(size) }
+    local sizes = { header = Fonts.size("header", size), body = size, meta = Fonts.size("meta", size), small = Fonts.size("small", size) }
     local token = Theme.pushWindow()
     local okBegin, opened = pcall(imgui.begin_window, WINDOW_ID, state.open, Theme.WINDOW_FLAGS)
     if okBegin then
