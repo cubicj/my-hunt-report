@@ -7,25 +7,30 @@ local MotionNames = {}
 local WEAPON_TYPE_COUNT = 14
 local SUFFIXES = { "Land", "NoCombo", "WeakHit", "Front", "Back", "Left", "Right", "Loop", "End" }
 
-local GUIDE_ALIASES = { [-90670656] = 1763677568, [1088001664] = 1497865856 }
+local GUIDE_ALIASES = { [-90670656] = 1763677568, [1088001664] = 1497865856, [8482] = 1897592832 }
 
 local guides = nil
+local guideLists = nil
 local names = {}
 
-local function scanGuideList(list, table_)
+local function scanGuideList(list, table_, lists, listName)
     if not list then return end
     local values = list:getValues()
     for index = 0, values:get_Count() - 1 do
         local entry = values:get_Item(index)
         if entry then
             local guideId, guid = entry._Action, entry._ActionName
-            if type(guideId) == "number" and guid ~= nil then table_[guideId] = guid end
+            if type(guideId) == "number" and guid ~= nil then
+                table_[guideId] = guid
+                lists[guideId] = listName
+            end
         end
     end
 end
 
 local function loadGuides()
     local table_ = {}
+    local lists = {}
     local manager = Game.singleton("app.VariousDataManager")
     if not manager then
         Log.error("VariousDataManager unavailable for action guide names", "motion:manager")
@@ -33,23 +38,23 @@ local function loadGuides()
     end
     local ok, err = pcall(function()
         local dataset = manager._Setting._ActionGuideSetting
-        if not dataset then return end
-        scanGuideList(dataset._ActionGuideName_Common, table_)
+        if not dataset then error("action guide setting unavailable") end
+        scanGuideList(dataset._ActionGuideName_Common, table_, lists, "Common")
         for weaponType = 0, WEAPON_TYPE_COUNT - 1 do
-            scanGuideList(dataset[string.format("_ActionGuideName_Wp%02d", weaponType)], table_)
+            scanGuideList(dataset[string.format("_ActionGuideName_Wp%02d", weaponType)], table_, lists, string.format("Wp%02d", weaponType))
         end
     end)
     if not ok then Log.error("action guide scan failed: " .. tostring(err), "motion:guides") end
     local count = 0
     for _ in pairs(table_) do count = count + 1 end
     Log.debug("action guide names loaded: " .. count)
-    return table_, ok
+    return table_, ok, lists
 end
 
 function MotionNames.guideGuid(guideId)
     if guides == nil then
-        local table_, ok = loadGuides()
-        if ok then guides = table_ end
+        local table_, ok, lists = loadGuides()
+        if ok then guides, guideLists = table_, lists end
     end
     if guides == nil then return nil, false end
     return guides[guideId], true
@@ -75,6 +80,19 @@ local function guideText(guideId)
     local text = Game.messageText(guid)
     if Game.isUsableText(text) then return text, available end
     return nil, available
+end
+
+function MotionNames.guideName(guideId)
+    return (guideText(guideId))
+end
+
+local function guideEntryText(guideId)
+    local guid, available = MotionNames.guideGuid(guideId)
+    if not available then return " entry=unavailable" end
+    local list = guideLists and guideLists[guideId]
+    if guid == nil or list == nil then return " entry=none" end
+    local text = Game.messageText(guid)
+    return " entry=" .. list .. " text=" .. (type(text) == "string" and string.format("%q", text) or "nil")
 end
 
 function MotionNames.nameFor(key, guideId)
@@ -121,13 +139,16 @@ function MotionNames.nameFor(key, guideId)
         end
     end
     if Log.isDeveloperMode() then
-        Log.debug(string.format("motion guide=%d class=%s -> %s", guideId, key, name), "motion:" .. cacheKey)
+        local line = string.format("motion guide=%d class=%s -> %s", guideId, key, name)
+        if source ~= "guide" and guideId ~= -1 then line = line .. guideEntryText(guideId) end
+        Log.debug(line, "motion:" .. cacheKey)
     end
     return name, source
 end
 
 function MotionNames.reset()
     guides = nil
+    guideLists = nil
     names = {}
 end
 

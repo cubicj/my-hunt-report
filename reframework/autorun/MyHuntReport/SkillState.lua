@@ -208,11 +208,9 @@ end
 function SkillState.conditionSet(context, equippedSet)
     local set = {}
     local raw = context and context.rawHitzone or nil
-    if equippedSet[WEAKNESS_EXPLOIT_ID] and ((type(raw) == "number" and raw >= WEAK_HITZONE) or (context and context.wounded == true)) then
+    if equippedSet[WEAKNESS_EXPLOIT_ID] and type(raw) == "number" and raw >= WEAK_HITZONE then
         set[WEAKNESS_EXPLOIT_ID] = true
-    end
-    if equippedSet[WEAKNESS_EXPLOIT_ID] and context and context.wounded == true then
-        set[WEX_WOUND] = true
+        if context.wounded == true then set[WEX_WOUND] = true end
     end
     if equippedSet[MINDS_EYE_ID] and type(raw) == "number" and raw < WEAK_HITZONE then
         set[MINDS_EYE_ID] = true

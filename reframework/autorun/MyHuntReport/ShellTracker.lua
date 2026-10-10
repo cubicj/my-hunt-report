@@ -75,7 +75,12 @@ function ShellTracker.currentAction(hunter, hitTime)
     if hitTime and isNonAttackAction(className) and lastAttackClass then
         return lastAttackClass, lastAttackGuideId, "lastAttack"
     end
-    return className, guideId, isNonAttackAction(className) and "nonattack" or "base"
+    local source = isNonAttackAction(className) and "nonattack" or "base"
+    if source == "base" and className and subKey and subKey ~= "cNothing" and subGuideId ~= -1
+        and MotionNames.guideName(guideId) == nil and MotionNames.guideName(subGuideId) ~= nil then
+        return subKey, subGuideId, "sub"
+    end
+    return className, guideId, source
 end
 
 function ShellTracker.update()

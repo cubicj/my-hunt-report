@@ -18,7 +18,12 @@ local function withShellTracker(callback)
         handling = { _ActionShellType = 3, SelectedBottleItem = 5678, get_BottleType = function() return 1 end },
     }
     function hunter:call(getter)
-        local action = getter == "get_SubActionController" and self.sub or self.base
+        local action
+        if getter == "get_SubActionController" then
+            action = self.sub
+        else
+            action = self.base
+        end
         return { get_CurrentAction = function() return action end }
     end
     function hunter:get_WeaponType() return self.weaponType end
@@ -324,6 +329,56 @@ function T.shellCurrentActionUsesShootingSubControllerOnly()
         className, guideId, source = tracker.currentAction(hunter, true)
         assert(className == "cDodgeFront" and guideId == 203 and source == "nonattack")
         assert(tracker.currentAction(nil) == nil)
+    end)
+end
+
+local function withGuideNames(named, callback)
+    local MotionNames = require("MyHuntReport.MotionNames")
+    local guideName = MotionNames.guideName
+    local calls = {}
+    MotionNames.guideName = function(guideId)
+        calls[#calls + 1] = guideId
+        return named[guideId]
+    end
+    local ok, err = pcall(callback, calls)
+    MotionNames.guideName = guideName
+    if not ok then error(err, 0) end
+end
+
+local STEP_SLASH_GUIDES = { [1140208384] = "베어내리기", [-91810208] = "가로베기", [383522048] = "사선 베어내리기" }
+
+function T.shellCurrentActionTakesANamedSubActionUnderAnUnnamedBase()
+    withGuideNames(STEP_SLASH_GUIDES, function()
+        withShellTracker(function(tracker, hooks, hunter)
+            hunter.base = fakeAction("cStepSlash", 771635840)
+            hunter.sub = fakeAction("cSlash1", 1140208384)
+            local className, guideId, source, kind = tracker.currentAction(hunter)
+            assert(className == "cSlash1" and guideId == 1140208384 and source == "sub" and kind == nil)
+            hunter.sub = fakeAction("cSlash2", -91810208)
+            className, guideId, source = tracker.currentAction(hunter, true)
+            assert(className == "cSlash2" and guideId == -91810208 and source == "sub")
+        end)
+    end)
+end
+
+function T.shellCurrentActionKeepsTheBaseWhenTheSubRuleDoesNotApply()
+    withGuideNames(STEP_SLASH_GUIDES, function(calls)
+        withShellTracker(function(tracker, hooks, hunter)
+            local function check(base, sub, wantClass, wantGuide, wantSource)
+                hunter.base, hunter.sub = base, sub
+                local className, guideId, source = tracker.currentAction(hunter)
+                assert(className == wantClass and guideId == wantGuide and source == wantSource,
+                    tostring(className) .. "/" .. tostring(guideId) .. "/" .. tostring(source))
+            end
+            check(fakeAction("cStepSlash", 383522048), fakeAction("cSlash4", 1140208384), "cStepSlash", 383522048, "base")
+            check(fakeAction("cStepSlash", 771635840), fakeAction("cSlash9", 555), "cStepSlash", 771635840, "base")
+            check(fakeAction("cDodgeFront", 777), fakeAction("cSlash1", 1140208384), "cDodgeFront", 777, "nonattack")
+            local before = #calls
+            check(fakeAction("cStepSlash", 771635840), fakeAction("cNothing", 1140208384), "cStepSlash", 771635840, "base")
+            check(fakeAction("cStepSlash", 771635840), fakeAction("cSlash4", -1), "cStepSlash", 771635840, "base")
+            check(fakeAction("cStepSlash", 771635840), nil, "cStepSlash", 771635840, "base")
+            assert(#calls == before, "guide text looked up without a usable sub action")
+        end)
     end)
 end
 

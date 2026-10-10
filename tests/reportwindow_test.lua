@@ -70,6 +70,90 @@ local function withNavigation(callback)
     if not ok then error(err, 0) end
 end
 
+local function rowTexts(ui, prefix)
+    local rows, current = {}, nil
+    for _, event in ipairs(ui.events) do
+        if event.kind == "row" then
+            current = event.value:find("^" .. prefix) and {} or nil
+            if current then rows[#rows + 1] = current end
+        elseif current and event.kind == "text" then
+            current[#current + 1] = event
+        end
+    end
+    return rows
+end
+
+function T.groupedSkillRowsDrawParentsAndIndentedMutedChildren()
+    withNavigation(function(ui)
+        local Theme = require("MyHuntReport.Theme")
+        local ok, err = pcall(function()
+            ReportWindow.setNameResolver(function(label)
+                if label.kind == "skill" and label.id == 115 then return "연격" end
+            end)
+            local shown = snapshot("clear")
+            shown.skills = {
+                { id = "burst:stage1", name = "연격 1단계", share = 0.25 },
+                { id = "burst:stage2", name = "연격 2단계", share = 0.5 },
+                { id = 63, name = "약점 특효", share = 0.5 },
+                { id = "wex:wound", name = "약점 특효 · 상처", share = 0.125 },
+            }
+            ReportWindow.show(shown)
+            ui.draw()
+            local rows = rowTexts(ui, "skill")
+            local names = {}
+            for _, row in ipairs(rows) do names[#names + 1] = row[1].value .. "=" .. row[2].value end
+            assert(table.concat(names, "|") == "연격=75.0%|2단계=50.0%|1단계=25.0%|약점 특효=50.0%|약점 부위=37.5%|상처=12.5%", table.concat(names, "|"))
+            for index, row in ipairs(rows) do
+                local child = index == 2 or index == 3 or index == 5 or index == 6
+                local name, percent = row[1], row[2]
+                if child then
+                    assert(name.textColor == Theme.colors.textMuted, name.value)
+                    assert(ui.positions[name.positionCount].x == 18 + Theme.metrics.childIndent, name.value)
+                else
+                    assert(name.textColor ~= Theme.colors.textMuted, name.value)
+                end
+                assert(percent.textColor == Theme.colors.text, percent.value)
+            end
+        end)
+        ReportWindow.setNameResolver(nil)
+        if not ok then error(err, 0) end
+    end)
+end
+
+function T.burstParentFallsBackToTheSkillIdWithoutAResolver()
+    withNavigation(function(ui)
+        ReportWindow.setNameResolver(nil)
+        local shown = snapshot("clear")
+        shown.skills = { { id = "burst:stage2", name = "연격 2단계", share = 0.5 } }
+        ReportWindow.show(shown)
+        ui.draw()
+        local rows = rowTexts(ui, "skill")
+        assert(#rows == 2 and rows[1][1].value == "#115" and rows[2][1].value == "2단계")
+    end)
+end
+
+function T.rowAreaHeightCountsGroupedSkillRows()
+    withNavigation(function(ui)
+        local heights = {}
+        imgui.begin_child_window = function(id, size)
+            heights[id] = size[2]
+            return true
+        end
+        imgui.end_child_window = function() end
+        local shown = snapshot("clear")
+        shown.skills = {
+            { id = 63, name = "약점 특효", share = 0.5 },
+            { id = "wex:wound", name = "약점 특효 · 상처", share = 0.125 },
+        }
+        shown.motions = { { name = "motion", share = 1 } }
+        ReportWindow.show(shown)
+        ui.draw()
+        local expected = ReportWindow.rowAreaLayout(3, 1080, 1).height
+        assert(heights["skill##rows"] == expected, tostring(heights["skill##rows"]))
+        assert(heights["motion##rows"] == expected, tostring(heights["motion##rows"]))
+    end)
+end
+
 local function assertNavigation(ui, expected)
     local navigation = {}
     for _, label in ipairs(ui.buttons) do
@@ -249,28 +333,69 @@ function T.headerDrawsNoOutcomeForRunningUnknownOrMissingResults()
     end)
 end
 
-function T.historyRowsDrawFourColumnsOverATransparentButton()
+local function historyEntry(result)
+    local entry = snapshot(result)
+    entry.quest.endedAt = os.time({ year = 2026, month = 9, day = 23, hour = 21, min = 36, sec = 0 })
+    entry.quest.weapons = { { name = "조충곤" } }
+    entry.monsters = { { name = "아자라칸" } }
+    entry.quest.level = 5
+    return entry
+end
+
+local function historyRowTexts(ui, index)
+    local texts, inRow = {}, false
+    for _, event in ipairs(ui.events) do
+        if event.kind == "button" then inRow = event.value == "##history" .. index end
+        if inRow and event.kind == "text" then texts[#texts + 1] = event end
+    end
+    return texts
+end
+
+function T.historyRowsDrawFiveColumnsOverATransparentButton()
     withNavigation(function(ui)
-        local entry = snapshot("clear")
-        entry.quest.endedAt = os.time({ year = 2026, month = 9, day = 23, hour = 21, min = 36, sec = 0 })
-        entry.quest.weapons = { { name = "조충곤" } }
-        entry.monsters = { { name = "아자라칸" } }
-        entry.quest.level = 5
-        ui.entries = { entry }
+        local Theme = require("MyHuntReport.Theme")
+        local calcTextSize = imgui.calc_text_size
+        imgui.calc_text_size = function(text) return { x = #text * 8, y = 18 } end
+        ui.entries = { historyEntry("training"), historyEntry("clear") }
         ReportWindow.showHistory()
         ui.draw()
+        imgui.calc_text_size = calcTextSize
         assert(ui.buttons[4] == "##history1", tostring(ui.buttons[4]))
-        local texts = {}
-        local afterRow = false
-        for _, event in ipairs(ui.events) do
-            if event.kind == "button" and event.value == "##history1" then afterRow = true end
-            if afterRow and event.kind == "text" then texts[#texts + 1] = event.value end
-        end
-        assert(table.concat(texts, "|") == "26-09-23 21:36|조충곤|★5|아자라칸", table.concat(texts, "|"))
-        local columns = ReportWindow.historyColumns(720, 1, false)
+        local texts = historyRowTexts(ui, 1)
+        local values = {}
+        for _, event in ipairs(texts) do values[#values + 1] = event.value end
+        assert(table.concat(values, "|") == "26-09-23 21:36|조충곤|★5|아자라칸|클리어", table.concat(values, "|"))
+        assert(texts[5].textColor == Theme.colors.success)
+        local columns = ReportWindow.historyColumns(720, 1, false, 72)
+        assert(ui.positions[texts[5].positionCount].x == 18 + columns.outcome.x)
         local xs = {}
         for _, pos in ipairs(ui.positions) do xs[pos.x or pos[1]] = true end
         assert(xs[18 + columns.time.x] and xs[18 + columns.stars.x] and xs[18 + columns.weapons.x] and xs[18 + columns.monsters.x])
+        local training = {}
+        for _, event in ipairs(historyRowTexts(ui, 2)) do training[#training + 1] = event.value end
+        assert(table.concat(training, "|") == "26-09-23 21:36|조충곤||아자라칸", table.concat(training, "|"))
+    end)
+end
+
+function T.historyOutcomeWidthFallsBackWithoutCachingAFailedMeasurement()
+    withNavigation(function(ui)
+        local calcTextSize = imgui.calc_text_size
+        local ok, err = pcall(function()
+            ui.entries = { historyEntry("abandon") }
+            ReportWindow.showHistory()
+            imgui.calc_text_size = function() error("measure failed") end
+            ui.draw()
+            local texts = historyRowTexts(ui, 1)
+            local fallback = ReportWindow.historyColumns(720, 1, false, 96)
+            assert(texts[5].value == "포기" and ui.positions[texts[5].positionCount].x == 18 + fallback.outcome.x)
+            imgui.calc_text_size = function(text) return { x = #text * 8, y = 18 } end
+            ui.draw()
+            texts = historyRowTexts(ui, 1)
+            local measured = ReportWindow.historyColumns(720, 1, false, 72)
+            assert(ui.positions[texts[5].positionCount].x == 18 + measured.outcome.x)
+        end)
+        imgui.calc_text_size = calcTextSize
+        if not ok then error(err, 0) end
     end)
 end
 

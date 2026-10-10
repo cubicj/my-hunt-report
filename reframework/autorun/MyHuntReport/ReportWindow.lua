@@ -73,6 +73,7 @@ local function L(key)
 end
 
 local historyRows = {}
+local historyOutcome = nil
 local reportText = nil
 local frameFonts = nil
 local presented = {}
@@ -83,6 +84,7 @@ end
 
 local function invalidatePresentation()
     historyRows = {}
+    historyOutcome = nil
     reportText = nil
     frameFonts = nil
     UiText.resetCache()
@@ -227,8 +229,15 @@ local function drawRows(idPrefix, rows, percents, columnWidth, layout)
                 end
                 local percent = percents[index]
                 local w = UiText.width(percent)
-                local nameWidth = rightEdge - math.max(percentWidth, w or 0) - 8
-                imgui.text(UiText.clip(tostring(row.name), nameWidth))
+                local indent = row.child and math.floor(Theme.metrics.childIndent * layout.scale + 0.5) or 0
+                local nameWidth = rightEdge - math.max(percentWidth, w or 0) - 8 - indent
+                if indent > 0 then moveCursor(indent, 0) end
+                local name = UiText.clip(tostring(row.name), nameWidth)
+                if row.child then
+                    UiText.colored(name, Theme.colors.textMuted)
+                else
+                    imgui.text(name)
+                end
                 imgui.same_line()
                 local x = w and (rightEdge - w) or (rightEdge - percentWidth)
                 imgui.set_cursor_pos(Vector2f.new(x, imgui.get_cursor_pos().y))
@@ -343,12 +352,23 @@ local function skillDamageItems(snapshot)
     return items
 end
 
+local function filterName(label, id)
+    if state.nameResolver then
+        local ok, name = pcall(state.nameResolver, label)
+        if ok and type(name) == "string" and #name > 0 then return name end
+    end
+    return "#" .. tostring(id)
+end
+
 local function presentation(snapshot)
     if reportText and reportText.snapshot == snapshot then return reportText end
     local damage = snapshot.damage or {}
     local total = damage.total or 0
     local shares = {}
     for index, kind in ipairs(DAMAGE_TYPES) do shares[index] = ReportText.shareText(damage[kind.field], total) end
+    local skillRows = ReportText.skillRows(snapshot.skills or {}, function(id)
+        return filterName({ kind = "skill", id = id }, id)
+    end)
     reportText = {
         snapshot = snapshot,
         weapon = ReportText.headerWeaponText(snapshot.quest or {}),
@@ -357,7 +377,8 @@ local function presentation(snapshot)
         tiles = ReportText.statTiles(snapshot),
         shares = shares,
         items = skillDamageItems(snapshot),
-        skills = rowPercents(snapshot.skills or {}),
+        skillRows = skillRows,
+        skills = rowPercents(skillRows),
         motions = rowPercents(snapshot.motions or {}),
     }
     return reportText
@@ -436,7 +457,7 @@ end
 
 local function drawBody(snapshot, ctx, text)
     local columnWidth = math.floor((ctx.width - Theme.metrics.columnGap) / 2)
-    local skills, motions = snapshot.skills or {}, snapshot.motions or {}
+    local skills, motions = text.skillRows, snapshot.motions or {}
     local layout = ReportLayout.rowAreaLayout(math.max(#skills, #motions), displayHeight(), ctx.scale)
     imgui.begin_group()
     local ok, err = pcall(function()
@@ -586,14 +607,6 @@ end
 
 local FILTER_AXES = { "weapons", "levels", "species", "variants" }
 
-local function filterName(label, id)
-    if state.nameResolver then
-        local ok, name = pcall(state.nameResolver, label)
-        if ok and type(name) == "string" and #name > 0 then return name end
-    end
-    return "#" .. tostring(id)
-end
-
 local function updateFilteredHistory(changed)
     invalidatePresentation()
     state.filteredEntries = HistoryFilter.apply(state.entries, state.historySelection)
@@ -687,6 +700,27 @@ local function loadHistory()
     rebuildHistoryFilters()
 end
 
+local OUTCOME_LABELS = { "result_clear", "result_fail", "result_abandon" }
+
+local function historyOutcomeWidth(ctx)
+    local key = Locale.textKey() .. ":" .. tostring(ctx.sizes.body)
+    if historyOutcome and historyOutcome.key == key then return historyOutcome.width end
+    local widest = 0
+    local pushed = Fonts.push(ctx.fonts.body)
+    for _, labelKey in ipairs(OUTCOME_LABELS) do
+        local width = UiText.width(L(labelKey))
+        if width == nil then
+            widest = nil
+            break
+        end
+        widest = math.max(widest, width)
+    end
+    Fonts.pop(pushed)
+    if widest == nil then return math.floor(Theme.metrics.historyOutcomeWidth * ctx.scale + 0.5) end
+    historyOutcome = { key = key, width = math.ceil(widest) }
+    return historyOutcome.width
+end
+
 local function drawHistory(ctx)
     if #state.entries == 0 then
         UiText.inFont(ctx.fonts.meta, L("history_empty"), Theme.colors.textMuted)
@@ -695,7 +729,7 @@ local function drawHistory(ctx)
     drawHistoryChips(ctx)
     local m = Theme.metrics
     local layout = ReportLayout.rowAreaLayout(#state.filteredEntries, displayHeight(), ctx.scale, m.historyRowHeight)
-    local columns = ReportLayout.historyColumns(ctx.width, ctx.scale, layout.scrolls)
+    local columns = ReportLayout.historyColumns(ctx.width, ctx.scale, layout.scrolls, historyOutcomeWidth(ctx))
     local token = Theme.pushListRows()
     local okBegin, beginErr = pcall(imgui.begin_child_window, "history##rows", { ctx.width, layout.height }, false, 0)
     if not okBegin then
@@ -729,6 +763,10 @@ local function drawHistory(ctx)
             UiText.inFont(ctx.fonts.body, row.stars, Theme.colors.accent)
             imgui.set_cursor_pos(Vector2f.new(top.x + columns.monsters.x, bodyY))
             UiText.inFont(ctx.fonts.body, UiText.clip(row.monsters, columns.monsters.width))
+            if row.outcome then
+                imgui.set_cursor_pos(Vector2f.new(top.x + columns.outcome.x, bodyY))
+                UiText.inFont(ctx.fonts.body, row.outcome, row.outcomeColor)
+            end
             imgui.set_cursor_pos(Vector2f.new(top.x, top.y + layout.rowHeight))
         end
     end)

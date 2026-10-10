@@ -62,7 +62,7 @@ function ReportLayout.barSegments(width, shares, gap)
     return { segments = segments, track = { x = x, width = math.max(0, width - x) } }
 end
 
-function ReportLayout.historyColumns(width, scale, scrolls)
+function ReportLayout.historyColumns(width, scale, scrolls, outcomeWidth)
     local m = Theme.metrics
     local buttonWidth = width - (scrolls and m.scrollbarWidth or 0)
     local inner = buttonWidth - m.historyPadding * 2
@@ -78,7 +78,8 @@ function ReportLayout.historyColumns(width, scale, scrolls)
     x = x + weapons + m.historyGap
     columns.stars = { x = x, width = stars }
     x = x + stars + m.historyGap
-    columns.monsters = { x = x, width = rest - weapons }
+    columns.monsters = { x = x, width = rest - weapons - outcomeWidth - m.historyGap }
+    columns.outcome = { x = buttonWidth - m.historyPadding - outcomeWidth, width = outcomeWidth }
     return columns
 end
 

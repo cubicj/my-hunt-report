@@ -121,27 +121,26 @@ end
 
 local ALL = { [63] = true, [19] = true, [56] = true }
 
-function T.weaknessExploitOnHighHitzoneOrWound()
-    assert(SkillState.conditionSet({ rawHitzone = 45, wounded = false, hien = false }, ALL)[63] == true)
-    assert(SkillState.conditionSet({ rawHitzone = 30, wounded = true, hien = false }, ALL)[63] == true)
-    assert(SkillState.conditionSet({ rawHitzone = 44, wounded = false, hien = false }, ALL)[63] == nil)
-    assert(SkillState.conditionSet({ wounded = true }, ALL)[63] == true)
-end
-
-function T.woundHitCreditsBothWeaknessExploitRows()
-    for _, context in ipairs({ { rawHitzone = 30, wounded = true }, { rawHitzone = 45, wounded = true }, { wounded = true } }) do
-        local set = SkillState.conditionSet(context, { [63] = true })
-        assert(stubs.encode(set) == stubs.encode({ [63] = true, ["wex:wound"] = true }))
-    end
-end
-
-function T.unwoundedHitsOnlyCreditBaseWeaknessExploit()
+function T.weaknessExploitNeedsBaseHitzoneAtLeast45()
     for _, raw in ipairs({ 45, 80 }) do
         local set = SkillState.conditionSet({ rawHitzone = raw, wounded = false }, { [63] = true })
-        assert(stubs.encode(set) == stubs.encode({ [63] = true }))
+        assert(stubs.encode(set) == stubs.encode({ [63] = true }), tostring(raw))
     end
     assert(next(SkillState.conditionSet({ rawHitzone = 44, wounded = false }, { [63] = true })) == nil)
+end
+
+function T.woundOnHighBaseHitzoneCreditsBothWeaknessExploitRows()
+    for _, raw in ipairs({ 45, 80 }) do
+        local set = SkillState.conditionSet({ rawHitzone = raw, wounded = true }, { [63] = true })
+        assert(stubs.encode(set) == stubs.encode({ [63] = true, ["wex:wound"] = true }), tostring(raw))
+    end
     assert(SkillState.conditionSet({ rawHitzone = 45, wounded = 1 }, { [63] = true })["wex:wound"] == nil)
+end
+
+function T.woundOnLowOrMissingBaseHitzoneCreditsNeither()
+    for _, context in ipairs({ { rawHitzone = 30, wounded = true }, { rawHitzone = 44, wounded = true }, { wounded = true }, { rawHitzone = nil, wounded = false } }) do
+        assert(next(SkillState.conditionSet(context, { [63] = true })) == nil, tostring(context.rawHitzone))
+    end
 end
 
 function T.woundRowRequiresEquippedWeaknessExploit()
@@ -152,7 +151,8 @@ end
 function T.activeSetCreditsWoundRow()
     withHunter(fakeInfo({}), { [63] = true }, function()
         assert(SkillState.displayId("wex:wound") == "wex:wound")
-        assert(stubs.encode(SkillState.activeSet({ rawHitzone = 30, wounded = true })) == stubs.encode({ [63] = true, ["wex:wound"] = true }))
+        assert(stubs.encode(SkillState.activeSet({ rawHitzone = 45, wounded = true })) == stubs.encode({ [63] = true, ["wex:wound"] = true }))
+        assert(next((SkillState.activeSet({ rawHitzone = 30, wounded = true }))) == nil)
         assert(stubs.encode(SkillState.activeSet({ rawHitzone = 45, wounded = false })) == stubs.encode({ [63] = true }))
     end)
 end
@@ -192,7 +192,7 @@ function T.mindsEyeOnLowHitzoneOnly()
     assert(SkillState.conditionSet({ rawHitzone = nil, wounded = false, hien = false }, ALL)[19] == nil)
     assert(SkillState.conditionSet({ rawHitzone = 45 }, ALL)[19] == nil)
     local wounded = SkillState.conditionSet({ rawHitzone = 30, wounded = true }, ALL)
-    assert(wounded[19] == true and wounded[63] == true)
+    assert(wounded[19] == true and wounded[63] == nil and wounded["wex:wound"] == nil)
 end
 
 function T.airborneAndEquippedGate()
@@ -239,7 +239,7 @@ function T.activeSetGatesAllNewSkillsByEquipment()
     end, { _IsActive = true, _State = 2 })
     withHunter(info, ALL, function()
         local active = SkillState.activeSet({ rawHitzone = 30, wounded = true, hien = true })
-        assert(active[19] and active[63] and active[56])
+        assert(active[19] and active[56] and active[63] == nil and active["wex:wound"] == nil)
         assert(active[59] == nil and active[194] == nil)
     end, { _IsActive = true, _State = 2 })
 end

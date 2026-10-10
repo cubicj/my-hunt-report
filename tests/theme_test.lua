@@ -34,6 +34,8 @@ function T.metricsMatchTheSpec()
     assert(m.dotRadius == 4 and m.legendGap == 28 and m.procGap == 20)
     assert(m.historyRowHeight == 36 and m.historyPadding == 10 and m.historyTimeWidth == 132)
     assert(m.historyStarsWidth == 48 and m.historyGap == 16)
+    assert(m.childIndent == 16)
+    assert(m.historyOutcomeWidth == 96)
 end
 
 function T.rowStripeMatchesTheSpec()

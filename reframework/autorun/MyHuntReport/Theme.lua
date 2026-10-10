@@ -64,6 +64,7 @@ Theme.metrics = {
     barGap = 2,
     columnGap = 32,
     percentColumnWidth = 72,
+    childIndent = 16,
     scrollbarWidth = 14,
     minWindowWidth = 720,
     topBarHeight = 36,
@@ -87,6 +88,7 @@ Theme.metrics = {
     historyStarsWidth = 48,
     historyGap = 16,
     historyWeaponShare = 0.4,
+    historyOutcomeWidth = 96,
     filterWidth = 480,
     filterWindowGap = 16,
 }

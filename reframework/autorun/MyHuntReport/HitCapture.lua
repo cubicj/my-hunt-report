@@ -81,7 +81,7 @@ local function sampleActionControllers(audit)
         return nil, nil
     end
     audit.baseClass, audit.baseGuideId = describeAction("get_BaseActionController")
-    audit.subClass = describeAction("get_SubActionController")
+    audit.subClass, audit.subGuideId = describeAction("get_SubActionController")
 end
 
 local function isKinsectObject(name)
@@ -231,6 +231,7 @@ function HitCapture.handleStockDamageDetail(hitInfo)
         baseClass = audit.baseClass,
         baseGuideId = audit.baseGuideId,
         subClass = audit.subClass,
+        subGuideId = audit.subGuideId,
         hien = hien,
         wounded = false,
         hitzone = nil,
@@ -396,7 +397,15 @@ local function mergedExtras(hit, physical, stats)
     return extras
 end
 
-local function traceHit(hit, finalDamage, physical, element)
+local function skillIdsText(activeSkills)
+    local ids = {}
+    for id in pairs(activeSkills or {}) do ids[#ids + 1] = tostring(id) end
+    if #ids == 0 then return "-" end
+    table.sort(ids)
+    return table.concat(ids, ",")
+end
+
+local function traceHit(hit, finalDamage, physical, element, weight, activeSkills)
     if not Log.isDeveloperMode() then return end
     local name = Names.resolve(hit.motionLabel)
     local source = "guide"
@@ -404,13 +413,19 @@ local function traceHit(hit, finalDamage, physical, element)
         local _, nameSource = MotionNames.nameFor(hit.motionLabel.className, hit.motionLabel.guideId)
         source = nameSource
     end
-    Log.trace(string.format("hit #%d dmg=%s(%s/%s) wp=%s act=%s mv=%s obj=%s base=%s/%s sub=%s row=%s via=%s name=%s mon=%s src=%s root=%s key=%s:%s:%s atk=%s",
+    local subName = ""
+    if type(hit.subGuideId) == "number" and hit.subGuideId ~= -1 then
+        subName = " subName=" .. (MotionNames.guideName(hit.subGuideId) or "none")
+    end
+    Log.trace(string.format("hit #%d dmg=%s(%s/%s) wp=%s act=%s mv=%s obj=%s base=%s/%s sub=%s/%s%s row=%s via=%s name=%s mon=%s src=%s root=%s key=%s:%s:%s atk=%s hz=%s/%s wound=%s w=%s skills=%s",
         Session.hitCount() + 1, tostring(finalDamage), tostring(physical), tostring(element),
         tostring(hit.weaponType), tostring(hit.actionType), tostring(hit.motionValue), hit.objectName or "-",
-        hit.baseClass or "-", tostring(hit.baseGuideId or -1), hit.subClass or "-", name,
+        hit.baseClass or "-", tostring(hit.baseGuideId or -1), hit.subClass or "-", tostring(hit.subGuideId or -1), subName, name,
         hit.path, source, tostring(hit.monsterLabel.emId), hit.source or "-",
         tostring(hit.rootHash or (hit.shell and "?" or "-")), tostring(hit.weaponType or "?"),
-        tostring(hit.attackResource or "?"), tostring(hit.attackIndex or "?"), tostring(hit.attackPower)))
+        tostring(hit.attackResource or "?"), tostring(hit.attackIndex or "?"), tostring(hit.attackPower),
+        tostring(hit.baseHitzone or "-"), tostring(hit.hitzone or "-"), tostring(hit.wounded == true),
+        tostring(weight), skillIdsText(activeSkills)))
 end
 
 function HitCapture.handlePlayHitMarkEffect(calc, hitInfo)
@@ -447,7 +462,7 @@ function HitCapture.handlePlayHitMarkEffect(calc, hitInfo)
         kinsect = hit.path == "kinsect",
         weaponType = hit.weaponType,
     })
-    traceHit(hit, finalDamage, physical, element)
+    traceHit(hit, finalDamage, physical, element, weight, activeSkills)
     Session.addHit({
         attribution = hit.path,
         source = hit.source,
