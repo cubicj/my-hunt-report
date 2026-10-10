@@ -68,7 +68,7 @@ function ReportLayout.historyColumns(width, scale, scrolls, outcomeWidth)
     local inner = buttonWidth - m.historyPadding * 2
     local time = math.floor(m.historyTimeWidth * scale + 0.5)
     local stars = math.floor(m.historyStarsWidth * scale + 0.5)
-    local rest = inner - time - stars - outcomeWidth - m.historyGap * 4
+    local rest = inner - time - stars - m.historyGap * 3
     local weapons = math.floor(rest * m.historyWeaponShare)
     local x = m.historyPadding
     local columns = { buttonWidth = buttonWidth }
@@ -78,7 +78,7 @@ function ReportLayout.historyColumns(width, scale, scrolls, outcomeWidth)
     x = x + weapons + m.historyGap
     columns.stars = { x = x, width = stars }
     x = x + stars + m.historyGap
-    columns.monsters = { x = x, width = rest - weapons }
+    columns.monsters = { x = x, width = rest - weapons - outcomeWidth - m.historyGap }
     columns.outcome = { x = buttonWidth - m.historyPadding - outcomeWidth, width = outcomeWidth }
     return columns
 end
