@@ -21,6 +21,7 @@ local SUITES = {
     "skillextras_test",
     "healtracker_test",
     "procs_test",
+    "sources_test",
     "shelltracker_test",
     "hitcapture_test",
     "kinsecttracker_test",
