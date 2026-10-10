@@ -64,6 +64,7 @@ Theme.metrics = {
     barGap = 2,
     columnGap = 32,
     percentColumnWidth = 72,
+    childIndent = 16,
     scrollbarWidth = 14,
     minWindowWidth = 720,
     topBarHeight = 36,

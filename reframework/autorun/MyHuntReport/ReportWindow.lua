@@ -227,8 +227,15 @@ local function drawRows(idPrefix, rows, percents, columnWidth, layout)
                 end
                 local percent = percents[index]
                 local w = UiText.width(percent)
-                local nameWidth = rightEdge - math.max(percentWidth, w or 0) - 8
-                imgui.text(UiText.clip(tostring(row.name), nameWidth))
+                local indent = row.child and math.floor(Theme.metrics.childIndent * layout.scale + 0.5) or 0
+                local nameWidth = rightEdge - math.max(percentWidth, w or 0) - 8 - indent
+                if indent > 0 then moveCursor(indent, 0) end
+                local name = UiText.clip(tostring(row.name), nameWidth)
+                if row.child then
+                    UiText.colored(name, Theme.colors.textMuted)
+                else
+                    imgui.text(name)
+                end
                 imgui.same_line()
                 local x = w and (rightEdge - w) or (rightEdge - percentWidth)
                 imgui.set_cursor_pos(Vector2f.new(x, imgui.get_cursor_pos().y))
@@ -343,12 +350,23 @@ local function skillDamageItems(snapshot)
     return items
 end
 
+local function filterName(label, id)
+    if state.nameResolver then
+        local ok, name = pcall(state.nameResolver, label)
+        if ok and type(name) == "string" and #name > 0 then return name end
+    end
+    return "#" .. tostring(id)
+end
+
 local function presentation(snapshot)
     if reportText and reportText.snapshot == snapshot then return reportText end
     local damage = snapshot.damage or {}
     local total = damage.total or 0
     local shares = {}
     for index, kind in ipairs(DAMAGE_TYPES) do shares[index] = ReportText.shareText(damage[kind.field], total) end
+    local skillRows = ReportText.skillRows(snapshot.skills or {}, function(id)
+        return filterName({ kind = "skill", id = id }, id)
+    end)
     reportText = {
         snapshot = snapshot,
         weapon = ReportText.headerWeaponText(snapshot.quest or {}),
@@ -357,7 +375,8 @@ local function presentation(snapshot)
         tiles = ReportText.statTiles(snapshot),
         shares = shares,
         items = skillDamageItems(snapshot),
-        skills = rowPercents(snapshot.skills or {}),
+        skillRows = skillRows,
+        skills = rowPercents(skillRows),
         motions = rowPercents(snapshot.motions or {}),
     }
     return reportText
@@ -436,7 +455,7 @@ end
 
 local function drawBody(snapshot, ctx, text)
     local columnWidth = math.floor((ctx.width - Theme.metrics.columnGap) / 2)
-    local skills, motions = snapshot.skills or {}, snapshot.motions or {}
+    local skills, motions = text.skillRows, snapshot.motions or {}
     local layout = ReportLayout.rowAreaLayout(math.max(#skills, #motions), displayHeight(), ctx.scale)
     imgui.begin_group()
     local ok, err = pcall(function()
@@ -585,14 +604,6 @@ local function relabelSnapshot(value)
 end
 
 local FILTER_AXES = { "weapons", "levels", "species", "variants" }
-
-local function filterName(label, id)
-    if state.nameResolver then
-        local ok, name = pcall(state.nameResolver, label)
-        if ok and type(name) == "string" and #name > 0 then return name end
-    end
-    return "#" .. tostring(id)
-end
 
 local function updateFilteredHistory(changed)
     invalidatePresentation()

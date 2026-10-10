@@ -70,6 +70,90 @@ local function withNavigation(callback)
     if not ok then error(err, 0) end
 end
 
+local function rowTexts(ui, prefix)
+    local rows, current = {}, nil
+    for _, event in ipairs(ui.events) do
+        if event.kind == "row" then
+            current = event.value:find("^" .. prefix) and {} or nil
+            if current then rows[#rows + 1] = current end
+        elseif current and event.kind == "text" then
+            current[#current + 1] = event
+        end
+    end
+    return rows
+end
+
+function T.groupedSkillRowsDrawParentsAndIndentedMutedChildren()
+    withNavigation(function(ui)
+        local Theme = require("MyHuntReport.Theme")
+        local ok, err = pcall(function()
+            ReportWindow.setNameResolver(function(label)
+                if label.kind == "skill" and label.id == 115 then return "연격" end
+            end)
+            local shown = snapshot("clear")
+            shown.skills = {
+                { id = "burst:stage1", name = "연격 1단계", share = 0.25 },
+                { id = "burst:stage2", name = "연격 2단계", share = 0.5 },
+                { id = 63, name = "약점 특효", share = 0.5 },
+                { id = "wex:wound", name = "약점 특효 · 상처", share = 0.125 },
+            }
+            ReportWindow.show(shown)
+            ui.draw()
+            local rows = rowTexts(ui, "skill")
+            local names = {}
+            for _, row in ipairs(rows) do names[#names + 1] = row[1].value .. "=" .. row[2].value end
+            assert(table.concat(names, "|") == "연격=75.0%|1단계=25.0%|2단계=50.0%|약점 특효=50.0%|약점 부위=37.5%|상처=12.5%", table.concat(names, "|"))
+            for index, row in ipairs(rows) do
+                local child = index == 2 or index == 3 or index == 5 or index == 6
+                local name, percent = row[1], row[2]
+                if child then
+                    assert(name.textColor == Theme.colors.textMuted, name.value)
+                    assert(ui.positions[name.positionCount].x == 18 + Theme.metrics.childIndent, name.value)
+                else
+                    assert(name.textColor ~= Theme.colors.textMuted, name.value)
+                end
+                assert(percent.textColor == Theme.colors.text, percent.value)
+            end
+        end)
+        ReportWindow.setNameResolver(nil)
+        if not ok then error(err, 0) end
+    end)
+end
+
+function T.burstParentFallsBackToTheSkillIdWithoutAResolver()
+    withNavigation(function(ui)
+        ReportWindow.setNameResolver(nil)
+        local shown = snapshot("clear")
+        shown.skills = { { id = "burst:stage2", name = "연격 2단계", share = 0.5 } }
+        ReportWindow.show(shown)
+        ui.draw()
+        local rows = rowTexts(ui, "skill")
+        assert(#rows == 2 and rows[1][1].value == "#115" and rows[2][1].value == "2단계")
+    end)
+end
+
+function T.rowAreaHeightCountsGroupedSkillRows()
+    withNavigation(function(ui)
+        local heights = {}
+        imgui.begin_child_window = function(id, size)
+            heights[id] = size[2]
+            return true
+        end
+        imgui.end_child_window = function() end
+        local shown = snapshot("clear")
+        shown.skills = {
+            { id = 63, name = "약점 특효", share = 0.5 },
+            { id = "wex:wound", name = "약점 특효 · 상처", share = 0.125 },
+        }
+        shown.motions = { { name = "motion", share = 1 } }
+        ReportWindow.show(shown)
+        ui.draw()
+        local expected = ReportWindow.rowAreaLayout(3, 1080, 1).height
+        assert(heights["skill##rows"] == expected, tostring(heights["skill##rows"]))
+        assert(heights["motion##rows"] == expected, tostring(heights["motion##rows"]))
+    end)
+end
+
 local function assertNavigation(ui, expected)
     local navigation = {}
     for _, label in ipairs(ui.buttons) do
