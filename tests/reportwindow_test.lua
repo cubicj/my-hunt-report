@@ -102,7 +102,7 @@ function T.groupedSkillRowsDrawParentsAndIndentedMutedChildren()
             local rows = rowTexts(ui, "skill")
             local names = {}
             for _, row in ipairs(rows) do names[#names + 1] = row[1].value .. "=" .. row[2].value end
-            assert(table.concat(names, "|") == "연격=75.0%|1단계=25.0%|2단계=50.0%|약점 특효=50.0%|약점 부위=37.5%|상처=12.5%", table.concat(names, "|"))
+            assert(table.concat(names, "|") == "연격=75.0%|2단계=50.0%|1단계=25.0%|약점 특효=50.0%|약점 부위=37.5%|상처=12.5%", table.concat(names, "|"))
             for index, row in ipairs(rows) do
                 local child = index == 2 or index == 3 or index == 5 or index == 6
                 local name, percent = row[1], row[2]

@@ -131,38 +131,71 @@ local function shareOf(row)
     return row and type(row.share) == "number" and row.share or 0
 end
 
+local function displayRow(name, share, valueKind, child)
+    return { name = name, share = share, valueKind = valueKind, child = child }
+end
+
+local function byShareThenName(a, b)
+    if shareOf(a) ~= shareOf(b) then return shareOf(a) > shareOf(b) end
+    return tostring(a.name) < tostring(b.name)
+end
+
+local function childRows(entries)
+    local children = {}
+    for index, entry in ipairs(entries) do
+        if entry.share > 0 then
+            children[#children + 1] = { index = index, row = displayRow(L(entry.key), entry.share, nil, true) }
+        end
+    end
+    table.sort(children, function(a, b)
+        if a.row.share ~= b.row.share then return a.row.share > b.row.share end
+        return a.index < b.index
+    end)
+    local rows = {}
+    for _, child in ipairs(children) do rows[#rows + 1] = child.row end
+    return rows
+end
+
 function ReportText.skillRows(rows, skillName)
     local byId = {}
     for _, row in ipairs(rows or {}) do
         if row.id ~= nil then byId[row.id] = row end
     end
-    local display = {}
-    local function add(name, share, valueKind, child)
-        display[#display + 1] = { name = name, share = share, valueKind = valueKind, child = child }
-    end
-    local function addChild(key, share)
-        if share > 0 then add(L(key), share, nil, true) end
+    local groups, heals = {}, {}
+    local function addGroup(parent, children)
+        groups[#groups + 1] = { parent = parent, children = children or {} }
     end
     local burstShown = false
     for _, row in ipairs(rows or {}) do
         local id = row.id
-        if id == BURST_STAGE1 or id == BURST_STAGE2 then
+        if row.label and row.label.kind == "heal" then
+            heals[#heals + 1] = displayRow(row.name, row.share, row.valueKind, false)
+        elseif id == BURST_STAGE1 or id == BURST_STAGE2 then
             if not burstShown then
                 burstShown = true
                 local stage1, stage2 = shareOf(byId[BURST_STAGE1]), shareOf(byId[BURST_STAGE2])
-                add(skillName(BURST_SKILL_ID), stage1 + stage2, nil, false)
-                addChild("skill_burst_stage1", stage1)
-                addChild("skill_burst_stage2", stage2)
+                addGroup(displayRow(skillName(BURST_SKILL_ID), stage1 + stage2, nil, false), childRows({
+                    { key = "skill_burst_stage1", share = stage1 },
+                    { key = "skill_burst_stage2", share = stage2 },
+                }))
             end
         elseif id == WEAKNESS_EXPLOIT_ID then
             local wound = shareOf(byId[WEX_WOUND])
-            add(row.name, row.share, row.valueKind, false)
-            addChild("skill_wex_weak_point", math.max(0, shareOf(row) - wound))
-            addChild("skill_wex_wound", wound)
+            addGroup(displayRow(row.name, row.share, row.valueKind, false), childRows({
+                { key = "skill_wex_weak_point", share = math.max(0, shareOf(row) - wound) },
+                { key = "skill_wex_wound", share = wound },
+            }))
         elseif not (id == WEX_WOUND and byId[WEAKNESS_EXPLOIT_ID]) then
-            add(row.name, row.share, row.valueKind, false)
+            addGroup(displayRow(row.name, row.share, row.valueKind, false))
         end
     end
+    table.sort(groups, function(a, b) return byShareThenName(a.parent, b.parent) end)
+    local display = {}
+    for _, group in ipairs(groups) do
+        display[#display + 1] = group.parent
+        for _, child in ipairs(group.children) do display[#display + 1] = child end
+    end
+    for _, row in ipairs(heals) do display[#display + 1] = row end
     return display
 end
 

@@ -232,16 +232,37 @@ local function shape(rows)
     return table.concat(parts, "|")
 end
 
-function T.skillRowsGroupBurstStagesAtTheFirstStagePosition()
+function T.skillRowsPlaceTheBurstParentByItsSummedShare()
     Locale.resolve("en")
     local rows = ReportText.skillRows({
+        { id = 12, name = "C", share = 0.375 },
+        { id = "burst:stage2", name = "Burst Stage 2", share = 0.25 },
+        { id = "burst:stage1", name = "Burst Stage 1", share = 0.1875 },
+        { id = 11, name = "B", share = 0.125 },
+    }, burstName)
+    assert(shape(rows) == "Burst=0.4375|>Stage 2=0.25|>Stage 1=0.1875|C=0.375|B=0.125", shape(rows))
+    assert(rows[1].child == false and rows[2].child == true and rows[4].child == false)
+    rows = ReportText.skillRows({
         { id = 10, name = "A", share = 0.5 },
         { id = "burst:stage2", name = "Burst Stage 2", share = 0.25 },
         { id = 11, name = "B", share = 0.125 },
         { id = "burst:stage1", name = "Burst Stage 1", share = 0.0625 },
     }, burstName)
-    assert(shape(rows) == "A=0.5|Burst=0.3125|>Stage 1=0.0625|>Stage 2=0.25|B=0.125", shape(rows))
-    assert(rows[1].child == false and rows[2].child == false and rows[3].child == true)
+    assert(shape(rows) == "A=0.5|Burst=0.3125|>Stage 2=0.25|>Stage 1=0.0625|B=0.125", shape(rows))
+end
+
+function T.skillRowsOrderChildrenByShareWithListedOrderOnTies()
+    Locale.resolve("en")
+    local rows = ReportText.skillRows({
+        { id = 63, name = "Weakness Exploit", share = 0.5 },
+        { id = "wex:wound", name = "Weakness Exploit · Wound", share = 0.375 },
+    }, burstName)
+    assert(shape(rows) == "Weakness Exploit=0.5|>Wound=0.375|>Weak point=0.125", shape(rows))
+    rows = ReportText.skillRows({
+        { id = "burst:stage2", name = "Burst Stage 2", share = 0.25 },
+        { id = "burst:stage1", name = "Burst Stage 1", share = 0.25 },
+    }, burstName)
+    assert(shape(rows) == "Burst=0.5|>Stage 1=0.25|>Stage 2=0.25", shape(rows))
 end
 
 function T.skillRowsBurstWithOneStageShowsOneChild()
@@ -289,13 +310,15 @@ function T.skillRowsShowAnOrphanWoundRowWithItsFullName()
     assert(rows[1].child == false)
 end
 
-function T.skillRowsKeepUnrelatedRowsAndValueKinds()
+function T.skillRowsSortUptimeRowsAndKeepHpRowsLast()
     local rows = ReportText.skillRows({
-        { id = 1, name = "X", share = 0.5 },
-        { label = { kind = "heal" }, name = "Hasten Recovery", share = 0.25, valueKind = "hp" },
+        { id = 1, name = "X", share = 0.25 },
+        { label = { kind = "heal" }, name = "Hasten Recovery", share = 0.5, valueKind = "hp" },
+        { id = 2, name = "Y", share = 0.375 },
+        { id = 3, name = "W", share = 0.25 },
     }, burstName)
-    assert(shape(rows) == "X=0.5|Hasten Recovery=0.25", shape(rows))
-    assert(rows[1].valueKind == nil and rows[2].valueKind == "hp")
+    assert(shape(rows) == "Y=0.375|W=0.25|X=0.25|Hasten Recovery=0.5", shape(rows))
+    assert(rows[1].valueKind == nil and rows[4].valueKind == "hp")
     assert(#ReportText.skillRows({}, burstName) == 0)
 end
 
@@ -303,15 +326,15 @@ function T.skillRowsChildNamesFollowTheLanguage()
     local input = {
         { id = "burst:stage1", name = "연격 1단계", share = 0.25 },
         { id = "burst:stage2", name = "연격 2단계", share = 0.25 },
-        { id = 63, name = "약점 특효", share = 0.5 },
+        { id = 63, name = "약점 특효", share = 0.625 },
         { id = "wex:wound", name = "약점 특효 · 상처", share = 0.25 },
     }
     Locale.resolve("ko")
     local rows = ReportText.skillRows(input, function() return "연격" end)
-    assert(shape(rows) == "연격=0.5|>1단계=0.25|>2단계=0.25|약점 특효=0.5|>약점 부위=0.25|>상처=0.25", shape(rows))
+    assert(shape(rows) == "약점 특효=0.625|>약점 부위=0.375|>상처=0.25|연격=0.5|>1단계=0.25|>2단계=0.25", shape(rows))
     Locale.resolve("en")
     rows = ReportText.skillRows(input, burstName)
-    assert(shape(rows) == "Burst=0.5|>Stage 1=0.25|>Stage 2=0.25|약점 특효=0.5|>Weak point=0.25|>Wound=0.25", shape(rows))
+    assert(shape(rows) == "약점 특효=0.625|>Weak point=0.375|>Wound=0.25|Burst=0.5|>Stage 1=0.25|>Stage 2=0.25", shape(rows))
 end
 
 return T
