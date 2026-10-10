@@ -55,8 +55,10 @@ local function drawContents(ctx, options, labels, selection, change)
         UiText.inFont(ctx.fonts.small, title, Theme.colors.textMuted)
         if next(selection[axis.key]) then
             local smallPushed = Fonts.push(ctx.fonts.small)
-            local titleWidth = imgui.calc_text_size(title).x
+            local okTitle, titleSize = pcall(imgui.calc_text_size, title)
             Fonts.pop(smallPushed)
+            if not okTitle then error(titleSize, 0) end
+            local titleWidth = titleSize.x
             local axisClearText = Locale.text("history_filter_clear")
             local axisClearWidth = imgui.calc_text_size(axisClearText).x + m.itemSpacing * 3
             imgui.set_cursor_pos(Vector2f.new(top.x + titleWidth + m.itemSpacing, lineTop.y))

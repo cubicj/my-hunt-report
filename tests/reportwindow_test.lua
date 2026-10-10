@@ -3013,4 +3013,39 @@ function T.mutatedResultSnapshotRedrawsItsMetaAfterNotification()
     end)
 end
 
+function T.historyFilterWindowBalancesFontsWhenAxisTitleMeasurementFails()
+    local Window = require("MyHuntReport.HistoryFilterWindow")
+    local Fonts = require("MyHuntReport.Fonts")
+    local original = imgui
+    local pushes, pops, titleMeasurements = 0, 0, 0
+    local ok, err = pcall(function()
+        imgui = setmetatable({
+            ImGuiStyleVar = { ItemSpacing = 14, ButtonTextAlign = 23, FrameRounding = 12, FrameBorderSize = 13 },
+            begin_window = function() return true end,
+            calc_text_size = function(text)
+                if text == Locale.text("history_filter_weapons") then
+                    titleMeasurements = titleMeasurements + 1
+                    error("axis title measurement failed")
+                end
+                return { x = utf8.len(text) * 10, y = 18 }
+            end,
+            push_font_size = function() pushes = pushes + 1 end,
+            pop_font_size = function() pops = pops + 1 end,
+            button = function() return false end,
+        }, { __index = original })
+        local ctx = { fonts = { small = { size = 18 } }, sizes = { body = 18, small = 18 }, scale = 1 }
+        local options = { weapons = { 1 }, levels = {}, species = {}, variants = {} }
+        local names = { weapons = { [1] = "Weapon" }, levels = {}, species = {}, variants = {} }
+        local selection = { weapons = { [1] = true }, levels = {}, species = {}, variants = {} }
+        local opened = Window.draw(ctx, options, names, selection, function() end, nil)
+        assert(titleMeasurements == 1, titleMeasurements)
+        assert(opened == false)
+        assert(pushes > 0, pushes)
+        assert(pushes == pops, string.format("font size pushes=%d pops=%d", pushes, pops))
+        assert(Fonts.context() == "base", Fonts.context())
+    end)
+    imgui = original
+    if not ok then error(err, 0) end
+end
+
 return T
