@@ -12,6 +12,7 @@ local Game = require("MyHuntReport.Game")
 local Hdr = require("MyHuntReport.Hdr")
 local ReportLayout = require("MyHuntReport.ReportLayout")
 local ReportText = require("MyHuntReport.ReportText")
+local UiText = require("MyHuntReport.UiText")
 
 local ReportWindow = {}
 
@@ -71,53 +72,6 @@ local function L(key)
     return Locale.text(key)
 end
 
-local function coloredText(text, color)
-    local pushed = pcall(imgui.push_style_color, 0, color)
-    local ok, err = pcall(imgui.text, text)
-    if pushed then pcall(imgui.pop_style_color, 1) end
-    if not ok then error(err, 0) end
-end
-
-local function textWidth(text)
-    local ok, size = pcall(imgui.calc_text_size, text)
-    if ok and size and type(size.x) == "number" then return size.x end
-    return nil
-end
-
-local function trimUtf8(text)
-    local length = #text
-    if length == 0 then return text end
-    local cut = length
-    while cut > 1 do
-        local byte = text:byte(cut)
-        if byte < 0x80 or byte > 0xBF then break end
-        cut = cut - 1
-    end
-    return text:sub(1, cut - 1)
-end
-
-local function clipName(text, maxWidth)
-    local width = textWidth(text)
-    if not width or width <= maxWidth then return text end
-    local ellipsis = "…"
-    local body = text
-    while #body > 0 do
-        body = trimUtf8(body)
-        local candidate = body .. ellipsis
-        local w = textWidth(candidate)
-        if not w then return text end
-        if w <= maxWidth then return candidate end
-    end
-    return ellipsis
-end
-
-local function textIn(font, text, color)
-    local pushed = Fonts.push(font)
-    local ok, err = pcall(coloredText, text, color or Theme.colors.text)
-    Fonts.pop(pushed)
-    if not ok then error(err, 0) end
-end
-
 local function moveCursor(dx, dy)
     local pos = imgui.get_cursor_pos()
     imgui.set_cursor_pos(Vector2f.new(pos.x + dx, pos.y + dy))
@@ -135,10 +89,10 @@ end
 local function sectionLabel(id, text, ctx, width)
     verticalGap(Theme.metrics.sectionGap)
     local pushed = Fonts.push(ctx.fonts.small)
-    local textW = textWidth(text) or 0
+    local textW = UiText.width(text) or 0
     Fonts.pop(pushed)
     local origin = imgui.get_cursor_pos()
-    textIn(ctx.fonts.small, text, Theme.colors.textMuted)
+    UiText.inFont(ctx.fonts.small, text, Theme.colors.textMuted)
     imgui.same_line()
     imgui.set_cursor_pos(Vector2f.new(origin.x + textW + Theme.metrics.ruleGap, origin.y))
     local screen = imgui.get_cursor_screen_pos()
@@ -151,10 +105,10 @@ end
 local LABEL_VALUE_GAP = 6
 
 local function labeledValue(ctx, name, value)
-    textIn(ctx.fonts.body, name)
+    UiText.inFont(ctx.fonts.body, name)
     sameLineGap(LABEL_VALUE_GAP)
     moveCursor(0, ctx.sizes.body - ctx.sizes.meta)
-    textIn(ctx.fonts.meta, value, Theme.colors.textMuted)
+    UiText.inFont(ctx.fonts.meta, value, Theme.colors.textMuted)
 end
 
 function ReportWindow.rememberPosition(x, y)
@@ -227,13 +181,13 @@ local function drawRows(idPrefix, rows, columnWidth, layout)
                 end
                 local percent = Format.percent(row.share)
                 if row.valueKind == "hp" then percent = "HP " .. percent end
-                local w = textWidth(percent)
+                local w = UiText.width(percent)
                 local nameWidth = rightEdge - math.max(percentWidth, w or 0) - 8
-                imgui.text(clipName(tostring(row.name), nameWidth))
+                imgui.text(UiText.clip(tostring(row.name), nameWidth))
                 imgui.same_line()
                 local x = w and (rightEdge - w) or (rightEdge - percentWidth)
                 imgui.set_cursor_pos(Vector2f.new(x, imgui.get_cursor_pos().y))
-                coloredText(percent, Theme.colors.text)
+                UiText.colored(percent, Theme.colors.text)
             end)
             imgui.pop_id()
             if not okRow then error(rowErr, 0) end
@@ -247,12 +201,12 @@ end
 local function headerBodyText(ctx, text, color)
     imgui.same_line()
     moveCursor(Theme.metrics.chipGap - Theme.metrics.itemSpacing, ctx.sizes.header - ctx.sizes.body)
-    textIn(ctx.fonts.body, text, color)
+    UiText.inFont(ctx.fonts.body, text, color)
 end
 
 local function drawHeader(snapshot, ctx)
     local quest = snapshot.quest or {}
-    textIn(ctx.fonts.header, ReportText.headerWeaponText(quest))
+    UiText.inFont(ctx.fonts.header, ReportText.headerWeaponText(quest))
     local label, color = ReportText.resultText(quest)
     headerBodyText(ctx, label, color)
     local outcome, outcomeColor = ReportText.outcomeText(quest)
@@ -260,11 +214,11 @@ local function drawHeader(snapshot, ctx)
 end
 
 local function drawMeta(snapshot, ctx)
-    textIn(ctx.fonts.meta, ReportText.metaText(snapshot), Theme.colors.textMuted)
+    UiText.inFont(ctx.fonts.meta, ReportText.metaText(snapshot), Theme.colors.textMuted)
 end
 
 local function drawVersion(snapshot, ctx)
-    textIn(ctx.fonts.meta, ReportText.versionText(snapshot), Theme.colors.textMuted)
+    UiText.inFont(ctx.fonts.meta, ReportText.versionText(snapshot), Theme.colors.textMuted)
 end
 
 local function drawStats(snapshot, ctx)
@@ -273,10 +227,10 @@ local function drawStats(snapshot, ctx)
     local widths, measured = {}, true
     for index, tile in ipairs(tiles) do
         local pushed = Fonts.push(ctx.fonts.small)
-        local labelWidth = textWidth(tile.label)
+        local labelWidth = UiText.width(tile.label)
         Fonts.pop(pushed)
         pushed = Fonts.push(ctx.fonts.header)
-        local valueWidth = textWidth(tile.value)
+        local valueWidth = UiText.width(tile.value)
         Fonts.pop(pushed)
         if labelWidth and valueWidth then
             widths[index] = math.ceil(math.max(labelWidth, valueWidth))
@@ -299,12 +253,12 @@ local function drawStats(snapshot, ctx)
         while last < #tiles and layout[last + 1].row == layout[first].row do last = last + 1 end
         for index = first, last do
             imgui.set_cursor_pos(Vector2f.new(origin.x + layout[index].x, labelY))
-            textIn(ctx.fonts.small, tiles[index].label, Theme.colors.textMuted)
+            UiText.inFont(ctx.fonts.small, tiles[index].label, Theme.colors.textMuted)
         end
         local valueY = imgui.get_cursor_pos().y
         for index = first, last do
             imgui.set_cursor_pos(Vector2f.new(origin.x + layout[index].x, valueY))
-            textIn(ctx.fonts.header, tiles[index].value)
+            UiText.inFont(ctx.fonts.header, tiles[index].value)
         end
         first = last + 1
     end
@@ -375,10 +329,10 @@ local function drawSkillDamage(snapshot, ctx)
     if #items == 0 then return end
     for index, item in ipairs(items) do
         local pushed = Fonts.push(ctx.fonts.body)
-        local nameWidth = textWidth(item.name)
+        local nameWidth = UiText.width(item.name)
         Fonts.pop(pushed)
         pushed = Fonts.push(ctx.fonts.meta)
-        local valueWidth = textWidth(item.value)
+        local valueWidth = UiText.width(item.value)
         Fonts.pop(pushed)
         if nameWidth and valueWidth then
             widths[index] = math.ceil(nameWidth + LABEL_VALUE_GAP + valueWidth)
@@ -474,7 +428,7 @@ function ReportWindow.drawTopBar(ctx)
                 local okHover, hovered = pcall(imgui.is_item_hovered)
                 local color = okHover and hovered and Theme.colors.text or Theme.colors.textMuted
                 local fontPushed = Fonts.push(ctx.fonts.body)
-                local width = textWidth(label) or 0
+                local width = UiText.width(label) or 0
                 Draw.text("history", screen.x + (m.navButtonWidth - width) / 2,
                     screen.y + (m.iconButton - ctx.sizes.body) / 2 - Fonts.centerNudge(ctx.sizes.body), color, label)
                 Fonts.pop(fontPushed)
@@ -528,19 +482,19 @@ local function drawFooter(snapshot, ctx)
     imgui.invisible_button("##footerrule", { ctx.width, 1 })
     Draw.line("footer", screen.x, screen.y, screen.x + ctx.width, screen.y, Theme.colors.rule)
     if showNotSaved then
-        textIn(ctx.fonts.meta, L("not_saved"), Theme.colors.warning)
+        UiText.inFont(ctx.fonts.meta, L("not_saved"), Theme.colors.warning)
     end
     if showDiagnostics then
         local d = snapshot.diagnostics
-        textIn(ctx.fonts.small, string.format("%s: weightFallbacks=%d droppedPending=%d fightingFallback=%s",
+        UiText.inFont(ctx.fonts.small, string.format("%s: weightFallbacks=%d droppedPending=%d fightingFallback=%s",
             L("diagnostics"), d.weightFallbacks or 0, d.droppedPending or 0,
             tostring(d.fightingFallback == true)), Theme.colors.textMuted)
         local a, n = d.attribution or {}, d.names or {}
-        textIn(ctx.fonts.small, string.format("attribution: action=%d shell=%d kinsect=%d slinger=%d",
+        UiText.inFont(ctx.fonts.small, string.format("attribution: action=%d shell=%d kinsect=%d slinger=%d",
             a.action or 0, a.shell or 0, a.kinsect or 0, a.slinger or 0), Theme.colors.textMuted)
-        textIn(ctx.fonts.small, string.format("weapon-1=%d lastAttack=%d nonattack=%d",
+        UiText.inFont(ctx.fonts.small, string.format("weapon-1=%d lastAttack=%d nonattack=%d",
             a.weaponMinus1 or 0, a.lastAttack or 0, a.nonattack or 0), Theme.colors.textMuted)
-        textIn(ctx.fonts.small, string.format("names: sibling=%d unmapped=%d", n.sibling or 0, n.unmapped or 0), Theme.colors.textMuted)
+        UiText.inFont(ctx.fonts.small, string.format("names: sibling=%d unmapped=%d", n.sibling or 0, n.unmapped or 0), Theme.colors.textMuted)
     end
 end
 
@@ -624,9 +578,9 @@ local function drawHistoryChips(ctx)
         local height = ctx.sizes.body + m.itemSpacing
         for _, chip in ipairs(state.historyChips) do
             local suffix = " ×"
-            local suffixWidth = textWidth(suffix) or ctx.sizes.body
-            local text = clipName(chip.text, ctx.width - m.itemSpacing * 2 - suffixWidth) .. suffix
-            local width = math.min(ctx.width, (textWidth(text) or ctx.width - m.itemSpacing * 2) + m.itemSpacing * 2)
+            local suffixWidth = UiText.width(suffix) or ctx.sizes.body
+            local text = UiText.clip(chip.text, ctx.width - m.itemSpacing * 2 - suffixWidth) .. suffix
+            local width = math.min(ctx.width, (UiText.width(text) or ctx.width - m.itemSpacing * 2) + m.itemSpacing * 2)
             if x > 0 and x + width > ctx.width then
                 x, y = 0, y + height + m.itemSpacing
             end
@@ -654,7 +608,7 @@ end
 
 local function drawHistory(ctx)
     if #state.entries == 0 then
-        textIn(ctx.fonts.meta, L("history_empty"), Theme.colors.textMuted)
+        UiText.inFont(ctx.fonts.meta, L("history_empty"), Theme.colors.textMuted)
         return
     end
     drawHistoryChips(ctx)
@@ -669,7 +623,7 @@ local function drawHistory(ctx)
     end
     local ok, err = pcall(function()
         if #state.filteredEntries == 0 then
-            textIn(ctx.fonts.meta, L("history_no_matches"), Theme.colors.textMuted)
+            UiText.inFont(ctx.fonts.meta, L("history_no_matches"), Theme.colors.textMuted)
         end
         for index, entry in ipairs(state.filteredEntries) do
             local top = imgui.get_cursor_pos()
@@ -686,13 +640,13 @@ local function drawHistory(ctx)
             local bodyY = top.y + math.floor((layout.rowHeight - ctx.sizes.body) / 2)
             local metaY = top.y + math.floor((layout.rowHeight - ctx.sizes.meta) / 2)
             imgui.set_cursor_pos(Vector2f.new(top.x + columns.time.x, metaY))
-            textIn(ctx.fonts.meta, row.time, Theme.colors.textMuted)
+            UiText.inFont(ctx.fonts.meta, row.time, Theme.colors.textMuted)
             imgui.set_cursor_pos(Vector2f.new(top.x + columns.weapons.x, bodyY))
-            textIn(ctx.fonts.body, clipName(row.weapons, columns.weapons.width))
+            UiText.inFont(ctx.fonts.body, UiText.clip(row.weapons, columns.weapons.width))
             imgui.set_cursor_pos(Vector2f.new(top.x + columns.stars.x, bodyY))
-            textIn(ctx.fonts.body, row.stars, Theme.colors.accent)
+            UiText.inFont(ctx.fonts.body, row.stars, Theme.colors.accent)
             imgui.set_cursor_pos(Vector2f.new(top.x + columns.monsters.x, bodyY))
-            textIn(ctx.fonts.body, clipName(row.monsters, columns.monsters.width))
+            UiText.inFont(ctx.fonts.body, UiText.clip(row.monsters, columns.monsters.width))
             imgui.set_cursor_pos(Vector2f.new(top.x, top.y + layout.rowHeight))
         end
     end)
@@ -707,14 +661,14 @@ local function drawContents(settings, fonts, sizes)
     if state.view == "history" then loadHistory() end
     ReportWindow.drawTopBar(ctx)
     if state.view == "history" then
-        textIn(ctx.fonts.header, L("history_title"))
+        UiText.inFont(ctx.fonts.header, L("history_title"))
         drawHistory(ctx)
         return
     end
     local snapshot = state.snapshot
     if not snapshot or not snapshot.damage or (snapshot.damage.total or 0) <= 0 then
-        textIn(ctx.fonts.header, L("report_title"))
-        textIn(ctx.fonts.meta, L("no_data"), Theme.colors.textMuted)
+        UiText.inFont(ctx.fonts.header, L("report_title"))
+        UiText.inFont(ctx.fonts.meta, L("no_data"), Theme.colors.textMuted)
         drawFooter(snapshot, ctx)
         return
     end
@@ -971,7 +925,7 @@ function ReportWindow.draw()
     if state.filterOpen then
         local ctx = { fonts = fonts, sizes = sizes, scale = size / 18 }
         state.filterOpen, state.filterBounds = HistoryFilterWindow.draw(ctx, state.historyOptions, state.historyLabels,
-            state.historySelection, changeHistoryFilter, state.bounds, clipName)
+            state.historySelection, changeHistoryFilter, state.bounds, UiText.clip)
     end
 end
 
