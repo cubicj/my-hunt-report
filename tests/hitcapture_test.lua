@@ -1305,7 +1305,7 @@ function T.ledgerPrintsResolvedSubGuideText()
         complete(info)
         local line = ledgerLines()[1]
         assert(line:find("base=cSlash/100 sub=cCharge/200 subName=베어내리기 row=Slash", 1, true), line)
-        assert(#state.guideNames == 1 and state.guideNames[1] == 200)
+        assert(#state.guideNames == 2 and state.guideNames[1] == 100 and state.guideNames[2] == 200)
     end)
 end
 
