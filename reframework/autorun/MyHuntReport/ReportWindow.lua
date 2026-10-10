@@ -560,9 +560,12 @@ end
 
 local function drawSkillDamage(snapshot, ctx)
     local items, widths, measured = {}, {}, true
+    for _, row in ipairs(snapshot.sources or {}) do
+        items[#items + 1] = { name = row.name, value = Format.percent(row.share) }
+    end
     if type(snapshot.skillDamage) == "table" then
-        for index, row in ipairs(snapshot.skillDamage) do
-            items[index] = { name = ReportWindow.skillDamageName(row.kind), value = Format.percent(row.share) }
+        for _, row in ipairs(snapshot.skillDamage) do
+            items[#items + 1] = { name = ReportWindow.skillDamageName(row.kind), value = Format.percent(row.share) }
         end
     end
     local palico = snapshot.palico
