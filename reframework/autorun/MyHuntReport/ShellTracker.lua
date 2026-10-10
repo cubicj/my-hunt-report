@@ -268,15 +268,21 @@ local function onSetUp(args)
     local address = addressOf(shell)
     if not address then return end
     local entry = glaiveEntry(shell)
+    local inherited = false
     if not entry then
         local okParent, parent = pcall(function() return shell:get_ParentShell() end)
         local parentAddress = okParent and parent and addressOf(parent) or nil
         local parentEntry = parentAddress and launches[parentAddress] or nil
+        inherited = parentEntry ~= nil
         entry = parentEntry or hornEntry(shell) or longSwordDelayedShellEntry()
     end
     if not entry then
         local key, label = launchName()
         if key then entry = { key = key, label = label } end
+    end
+    if entry and not inherited then
+        local okHash, hash = pcall(function() return shell:call("get_NameHash") end)
+        entry.rootHash = okHash and type(hash) == "number" and hash or nil
     end
     setEntry(address, entry)
     if Log.isDeveloperMode() then traceLongSwordShell(shell, address, entry) end
@@ -285,7 +291,9 @@ local function onSetUp(args)
         local okOwner, owner = pcall(function() return shell:get_ShellOwner():get_Name() end)
         local okHash, hash = pcall(function() return shell:call("get_NameHash") end)
         local origin = (okOwner and tostring(owner) or "?") .. "/" .. (okHash and tostring(hash) or "?")
-        Log.debug("shell setup " .. tostring(address) .. " -> " .. key .. " owner=" .. origin, "shell:setup:" .. key .. ":" .. origin)
+        local root = tostring(entry.rootHash or "?")
+        Log.debug("shell setup " .. tostring(address) .. " -> " .. key .. " owner=" .. origin .. " root=" .. root,
+            "shell:setup:" .. key .. ":" .. origin .. ":" .. root)
     end
 end
 
@@ -309,7 +317,7 @@ function ShellTracker.nameForAttackObject(attackObj)
     local address = addressOf(shell)
     if not address then return nil, nil end
     local entry = launches[address]
-    if entry then return entry.key, entry.label, entry.hitTime end
+    if entry then return entry.key, entry.label, entry.hitTime, entry.rootHash end
     return nil, nil
 end
 

@@ -906,4 +906,72 @@ function T.snapshotCarriesModVersion()
     assert(s.version == 2)
 end
 
+function T.sourceSumsUseFinalDamageAndOwnDamageDenominatorWithoutDuplicatingMotions()
+    Session.reset(0)
+    Session.addHit(hit({ source = "shelling", weaponType = 7, finalDamage = 40 }))
+    Session.addHit(hit({ source = "shelling", weaponType = 7, finalDamage = 60 }))
+    Session.addHit(hit({ weaponType = 7, finalDamage = 100 }))
+    Session.addProc({ kind = "poison", damage = 50 })
+    Session.addPalicoHit(250)
+    local s = Session.snapshot()
+    assert(s.damage.total == 250 and s.damage.hits == 3 and #s.motions == 1)
+    assert(s.motions[1].damage == 200 and s.motions[1].hits == 3)
+    assert(#s.sources == 1)
+    local row = s.sources[1]
+    assert(row.source == "shelling" and row.weaponType == 7 and row.damage == 100 and row.hits == 2)
+    assert(row.share == 0.4 and s.skillDamage[1].share == 0.2)
+    assert(stubs.encode(row.label) == stubs.encode({ kind = "source", source = "shelling", weaponType = 7 }))
+    assert(s.diagnostics.sources.shelling == 2)
+end
+
+function T.sourcePhialsStaySeparateAndKinsectNamesAsGlaive()
+    Session.reset(0)
+    Session.addHit(hit({ source = "phial", weaponType = 8, finalDamage = 20 }))
+    Session.addHit(hit({ source = "phial", weaponType = 9, finalDamage = 30 }))
+    Session.addHit(hit({ source = "kinsect", weaponType = -1, finalDamage = 10 }))
+    local s = Session.snapshot({ resolveName = function() return "Shared label" end })
+    assert(#s.sources == 3)
+    assert(s.sources[1].source == "phial" and s.sources[1].weaponType == 9)
+    assert(s.sources[2].source == "phial" and s.sources[2].weaponType == 8)
+    assert(s.sources[3].source == "kinsect" and s.sources[3].weaponType == 10)
+    assert(s.sources[3].label.weaponType == 10)
+    assert(s.diagnostics.sources.phial == 2 and s.diagnostics.sources.kinsect == 1)
+    assert(Session.relabel(s, function() return "New shared label" end) == s)
+    assert(#s.sources == 3)
+    for _, row in ipairs(s.sources) do assert(row.name == "New shared label") end
+end
+
+function T.sourceSortUsesShareThenKeyOrderThenWeaponType()
+    Session.reset(0)
+    for _, case in ipairs({ { "echoBubble", 5 }, { "wyrmstake", 7 }, { "shelling", 7 },
+        { "swordBoost", 9 }, { "phial", 9 }, { "phial", 8 }, { "kinsect", -1 } }) do
+        Session.addHit(hit({ source = case[1], weaponType = case[2], finalDamage = 10 }))
+    end
+    local s = Session.snapshot()
+    local order = {}
+    for _, row in ipairs(s.sources) do order[#order + 1] = row.source .. ":" .. row.weaponType end
+    assert(table.concat(order, ",") == "kinsect:10,phial:8,phial:9,swordBoost:9,shelling:7,wyrmstake:7,echoBubble:5")
+    Session.addHit(hit({ source = "echoBubble", weaponType = 5, finalDamage = 1 }))
+    assert(Session.snapshot().sources[1].source == "echoBubble")
+end
+
+function T.sourceZeroDamageSnapshotsAndDiagnosticsAreDetachedAndReset()
+    local Sources = require("MyHuntReport.Sources")
+    Session.reset(0)
+    assert(Session.addHit(hit({ source = "phial", weaponType = 8, finalDamage = 0 })) == false)
+    local empty = Session.snapshot()
+    assert(#empty.sources == 0)
+    for _, key in ipairs(Sources.KEYS) do assert(empty.diagnostics.sources[key] == 0) end
+    Session.addHit(hit({ source = "phial", weaponType = 8 }))
+    local saved = Session.snapshot()
+    Session.addHit(hit({ source = "phial", weaponType = 8 }))
+    assert(saved.sources[1].damage == 100 and saved.sources[1].hits == 1 and saved.diagnostics.sources.phial == 1)
+    saved.sources[1].label.weaponType = 99
+    saved.diagnostics.sources.phial = 99
+    assert(Session.snapshot().sources[1].label.weaponType == 8)
+    assert(Session.snapshot().diagnostics.sources.phial == 2)
+    Session.reset(0)
+    assert(#Session.snapshot().sources == 0 and Session.snapshot().diagnostics.sources.phial == 0)
+end
+
 return T

@@ -1281,7 +1281,7 @@ function T.ledgerUsesCapturedFieldsAndCompletedHitNumber()
         assert(hits[1].motionKey == "7:cSlash" and hits[1].motionLabel.guideId == 100)
         local lines = ledgerLines()
         assert(#lines == 1)
-        assert(lines[1] == "[MyHuntReport] hit #1 dmg=90(70/20) wp=7 act=1 mv=12.5 obj=weapon base=cSlash/100 sub=cCharge row=Slash via=action name=guide mon=26 atk=nil", lines[1])
+        assert(lines[1] == "[MyHuntReport] hit #1 dmg=90(70/20) wp=7 act=1 mv=12.5 obj=weapon base=cSlash/100 sub=cCharge row=Slash via=action name=guide mon=26 src=- root=- key=7:?:? atk=nil", lines[1])
         for _ = 1, 6 do
             local nextHit = hitInfo(#hits + 1, 1, {}, nil, object)
             HitCapture.handleStockDamageDetail(nextHit)
@@ -1607,6 +1607,163 @@ end
 
 function T.ledgerEndsWithNilWhenAttackPowerReadFails()
     checkAttackTrace(function() error("boom") end, " atk=nil")
+end
+
+local function sourcePending(monsterId)
+    for index = 1, math.huge do
+        local name, value = debug.getupvalue(HitCapture.handleStockDamageDetail, index)
+        assert(name ~= nil, "pending upvalue missing")
+        if name == "pending" then return value[monsterId] end
+    end
+end
+
+local function withSourceLaunch(key, label, hitTime, rootHash, callback)
+    local ShellTracker = require("MyHuntReport.ShellTracker")
+    local original = ShellTracker.nameForAttackObject
+    ShellTracker.nameForAttackObject = function() return key, label, hitTime, rootHash end
+    local ok, err = pcall(callback)
+    ShellTracker.nameForAttackObject = original
+    if not ok then error(err, 0) end
+end
+
+function T.sourceShellPendingRetainsClassificationRootAndAttackKeyUntilCompletion()
+    withSourceLaunch("cShoot", { kind = "motion", className = "cShoot", guideId = 100, weaponType = 7 }, nil, 543483591, function()
+        withAuditCapture(function(state, hits, object)
+            state.object = "Wp07Shell"
+            local info = hitInfo(1, 1, {}, nil, object)
+            info.get_AttackIndex = function() return { _Resource = 0, _Index = 6 } end
+            HitCapture.handleStockDamageDetail(info)
+            local pendingHit = sourcePending(10)
+            assert(pendingHit.source == "shelling" and pendingHit.rootHash == 543483591 and pendingHit.shell == true)
+            assert(pendingHit.attackResource == 0 and pendingHit.attackIndex == 6)
+            state.object = "it0700_0027_0"
+            info.get_AttackIndex = function() error("must use captured index") end
+            complete(info)
+            assert(hits[1].source == "shelling" and hits[1].motionKey == "7:cShoot")
+            local line = ledgerLines()[1]
+            assert(line:find("src=shelling root=543483591 key=7:0:6", 1, true), line)
+        end)
+    end)
+end
+
+function T.sourceShellClassificationSkipsDiagnosticReadsOutsideDeveloperMode()
+    withSourceLaunch("cShoot", { kind = "motion", className = "cShoot", guideId = 100, weaponType = 7 }, nil, 543483591, function()
+        withAuditCapture(function(state, hits, object)
+            local Log = require("MyHuntReport.Log")
+            Log.setDeveloperMode(false)
+            state.object = "Wp07Shell"
+            local reads = { getter = 0, _Resource = 0, _Index = 0 }
+            local info = hitInfo(1, 1, {}, nil, object)
+            info.get_AttackIndex = function()
+                reads.getter = reads.getter + 1
+                return setmetatable({}, { __index = function(_, field)
+                    reads[field] = reads[field] + 1
+                    return field == "_Resource" and 0 or 6
+                end })
+            end
+            HitCapture.handleStockDamageDetail(info)
+            complete(info)
+            assert(#hits == 1 and hits[1].source == "shelling")
+            assert(reads.getter == 0 and reads._Resource == 0 and reads._Index == 0,
+                string.format("diagnostic reads: getter=%d resource=%d index=%d", reads.getter, reads._Resource, reads._Index))
+        end)
+    end)
+end
+
+function T.sourceKinsectPendingKeepsMinusOneWeaponAndNoRoot()
+    withAuditCapture(function(state, hits, object)
+        state.object = "it1003_test"
+        local info = hitInfo(1, 1, { _WeaponType = -1 }, nil, object)
+        HitCapture.handleStockDamageDetail(info)
+        local pendingHit = sourcePending(10)
+        assert(pendingHit.source == "kinsect" and pendingHit.rootHash == nil and pendingHit.shell == false)
+        complete(info)
+        assert(hits[1].source == "kinsect" and hits[1].weaponType == -1)
+        local line = ledgerLines()[1]
+        assert(line:find("src=kinsect root=- key=-1:?:?", 1, true), line)
+    end)
+end
+
+function T.sourceEchoBubbleKeepsHitTimeMotionAndInheritedRoot()
+    withHornShells(function(tracker, state, shell, hooks, capture)
+        local root = shell(501, 2691864323)
+        local child = shell(502, 2441209651, root)
+        hooks.doOnSetUp({ [2] = root })
+        hooks.doOnSetUp({ [2] = child })
+        hooks.doOnDestroy({ [2] = root })
+        state.className, state.guideId = "cNewAddMStartBase", -123
+        local hit = capture(child)
+        assert(hit.source == "echoBubble")
+        assert(hit.motionKey == "5:cNewAddMStartBase" and hit.attribution == "action")
+        assert(select(4, tracker.nameForAttackObject(child)) == 2691864323)
+    end)
+end
+
+function T.sourceDiagnosticsPreservePartialIndexReadsAndNeverDropHits()
+    for _, mode in ipairs({ "getter", "resource", "index", "nil" }) do
+        withAuditCapture(function(state, hits, object)
+            local info = hitInfo(1, 1, {}, nil, object)
+            info.get_AttackIndex = function()
+                if mode == "getter" then error("index unavailable") end
+                if mode == "nil" then return nil end
+                return setmetatable({}, { __index = function(_, field)
+                    if (mode == "resource" and field == "_Resource") or (mode == "index" and field == "_Index") then
+                        error("field unavailable")
+                    end
+                    return field == "_Resource" and 0 or 6
+                end })
+            end
+            HitCapture.handleStockDamageDetail(info)
+            complete(info)
+            assert(#hits == 1 and hits[1].source == nil)
+            local expected = mode == "resource" and "7:?:6" or mode == "index" and "7:0:?" or "7:?:?"
+            local line = ledgerLines()[#ledgerLines()]
+            assert(line:find("src=- root=- key=" .. expected, 1, true), line)
+        end)
+    end
+end
+
+function T.sourceDiagnosticsKeepUnreadableShellRootUnknown()
+    withSourceLaunch("cShoot", { kind = "motion", className = "cShoot", guideId = 100 }, nil, nil, function()
+        withAuditCapture(function(state, hits, object)
+            state.object = "Wp07Shell"
+            local info = hitInfo(1, 1, {}, nil, object)
+            HitCapture.handleStockDamageDetail(info)
+            complete(info)
+            assert(hits[1].source == nil)
+            local line = ledgerLines()[1]
+            assert(line:find("src=- root=? key=7:?:?", 1, true), line)
+        end)
+    end)
+end
+
+function T.sourceClassificationStaysAfterOwnerBossAndDeadFilters()
+    local Sources = require("MyHuntReport.Sources")
+    local original = Sources.classify
+    local calls = 0
+    Sources.classify = function(hit)
+        calls = calls + 1
+        return original(hit)
+    end
+    local ok, err = pcall(function()
+        withCapture(function(hits)
+            local other = hitInfo(1, 2)
+            HitCapture.handleStockDamageDetail(other)
+            local small = hitInfo(2, 1)
+            small:get_DamageOwner().em.get_IsBoss = function() return false end
+            HitCapture.handleStockDamageDetail(small)
+            local dead = hitInfo(3, 1)
+            local target = dead:get_DamageOwner()
+            target.dead = true
+            dead.get_DamageOwner = function() return target end
+            HitCapture.handleStockDamageDetail(dead)
+            assert(calls == 0 and HitCapture.pendingCount() == 0 and #hits == 0)
+            HitCapture.handleStockDamageDetail(hitInfo(4, 1))
+            assert(calls == 1)
+        end)
+    end)
+    Sources.classify = original
+    if not ok then error(err, 0) end
 end
 
 return T

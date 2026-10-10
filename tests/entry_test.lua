@@ -336,4 +336,32 @@ function T.entryRegistersTheHoverCursorRestoreForScriptReset()
     assert(restores == 1)
 end
 
+function T.entryDoesNotLoadOrInstallTheRetiredSourceProbe()
+    local noop = function() end
+    local calls, required = {}, {}
+    local function module(name)
+        return setmetatable({}, { __index = function(_, method)
+            return function() calls[#calls + 1] = name .. "." .. method end
+        end })
+    end
+    local modules = {
+        ["MyHuntReport.Settings"] = {
+            load = noop,
+            get = function() return { language = "en", fontSize = 18, developerMode = false, skillProcCapture = false } end,
+        },
+    }
+    local environment = setmetatable({
+        require = function(name)
+            required[name] = true
+            return modules[name] or module(name)
+        end,
+        re = { on_draw_ui = noop, on_frame = noop, on_config_save = noop },
+    }, { __index = _G })
+    assert(loadfile("reframework/autorun/my_hunt_report.lua", "t", environment))()
+    assert(required["MyHuntReport.SourceProbe"] == nil)
+    for _, call in ipairs(calls) do assert(call ~= "MyHuntReport.SourceProbe.install", call) end
+    assert(loadfile("reframework/autorun/MyHuntReport/SourceProbe.lua") == nil)
+    assert(loadfile("tests/sourceprobe_test.lua") == nil)
+end
+
 return T

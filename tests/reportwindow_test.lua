@@ -3016,4 +3016,102 @@ function T.reportDrawsVersionBetweenMetaAndStats()
     end)
 end
 
+local function sourceTextEvents(ui)
+    local texts = {}
+    for _, event in ipairs(ui.events) do
+        if event.kind == "text" then texts[#texts + 1] = event.value end
+    end
+    return table.concat(texts, "|")
+end
+
+function T.sourceItemsPrecedeSkillDamageAndPalicoInSnapshotOrder()
+    withNavigation(function(ui)
+        Locale.resolve("en")
+        local shown = snapshot("clear")
+        shown.sources = { { name = "Gunlance: Shelling", share = 0.3 }, { name = "Gunlance: Wyrmstake Cannon", share = 0.2 } }
+        shown.skillDamage = { { kind = "flayer", share = 0.1 } }
+        shown.palico = { share = 0.05 }
+        ReportWindow.show(shown)
+        ui.draw()
+        assert(ReportWindow.isOpen())
+        local texts = sourceTextEvents(ui)
+        assert(texts:find("Gunlance: Shelling|30.0%|Gunlance: Wyrmstake Cannon|20.0%|Flayer|10.0%|Palico|5.0%", 1, true), texts)
+        shown.skillDamage, shown.palico = nil, nil
+        ui.draw()
+        texts = sourceTextEvents(ui)
+        assert(texts:find("Gunlance: Shelling|30.0%|Gunlance: Wyrmstake Cannon|20.0%", 1, true), texts)
+    end)
+end
+
+function T.sourceAbsenceLeavesLegacySkillDamageAndPalicoRenderingUnchanged()
+    withNavigation(function(ui)
+        Locale.resolve("en")
+        local shown = snapshot("clear")
+        shown.skillDamage = { { kind = "flayer", share = 0.1 }, { kind = "blast", share = 0.2 } }
+        shown.palico = { share = 0.05 }
+        ReportWindow.show(shown)
+        ui.draw()
+        local legacy = sourceTextEvents(ui)
+        assert(legacy:find("Flayer|10.0%|Blast|20.0%|Palico|5.0%", 1, true), legacy)
+        shown.sources = {}
+        ui.draw()
+        assert(sourceTextEvents(ui) == legacy)
+    end)
+end
+
+function T.sourceItemsWrapAsWholeNameAndPercentPairs()
+    withNavigation(function(ui)
+        Locale.resolve("en")
+        local shown = snapshot("clear")
+        shown.sources = { { name = "Gunlance: Shelling", share = 0.3 }, { name = "Gunlance: Wyrmstake Cannon", share = 0.2 } }
+        shown.skillDamage = { { kind = "flayer", share = 0.1 } }
+        shown.palico = { share = 0.05 }
+        local names = { ["Gunlance: Shelling"] = true, ["Gunlance: Wyrmstake Cannon"] = true, Flayer = true, Palico = true }
+        local text, sameLine = imgui.text, false
+        local starts, values = {}, {}
+        imgui.calc_text_size = function(value) return { x = names[value] and 300 or 40, y = 18 } end
+        imgui.same_line = function() sameLine = true end
+        imgui.text = function(value)
+            if names[value] then starts[#starts + 1] = not sameLine end
+            if value == "30.0%" or value == "20.0%" or value == "10.0%" or value == "5.0%" then
+                values[#values + 1] = sameLine
+            end
+            sameLine = false
+            text(value)
+        end
+        ReportWindow.show(shown)
+        ui.draw()
+        assert(#starts == 4 and starts[1] and not starts[2] and starts[3] and not starts[4])
+        assert(#values == 4)
+        for _, inline in ipairs(values) do assert(inline) end
+    end)
+end
+
+function T.sourceHistoryRoundTripKeepsSharesAndLabelsWithoutDiagnostics()
+    local History = require("MyHuntReport.History")
+    local Session = require("MyHuntReport.Session")
+    History.resetForTests()
+    local shown = snapshot("clear")
+    shown.sources = { { source = "phial", weaponType = 8, damage = 20, hits = 2, share = 0.2,
+        label = { kind = "source", source = "phial", weaponType = 8 }, name = "Old phial" } }
+    shown.diagnostics = { sources = { phial = 2 } }
+    assert(History.append(shown))
+    local records, skipped = History.readAll()
+    assert(skipped == 0 and #records == 1 and records[1].diagnostics == nil)
+    assert(stubs.encode(records[1].sources) == stubs.encode(shown.sources))
+    assert(shown.diagnostics.sources.phial == 2)
+    Session.relabel(records[1], function(label)
+        assert(label.kind == "source" and label.source == "phial" and label.weaponType == 8)
+        return "Switch Axe: Phial Explosion"
+    end)
+    withNavigation(function(ui)
+        Locale.resolve("en")
+        ReportWindow.show(records[1])
+        ui.draw()
+        local texts = sourceTextEvents(ui)
+        assert(texts:find("Switch Axe: Phial Explosion|20.0%", 1, true), texts)
+    end)
+    History.resetForTests()
+end
+
 return T
