@@ -345,13 +345,100 @@ function T.motionDiagnosticIsFormattedOnlyInDeveloperMode()
             assert(formatted == 1 and Log.count(key) == 1, key)
             local logged = false
             for _, line in ipairs(stubs.logLines) do
-                if line == "[MyHuntReport] motion guide=77 class=cProbeAction -> Other action" then logged = true end
+                if line == "[MyHuntReport] motion guide=77 class=cProbeAction -> Other action entry=none" then logged = true end
             end
             assert(logged)
         end)
     end)
     string.format = format
     Log.setDeveloperMode(developerMode)
+    if not ok then error(err, 0) end
+end
+
+local function debugLine(prefix)
+    for index = #stubs.logLines, 1, -1 do
+        local line = stubs.logLines[index]
+        if line:find(prefix, 1, true) == 1 then return line end
+    end
+    return nil
+end
+
+function T.fallbackDiagnosticPrintsTheGuideEntryAndRawText()
+    local Log = require("MyHuntReport.Log")
+    local developerMode = Log.isDeveloperMode()
+    local ok, err = pcall(function()
+        withGuides({ ["en:guid-9328"] = "", ["en:guid-4001"] = "Named" }, function()
+            Locale.init({})
+            Locale.resolve("en")
+            Log.resetCounts()
+            Log.setDeveloperMode(true)
+            assert(MotionNames.nameFor("cDiagEmpty", 9328) == "Other action")
+            assert(debugLine("[MyHuntReport] motion guide=9328 class=cDiagEmpty ") == "[MyHuntReport] motion guide=9328 class=cDiagEmpty -> Other action entry=Wp00 text=\"\"")
+            assert(MotionNames.nameFor("cDiagCommon", -754623232) == "Other action")
+            assert(debugLine("[MyHuntReport] motion guide=-754623232 class=cDiagCommon ") == "[MyHuntReport] motion guide=-754623232 class=cDiagCommon -> Other action entry=Common text=nil")
+            assert(MotionNames.nameFor("cDiagMissing", 8482) == "Other action")
+            assert(debugLine("[MyHuntReport] motion guide=8482 class=cDiagMissing ") == "[MyHuntReport] motion guide=8482 class=cDiagMissing -> Other action entry=none")
+            assert(MotionNames.nameFor("cDiagNamed", 4001) == "Named")
+            assert(debugLine("[MyHuntReport] motion guide=4001 class=cDiagNamed ") == "[MyHuntReport] motion guide=4001 class=cDiagNamed -> Named")
+            assert(MotionNames.nameFor("cDiagNoGuide", -1) == "Other action")
+            assert(debugLine("[MyHuntReport] motion guide=-1 class=cDiagNoGuide ") == "[MyHuntReport] motion guide=-1 class=cDiagNoGuide -> Other action")
+            Log.setDeveloperMode(false)
+            local count = #stubs.logLines
+            assert(MotionNames.nameFor("cDiagQuiet", 8482) == "Other action")
+            assert(#stubs.logLines == count)
+        end)
+    end)
+    Log.setDeveloperMode(developerMode)
+    if not ok then error(err, 0) end
+end
+
+function T.fallbackDiagnosticReportsAnUnavailableGuideTable()
+    local Log = require("MyHuntReport.Log")
+    local developerMode, singleton = Log.isDeveloperMode(), Game.singleton
+    local ok, err = pcall(function()
+        Game.singleton = function() return nil end
+        MotionNames.reset()
+        Locale.init({})
+        Locale.resolve("en")
+        Log.resetCounts()
+        Log.setDeveloperMode(true)
+        assert(MotionNames.nameFor("cDiagUnavailable", 8482) == "Other action")
+        assert(debugLine("[MyHuntReport] motion guide=8482 class=cDiagUnavailable ") == "[MyHuntReport] motion guide=8482 class=cDiagUnavailable -> Other action entry=unavailable")
+    end)
+    Game.singleton = singleton
+    MotionNames.reset()
+    Log.setDeveloperMode(developerMode)
+    if not ok then error(err, 0) end
+end
+
+function T.unavailableGuideSettingRetriesWithoutReset()
+    local Log = require("MyHuntReport.Log")
+    local developerMode = Log.isDeveloperMode()
+    local singleton, messageText = Game.singleton, Game.messageText
+    local ok, err = pcall(function()
+        local manager = { _Setting = {} }
+        Game.singleton = function() return manager end
+        Game.messageText = function(guid)
+            if guid == "guid-9328" then return "Overhead Slash" end
+            return nil
+        end
+        MotionNames.reset()
+        Locale.init({})
+        Locale.resolve("en")
+        Log.resetCounts()
+        Log.setDeveloperMode(true)
+        local name, source = MotionNames.nameFor("cDiagLate", 9328)
+        assert(name == "Other action" and source == "unmapped")
+        assert(debugLine("[MyHuntReport] motion guide=9328 class=cDiagLate ") == "[MyHuntReport] motion guide=9328 class=cDiagLate -> Other action entry=unavailable")
+        manager._Setting._ActionGuideSetting = {
+            _ActionGuideName_Wp00 = fakeList({ { _Action = 9328, _ActionName = "guid-9328" } }),
+        }
+        name, source = MotionNames.nameFor("cDiagReady", 9328)
+        assert(name == "Overhead Slash" and source == "guide")
+    end)
+    Game.singleton, Game.messageText = singleton, messageText
+    Log.setDeveloperMode(developerMode)
+    MotionNames.reset()
     if not ok then error(err, 0) end
 end
 
