@@ -36,6 +36,7 @@ local function withGuides(texts, callback)
         return { _Setting = { _ActionGuideSetting = {
             _ActionGuideName_Common = fakeList({ { _Action = -754623232, _ActionName = "guid-common" } }),
             _ActionGuideName_Wp00 = fakeList({ { _Action = 9328, _ActionName = "guid-9328" } }),
+            _ActionGuideName_Wp01 = fakeList({ { _Action = 1897592832, _ActionName = "guid-focus" } }),
             _ActionGuideName_Wp05 = fakeList({ { _Action = 1763677568, _ActionName = "guid-jump" } }),
             _ActionGuideName_Wp07 = fakeList({ { _Action = 1497865856, _ActionName = "guid-wyrmstake" } }),
             _ActionGuideName_Wp10 = fakeList({ { _Action = -448700960, _ActionName = "guid-neg" } }),
@@ -270,6 +271,20 @@ function T.landingGuideAliasesToItsSwing()
         assert(name == "점프 내려치기" and source == "guide", tostring(name))
         name, source = MotionNames.nameFor("cWpFlyOn", 1763677568)
         assert(name == "점프 내려치기" and source == "guide")
+    end)
+end
+
+function T.focusStrikeWoundFollowUpAliasesToTheFocusStrike()
+    local texts = { ["en:guid-focus"] = "Focus Thrust", ["ko:guid-focus"] = "집중 급소 찌르기" }
+    withGuides(texts, function()
+        Locale.init({})
+        Locale.resolve("ko")
+        local name, source = MotionNames.nameFor("cAimComboOldScar", 8482)
+        assert(name == "집중 급소 찌르기" and source == "guide", tostring(name))
+        name, source = MotionNames.nameFor("cAimComboStart", 1897592832)
+        assert(name == "집중 급소 찌르기" and source == "guide")
+        Locale.resolve("en")
+        assert(MotionNames.nameFor("cAimComboOldScar", 8482) == "Focus Thrust")
     end)
 end
 

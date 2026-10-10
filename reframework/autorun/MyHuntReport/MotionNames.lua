@@ -7,7 +7,7 @@ local MotionNames = {}
 local WEAPON_TYPE_COUNT = 14
 local SUFFIXES = { "Land", "NoCombo", "WeakHit", "Front", "Back", "Left", "Right", "Loop", "End" }
 
-local GUIDE_ALIASES = { [-90670656] = 1763677568, [1088001664] = 1497865856 }
+local GUIDE_ALIASES = { [-90670656] = 1763677568, [1088001664] = 1497865856, [8482] = 1897592832 }
 
 local guides = nil
 local guideLists = nil
