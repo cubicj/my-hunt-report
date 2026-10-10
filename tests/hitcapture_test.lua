@@ -1285,7 +1285,7 @@ function T.ledgerUsesCapturedFieldsAndCompletedHitNumber()
         assert(hits[1].motionKey == "7:cSlash" and hits[1].motionLabel.guideId == 100)
         local lines = ledgerLines()
         assert(#lines == 1)
-        assert(lines[1] == "[MyHuntReport] hit #1 dmg=90(70/20) wp=7 act=1 mv=12.5 obj=weapon base=cSlash/100 sub=cCharge/200 subName=none row=Slash via=action name=guide mon=26 src=- root=- key=7:?:? atk=nil", lines[1])
+        assert(lines[1] == "[MyHuntReport] hit #1 dmg=90(70/20) wp=7 act=1 mv=12.5 obj=weapon base=cSlash/100 sub=cCharge/200 subName=none row=Slash via=action name=guide mon=26 src=- root=- key=7:?:? atk=nil hz=-/- wound=false w=12.5 skills=-", lines[1])
         for _ = 1, 6 do
             local nextHit = hitInfo(#hits + 1, 1, {}, nil, object)
             HitCapture.handleStockDamageDetail(nextHit)
@@ -1295,6 +1295,30 @@ function T.ledgerUsesCapturedFieldsAndCompletedHitNumber()
         assert(#lines == 7 and lines[7]:find("hit #7 ", 1, true))
         assert(lines[7]:find("via=nonattack", 1, true))
     end)
+end
+
+function T.ledgerPrintsSkillConditionInputsAndCredits()
+    local Log = require("MyHuntReport.Log")
+    local developerMode = Log.isDeveloperMode()
+    local ok, err = pcall(function()
+        withSkillCapture(function(hits, contexts, active)
+            active[19] = true
+            active["wex:wound"] = true
+            Log.setDeveloperMode(true)
+            local info = hitInfo(101, 1)
+            HitCapture.handleStockDamageDetail(info)
+            local pre = preCalc(1)
+            pre.Common.ScarIndex = 0
+            HitCapture.handleCalcStockDamage(fakeThis(meat(60), meat(30), 10, 2), pre, { Hide = 1.0 })
+            complete(info)
+            local lines = ledgerLines()
+            local line = lines[#lines]
+            local suffix = " hz=30/60 wound=true w=18.0 skills=19,63,wex:wound"
+            assert(line and line:sub(-#suffix) == suffix, tostring(line))
+        end)
+    end)
+    Log.setDeveloperMode(developerMode)
+    if not ok then error(err, 0) end
 end
 
 function T.ledgerPrintsResolvedSubGuideText()
@@ -1626,15 +1650,15 @@ local function checkAttackTrace(read, suffix)
         complete(info)
         local lines = ledgerLines()
         assert(#hits == 1 and #lines == 1)
-        assert(lines[1]:sub(-#suffix) == suffix, lines[1])
+        assert(lines[1]:find(suffix .. " hz=", 1, true), lines[1])
     end)
 end
 
-function T.ledgerEndsWithCapturedAttackPower()
+function T.ledgerPrintsCapturedAttackPower()
     checkAttackTrace(function() return 259.85 end, " atk=259.85")
 end
 
-function T.ledgerEndsWithNilWhenAttackPowerReadFails()
+function T.ledgerPrintsNilWhenAttackPowerReadFails()
     checkAttackTrace(function() error("boom") end, " atk=nil")
 end
 
