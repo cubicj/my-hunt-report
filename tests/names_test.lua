@@ -566,4 +566,29 @@ function T.healLabelsResolveThroughLocale()
     end)
 end
 
+function T.sourceLabelsUseWeaponNamesAndCurrentLocale()
+    withNames(function(Names, calls)
+        local label = { kind = "source", source = "phial", weaponType = 8 }
+        assert(Names.resolve(label) == "via:1:app.WeaponUtil:8: Phial Explosion")
+        assert(calls[1][1] == "app.WeaponUtil" and calls[1][2] == "getWeaponTypeName(app.WeaponDef.TYPE)")
+        label.weaponType = 9
+        assert(Names.resolve(label) == "via:1:app.WeaponUtil:9: Phial Explosion")
+        Locale.resolve("ko")
+        assert(Names.resolve(label) == "via:11:app.WeaponUtil:9: 병 폭발")
+        assert(Names.resolve({ kind = "source", source = "kinsect", weaponType = 10 }) == "via:11:app.WeaponUtil:10: 조충 공격")
+    end)
+end
+
+function T.sourceLabelsFallBackWithoutAWeaponName()
+    withNames(function(Names)
+        local label = { kind = "source", source = "echoBubble", weaponType = 5 }
+        Game.messageText = function() return nil end
+        assert(Names.resolve(label) == "Echo Bubble Resonance")
+        assert(Names.resolve({ kind = "source", source = "shelling" }) == "Shelling")
+        Names.reset()
+        Game.callStatic = function() error("weapon name unavailable") end
+        assert(Names.resolve(label) == "Echo Bubble Resonance")
+    end)
+end
+
 return T

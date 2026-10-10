@@ -365,4 +365,23 @@ function T.palicoShareLabelExistsInBothLanguages()
     Locale.resolve(previous)
 end
 
+function T.sourceTextsMatchTheApprovedLabelsInBothLanguages()
+    local keys = { "kinsect", "phial", "swordBoost", "shelling", "wyrmstake", "echoBubble" }
+    local expected = {
+        en = { "Kinsect", "Phial Explosion", "Sword Boost", "Shelling", "Wyrmstake Cannon", "Echo Bubble Resonance" },
+        ko = { "조충 공격", "병 폭발", "검 강화", "포격", "용항포", "소리 구슬 공명" },
+    }
+    for language, values in pairs(expected) do
+        Locale.resolve(language)
+        local present = {}
+        for _, key in ipairs(Locale.keys(language)) do present[key] = true end
+        for index, key in ipairs(keys) do
+            assert(present["source_" .. key] == true)
+            assert(Locale.text("source_" .. key) == values[index])
+        end
+        assert(Locale.text("source_kinsect") == Locale.text("motion_kinsect"))
+    end
+    Locale.resolve("en")
+end
+
 return T

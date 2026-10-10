@@ -113,6 +113,12 @@ local function weaponName(weaponType)
 end
 
 function Names.resolve(label)
+    if label.kind == "source" then
+        local text = Locale.text("source_" .. label.source)
+        local ok, weapon = pcall(weaponName, label.weaponType)
+        if not ok or weapon == nil then return text end
+        return weapon .. ": " .. text
+    end
     if label.kind == "echoWave" then return echoWaveName(label.highFreq) end
     if label.kind == "monster" then return monsterName(label) end
     if label.kind == "motion" then

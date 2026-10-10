@@ -1,6 +1,7 @@
 local Game = require("MyHuntReport.Game")
 local MotionNames = require("MyHuntReport.MotionNames")
 local Version = require("MyHuntReport.Version")
+local Sources = require("MyHuntReport.Sources")
 
 local Session = {}
 
@@ -11,6 +12,9 @@ local FIXED_PROC_KINDS = { woundBreak = true }
 local HEAL_KINDS = { "hastenRecovery", "superRecovery" }
 local PALICO_PROC_KINDS = { blast = true, poison = true }
 local HEAL_KIND_SET = { hastenRecovery = true, superRecovery = true }
+
+local SOURCE_ORDER = {}
+for index, source in ipairs(Sources.KEYS) do SOURCE_ORDER[source] = index end
 
 local state = nil
 
@@ -45,6 +49,7 @@ function Session.reset(startTime)
         attributeHitzones = {},
         fightingSeconds = 0,
         skillDamage = {},
+        sources = {},
         palico = { hits = 0, direct = 0, blast = 0, poison = 0 },
         monsters = {},
         monsterOrder = {},
@@ -151,6 +156,19 @@ local function addRows(hit, damage)
     motion.hits = motion.hits + 1
 end
 
+local function addSource(hit, damage)
+    if not SOURCE_ORDER[hit.source] then return end
+    local weaponType = Sources.weaponTypeFor(hit.source, hit.weaponType)
+    local key = hit.source .. ":" .. tostring(weaponType)
+    local row = state.sources[key]
+    if not row then
+        row = { source = hit.source, weaponType = weaponType, damage = 0, hits = 0 }
+        state.sources[key] = row
+    end
+    row.damage = row.damage + damage
+    row.hits = row.hits + 1
+end
+
 function Session.addHit(hit)
     local damage = tonumber(hit.finalDamage) or 0
     if damage <= 0 then return false end
@@ -163,6 +181,7 @@ function Session.addHit(hit)
     noteWeaponType(tonumber(hit.weaponType))
     addDamageStats(hit, physical, element)
     addRows(hit, damage)
+    addSource(hit, damage)
     return true
 end
 
@@ -319,6 +338,25 @@ local function skillDamageRows(total)
     return rows
 end
 
+local function sourceRows(total)
+    local rows = {}
+    for _, row in pairs(state.sources) do
+        if row.damage > 0 then
+            rows[#rows + 1] = {
+                source = row.source, weaponType = row.weaponType, damage = row.damage, hits = row.hits,
+                share = total > 0 and row.damage / total or 0,
+                label = { kind = "source", source = row.source, weaponType = row.weaponType },
+            }
+        end
+    end
+    table.sort(rows, function(a, b)
+        if a.share ~= b.share then return a.share > b.share end
+        if a.source ~= b.source then return SOURCE_ORDER[a.source] < SOURCE_ORDER[b.source] end
+        return a.weaponType < b.weaponType
+    end)
+    return rows
+end
+
 local function palicoBlock(total)
     local palico = Session.palicoTotals()
     local damage = palico.direct + palico.blast + palico.poison
@@ -400,7 +438,11 @@ local function weaponRows(list)
 end
 
 local function diagnosticsBlock(fightingFallback)
+    local sources = {}
+    for _, source in ipairs(Sources.KEYS) do sources[source] = 0 end
+    for _, row in pairs(state.sources) do sources[row.source] = sources[row.source] + row.hits end
     return {
+        sources = sources,
         attribution = {
             action = state.attribution.action, shell = state.attribution.shell,
             kinsect = state.attribution.kinsect, weaponMinus1 = state.attribution.weaponMinus1,
@@ -453,6 +495,7 @@ function Session.snapshot(options)
             avgAttributeHitzone = attributeBucket and ratio(attributeBucket.sum, attributeBucket.count) or nil,
         },
         skillDamage = skillDamageRows(total),
+        sources = sourceRows(total),
         palico = palicoBlock(total),
         skills = skillRows(options.equippedSkills),
         motions = motions,
@@ -477,7 +520,7 @@ function Session.relabel(snapshot, resolve)
     local function relabel(row)
         if row.label then row.name = resolve(row.label) end
     end
-    for _, field in ipairs({ "monsters", "motions", "procs", "skills" }) do
+    for _, field in ipairs({ "monsters", "motions", "procs", "skills", "sources" }) do
         for _, row in ipairs(snapshot[field] or {}) do relabel(row) end
     end
     local quest = snapshot.quest
