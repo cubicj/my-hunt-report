@@ -590,4 +590,84 @@ function T.shellCurrentActionRidingMissingOrFailedSubKeepsBase()
     end)
 end
 
+function T.rootHashSurvivesChildrenGrandchildrenAndParentDestruction()
+    withShellTracker(function(tracker, hooks, hunter)
+        hunter.weaponType = 7
+        hunter.sub = fakeAction("cNothing", -1)
+        local root = shell(1, nil, 2914767066)
+        local child = shell(2, root, 3338021499)
+        local grandchild = shell(3, child, 3858449010)
+        for _, object in ipairs({ root, child, grandchild }) do hooks.doOnSetUp({ [2] = object }) end
+        local key, label, _, hash = tracker.nameForAttackObject(root)
+        assert(hash == 2914767066)
+        for _, object in ipairs({ child, grandchild }) do
+            local childKey, childLabel, _, childHash = tracker.nameForAttackObject(object)
+            assert(childKey == key and childLabel == label and childHash == hash)
+        end
+        hooks.doOnDestroy({ [2] = root })
+        assert(select(4, tracker.nameForAttackObject(grandchild)) == 2914767066)
+    end)
+end
+
+function T.everyNewEntryPathStoresItsOwnRootHash()
+    withShellTracker(function(tracker, hooks, hunter)
+        hunter.sub = fakeAction("cNothing", -1)
+        for _, case in ipairs({ { 10, 729186967 }, { 5, 2691864323 }, { 3, 1344756103 }, { 7, 543483591 } }) do
+            hunter.weaponType = case[1]
+            hunter.handling = { _IsKabutowariDelayHitSetup = true }
+            local object = shell(case[1], nil, case[2])
+            hooks.doOnSetUp({ [2] = object })
+            local _, _, hitTime, rootHash = tracker.nameForAttackObject(object)
+            assert(rootHash == case[2], tostring(case[1]))
+            assert((hitTime == true) == (case[1] == 5))
+        end
+    end)
+end
+
+function T.inheritedUnknownRootDoesNotBecomeTheChildHash()
+    withShellTracker(function(tracker, hooks, hunter)
+        hunter.weaponType = 7
+        hunter.sub = fakeAction("cNothing", -1)
+        local root = shell(1)
+        root.call = function() error("hash unavailable") end
+        hooks.doOnSetUp({ [2] = root })
+        local child = shell(2, root, 543483591)
+        hooks.doOnSetUp({ [2] = child })
+        local key, _, _, hash = tracker.nameForAttackObject(child)
+        assert(key == "cActBase" and hash == nil)
+        hooks.doOnSetUp({ [2] = shell(1, nil, 1853117018) })
+        assert(select(4, tracker.nameForAttackObject(root)) == 1853117018)
+        assert(select(4, tracker.nameForAttackObject(child)) == nil)
+    end)
+end
+
+function T.setupDiagnosticCarriesRootAndUnknownWithoutLoggingWhenDisabled()
+    local Log = require("MyHuntReport.Log")
+    local enabled = Log.isDeveloperMode()
+    local ok, err = pcall(function()
+        withShellTracker(function(tracker, hooks, hunter)
+            hunter.weaponType = 7
+            hunter.sub = fakeAction("cNothing", -1)
+            Log.resetCounts()
+            Log.setDeveloperMode(false)
+            hooks.doOnSetUp({ [2] = shell(1, nil, 543483591) })
+            assert(#stubs.logLines == 0)
+            assert(select(4, tracker.nameForAttackObject(shell(1))) == 543483591)
+            Log.setDeveloperMode(true)
+            hooks.doOnSetUp({ [2] = shell(2, nil, 543483591) })
+            local child = shell(3, shell(2), 3858449010)
+            hooks.doOnSetUp({ [2] = child })
+            local unknown = shell(4)
+            unknown.call = function() error("hash unavailable") end
+            hooks.doOnSetUp({ [2] = unknown })
+            local lines = table.concat(stubs.logLines, "\n")
+            assert(lines:find("root=543483591", 1, true), lines)
+            assert(lines:find("root=?", 1, true), lines)
+        end)
+    end)
+    Log.setDeveloperMode(enabled)
+    Log.resetCounts()
+    if not ok then error(err, 0) end
+end
+
 return T
