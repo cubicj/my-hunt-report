@@ -25,6 +25,7 @@ Theme.PALETTE = {
     fixed = { "#E08A45", 1 },
     status = { "#A88BD6", 1 },
     warning = { "#D9695A", 1 },
+    success = { "#5BB8A5", 1 },
     childBg = { "#000000", 0 },
     scrollbarBg = { "#000000", 0 },
     transparent = { "#000000", 0 },

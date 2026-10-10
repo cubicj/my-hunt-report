@@ -349,6 +349,18 @@ function ReportWindow.resultText(quest)
     return label, color, stars
 end
 
+local OUTCOMES = {
+    clear = { "result_clear", "success" },
+    fail = { "result_fail", "warning" },
+    abandon = { "result_abandon", "textMuted" },
+}
+
+function ReportWindow.outcomeText(quest)
+    local outcome = type(quest) == "table" and OUTCOMES[quest.result]
+    if not outcome then return nil end
+    return L(outcome[1]), Theme.colors[outcome[2]]
+end
+
 local function weaponNames(quest)
     quest = quest or {}
     local names = {}
@@ -450,13 +462,19 @@ local function drawRows(idPrefix, rows, columnWidth, layout)
     if not ok then error(err, 0) end
 end
 
+local function headerBodyText(ctx, text, color)
+    imgui.same_line()
+    moveCursor(Theme.metrics.chipGap - Theme.metrics.itemSpacing, ctx.sizes.header - ctx.sizes.body)
+    textIn(ctx.fonts.body, text, color)
+end
+
 local function drawHeader(snapshot, ctx)
     local quest = snapshot.quest or {}
     textIn(ctx.fonts.header, ReportWindow.headerWeaponText(quest))
-    imgui.same_line()
-    moveCursor(Theme.metrics.chipGap - Theme.metrics.itemSpacing, ctx.sizes.header - ctx.sizes.body)
     local label, color = ReportWindow.resultText(quest)
-    textIn(ctx.fonts.body, label, color)
+    headerBodyText(ctx, label, color)
+    local outcome, outcomeColor = ReportWindow.outcomeText(quest)
+    if outcome then headerBodyText(ctx, outcome, outcomeColor) end
 end
 
 local function drawMeta(snapshot, ctx)

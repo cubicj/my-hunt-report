@@ -48,7 +48,7 @@ function T.paletteSourceCoversEveryColour()
         count = count + 1
         assert(Theme.colors[name] == Theme.rgb(source[1], source[2]), name)
     end
-    assert(count == 16, count)
+    assert(count == 17, count)
     for name in pairs(Theme.colors) do assert(Theme.PALETTE[name] ~= nil, name) end
     assert(Theme.PALETTE.windowBg[1] == "#1B1815" and Theme.PALETTE.windowBg[2] == 0.95)
     assert(Theme.PALETTE.rowStripe[1] == "#FFFFFF" and Theme.PALETTE.rowStripe[2] == 0.04)

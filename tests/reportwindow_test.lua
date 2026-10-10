@@ -205,7 +205,38 @@ function T.resultTextAddsStarsOnlyForPositiveQuestLevels()
     end
 end
 
-function T.headerDrawsWeaponThenQuestLevelThenMeta()
+function T.outcomeTextLabelsClearFailAndAbandonOnly()
+    local Theme = require("MyHuntReport.Theme")
+    local language = Locale.current()
+    local ok, err = pcall(function()
+        assert(Theme.colors.success ~= nil and Theme.colors.warning ~= nil and Theme.colors.textMuted ~= nil)
+        Locale.resolve("en")
+        local expected = {
+            clear = { "Clear", Theme.colors.success },
+            fail = { "Failed", Theme.colors.warning },
+            abandon = { "Abandoned", Theme.colors.textMuted },
+        }
+        for result, want in pairs(expected) do
+            local label, color = ReportWindow.outcomeText({ result = result })
+            assert(label == want[1], result)
+            assert(color == want[2], result)
+        end
+        for _, quest in ipairs({ { result = "running" }, { result = "unknown" }, { result = "training" }, { result = "victory" }, {} }) do
+            local label, color = ReportWindow.outcomeText(quest)
+            assert(label == nil and color == nil, tostring(quest.result))
+        end
+        assert(ReportWindow.outcomeText(nil) == nil)
+        Locale.resolve("ko")
+        assert(ReportWindow.outcomeText({ result = "clear" }) == "클리어")
+        assert(ReportWindow.outcomeText({ result = "fail" }) == "실패")
+        assert(ReportWindow.outcomeText({ result = "abandon" }) == "포기")
+    end)
+    Locale.resolve(language)
+    if not ok then error(err, 0) end
+end
+
+function T.headerDrawsWeaponThenQuestLevelThenOutcomeThenMeta()
+    local Theme = require("MyHuntReport.Theme")
     withNavigation(function(ui)
         local shown = snapshot("clear")
         shown.quest.level = 5
@@ -214,15 +245,45 @@ function T.headerDrawsWeaponThenQuestLevelThenMeta()
         shown.monsters = { { name = "미즈츠네" } }
         ReportWindow.show(shown)
         ui.draw()
-        local texts = {}
+        local texts, label, outcome = {}, nil, nil
         for _, event in ipairs(ui.events) do
-            if event.kind == "text" then texts[#texts + 1] = event.value end
+            if event.kind == "text" then
+                texts[#texts + 1] = event.value
+                if #texts == 2 then label = event end
+                if #texts == 3 then outcome = event end
+            end
         end
         assert(texts[1] == "태도", texts[1])
         assert(texts[2] == Locale.text("result_quest") .. " ★5", texts[2])
-        assert(texts[3] == "미즈츠네 · 12:34", texts[3])
+        assert(texts[3] == Locale.text("result_clear"), texts[3])
+        assert(outcome.textColor == Theme.colors.success)
+        local labelAt, outcomeAt = ui.positions[label.positionCount], ui.positions[outcome.positionCount]
+        assert(labelAt.y > 20, labelAt.y)
+        assert(outcomeAt.x == 18 + Theme.metrics.chipGap - Theme.metrics.itemSpacing)
+        assert(outcomeAt.y == labelAt.y, outcomeAt.y .. " vs " .. labelAt.y)
+        assert(texts[4] == "미즈츠네 · 12:34", texts[4])
         for _, event in ipairs(ui.events) do
             assert(event.kind ~= "separator", "separator drawn")
+        end
+    end)
+end
+
+function T.headerDrawsNoOutcomeForRunningUnknownOrMissingResults()
+    withNavigation(function(ui)
+        for _, result in ipairs({ "running", "unknown", false }) do
+            local shown = snapshot(result or nil)
+            shown.quest.level = 5
+            shown.quest.weapons = { { name = "태도" } }
+            shown.quest.elapsedSeconds = 754
+            shown.monsters = { { name = "미즈츠네" } }
+            ReportWindow.show(shown)
+            ui.draw()
+            local texts = {}
+            for _, event in ipairs(ui.events) do
+                if event.kind == "text" then texts[#texts + 1] = event.value end
+            end
+            assert(texts[2] == Locale.text("result_quest") .. " ★5", tostring(result))
+            assert(texts[3] == "미즈츠네 · 12:34", tostring(result) .. ": " .. tostring(texts[3]))
         end
     end)
 end
@@ -2948,9 +3009,10 @@ function T.reportDrawsVersionBetweenMetaAndStats()
         for _, event in ipairs(ui.events) do
             if event.kind == "text" then texts[#texts + 1] = event.value end
         end
-        assert(texts[3] == "미즈츠네 · 12:34", texts[3])
-        assert(texts[4] == "모드 버전: 1.15.0", texts[4])
-        assert(texts[5] == ReportWindow.statTiles(shown)[1].label, texts[5])
+        assert(texts[3] == Locale.text("result_clear"), texts[3])
+        assert(texts[4] == "미즈츠네 · 12:34", texts[4])
+        assert(texts[5] == "모드 버전: 1.15.0", texts[5])
+        assert(texts[6] == ReportWindow.statTiles(shown)[1].label, texts[6])
     end)
 end
 
