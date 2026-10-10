@@ -88,6 +88,7 @@ Theme.metrics = {
     historyStarsWidth = 48,
     historyGap = 16,
     historyWeaponShare = 0.4,
+    historyOutcomeWidth = 96,
     filterWidth = 480,
     filterWindowGap = 16,
 }

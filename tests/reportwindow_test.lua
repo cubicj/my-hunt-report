@@ -333,28 +333,69 @@ function T.headerDrawsNoOutcomeForRunningUnknownOrMissingResults()
     end)
 end
 
-function T.historyRowsDrawFourColumnsOverATransparentButton()
+local function historyEntry(result)
+    local entry = snapshot(result)
+    entry.quest.endedAt = os.time({ year = 2026, month = 9, day = 23, hour = 21, min = 36, sec = 0 })
+    entry.quest.weapons = { { name = "조충곤" } }
+    entry.monsters = { { name = "아자라칸" } }
+    entry.quest.level = 5
+    return entry
+end
+
+local function historyRowTexts(ui, index)
+    local texts, inRow = {}, false
+    for _, event in ipairs(ui.events) do
+        if event.kind == "button" then inRow = event.value == "##history" .. index end
+        if inRow and event.kind == "text" then texts[#texts + 1] = event end
+    end
+    return texts
+end
+
+function T.historyRowsDrawFiveColumnsOverATransparentButton()
     withNavigation(function(ui)
-        local entry = snapshot("clear")
-        entry.quest.endedAt = os.time({ year = 2026, month = 9, day = 23, hour = 21, min = 36, sec = 0 })
-        entry.quest.weapons = { { name = "조충곤" } }
-        entry.monsters = { { name = "아자라칸" } }
-        entry.quest.level = 5
-        ui.entries = { entry }
+        local Theme = require("MyHuntReport.Theme")
+        local calcTextSize = imgui.calc_text_size
+        imgui.calc_text_size = function(text) return { x = #text * 8, y = 18 } end
+        ui.entries = { historyEntry("training"), historyEntry("clear") }
         ReportWindow.showHistory()
         ui.draw()
+        imgui.calc_text_size = calcTextSize
         assert(ui.buttons[4] == "##history1", tostring(ui.buttons[4]))
-        local texts = {}
-        local afterRow = false
-        for _, event in ipairs(ui.events) do
-            if event.kind == "button" and event.value == "##history1" then afterRow = true end
-            if afterRow and event.kind == "text" then texts[#texts + 1] = event.value end
-        end
-        assert(table.concat(texts, "|") == "26-09-23 21:36|조충곤|★5|아자라칸", table.concat(texts, "|"))
-        local columns = ReportWindow.historyColumns(720, 1, false)
+        local texts = historyRowTexts(ui, 1)
+        local values = {}
+        for _, event in ipairs(texts) do values[#values + 1] = event.value end
+        assert(table.concat(values, "|") == "26-09-23 21:36|조충곤|★5|아자라칸|클리어", table.concat(values, "|"))
+        assert(texts[5].textColor == Theme.colors.success)
+        local columns = ReportWindow.historyColumns(720, 1, false, 72)
+        assert(ui.positions[texts[5].positionCount].x == 18 + columns.outcome.x)
         local xs = {}
         for _, pos in ipairs(ui.positions) do xs[pos.x or pos[1]] = true end
         assert(xs[18 + columns.time.x] and xs[18 + columns.stars.x] and xs[18 + columns.weapons.x] and xs[18 + columns.monsters.x])
+        local training = {}
+        for _, event in ipairs(historyRowTexts(ui, 2)) do training[#training + 1] = event.value end
+        assert(table.concat(training, "|") == "26-09-23 21:36|조충곤||아자라칸", table.concat(training, "|"))
+    end)
+end
+
+function T.historyOutcomeWidthFallsBackWithoutCachingAFailedMeasurement()
+    withNavigation(function(ui)
+        local calcTextSize = imgui.calc_text_size
+        local ok, err = pcall(function()
+            ui.entries = { historyEntry("abandon") }
+            ReportWindow.showHistory()
+            imgui.calc_text_size = function() error("measure failed") end
+            ui.draw()
+            local texts = historyRowTexts(ui, 1)
+            local fallback = ReportWindow.historyColumns(720, 1, false, 96)
+            assert(texts[5].value == "포기" and ui.positions[texts[5].positionCount].x == 18 + fallback.outcome.x)
+            imgui.calc_text_size = function(text) return { x = #text * 8, y = 18 } end
+            ui.draw()
+            texts = historyRowTexts(ui, 1)
+            local measured = ReportWindow.historyColumns(720, 1, false, 72)
+            assert(ui.positions[texts[5].positionCount].x == 18 + measured.outcome.x)
+        end)
+        imgui.calc_text_size = calcTextSize
+        if not ok then error(err, 0) end
     end)
 end
 

@@ -73,6 +73,7 @@ local function L(key)
 end
 
 local historyRows = {}
+local historyOutcome = nil
 local reportText = nil
 local frameFonts = nil
 local presented = {}
@@ -83,6 +84,7 @@ end
 
 local function invalidatePresentation()
     historyRows = {}
+    historyOutcome = nil
     reportText = nil
     frameFonts = nil
     UiText.resetCache()
@@ -698,6 +700,27 @@ local function loadHistory()
     rebuildHistoryFilters()
 end
 
+local OUTCOME_LABELS = { "result_clear", "result_fail", "result_abandon" }
+
+local function historyOutcomeWidth(ctx)
+    local key = Locale.textKey() .. ":" .. tostring(ctx.sizes.body)
+    if historyOutcome and historyOutcome.key == key then return historyOutcome.width end
+    local widest = 0
+    local pushed = Fonts.push(ctx.fonts.body)
+    for _, labelKey in ipairs(OUTCOME_LABELS) do
+        local width = UiText.width(L(labelKey))
+        if width == nil then
+            widest = nil
+            break
+        end
+        widest = math.max(widest, width)
+    end
+    Fonts.pop(pushed)
+    if widest == nil then return math.floor(Theme.metrics.historyOutcomeWidth * ctx.scale + 0.5) end
+    historyOutcome = { key = key, width = math.ceil(widest) }
+    return historyOutcome.width
+end
+
 local function drawHistory(ctx)
     if #state.entries == 0 then
         UiText.inFont(ctx.fonts.meta, L("history_empty"), Theme.colors.textMuted)
@@ -706,7 +729,7 @@ local function drawHistory(ctx)
     drawHistoryChips(ctx)
     local m = Theme.metrics
     local layout = ReportLayout.rowAreaLayout(#state.filteredEntries, displayHeight(), ctx.scale, m.historyRowHeight)
-    local columns = ReportLayout.historyColumns(ctx.width, ctx.scale, layout.scrolls)
+    local columns = ReportLayout.historyColumns(ctx.width, ctx.scale, layout.scrolls, historyOutcomeWidth(ctx))
     local token = Theme.pushListRows()
     local okBegin, beginErr = pcall(imgui.begin_child_window, "history##rows", { ctx.width, layout.height }, false, 0)
     if not okBegin then
@@ -740,6 +763,10 @@ local function drawHistory(ctx)
             UiText.inFont(ctx.fonts.body, row.stars, Theme.colors.accent)
             imgui.set_cursor_pos(Vector2f.new(top.x + columns.monsters.x, bodyY))
             UiText.inFont(ctx.fonts.body, UiText.clip(row.monsters, columns.monsters.width))
+            if row.outcome then
+                imgui.set_cursor_pos(Vector2f.new(top.x + columns.outcome.x, bodyY))
+                UiText.inFont(ctx.fonts.body, row.outcome, row.outcomeColor)
+            end
             imgui.set_cursor_pos(Vector2f.new(top.x, top.y + layout.rowHeight))
         end
     end)

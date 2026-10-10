@@ -111,11 +111,14 @@ function ReportText.historyRow(entry)
     entry = entry or {}
     local quest = entry.quest or {}
     local _, _, stars = ReportText.resultText(quest)
+    local outcome, outcomeColor = ReportText.outcomeText(quest)
     return {
         time = Format.clock(quest.endedAt or 0),
         stars = stars,
         weapons = weaponNames(quest),
         monsters = monsterNames(entry.monsters),
+        outcome = outcome,
+        outcomeColor = outcomeColor,
     }
 end
 

@@ -98,6 +98,22 @@ function T.metaTextJoinsMonstersAndTime()
     assert(ReportText.metaText({}) == "0:00")
 end
 
+function T.historyRowCarriesTheOutcome()
+    local Theme = require("MyHuntReport.Theme")
+    Locale.resolve("ko")
+    local expected = { clear = { "클리어", Theme.colors.success }, fail = { "실패", Theme.colors.warning }, abandon = { "포기", Theme.colors.textMuted } }
+    for result, want in pairs(expected) do
+        local row = ReportText.historyRow(snapshot(result))
+        assert(row.outcome == want[1] and row.outcomeColor == want[2], result)
+    end
+    for _, entry in ipairs({ snapshot("training"), snapshot("unknown"), snapshot("running"), snapshot(nil), { monsters = {} } }) do
+        local row = ReportText.historyRow(entry)
+        assert(row.outcome == nil and row.outcomeColor == nil)
+    end
+    Locale.resolve("en")
+    assert(ReportText.historyRow(snapshot("abandon")).outcome == "Abandoned")
+end
+
 function T.historyRowSplitsTimeStarsWeaponsMonsters()
     Locale.init({})
     Locale.resolve("ko")
