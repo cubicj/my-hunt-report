@@ -281,7 +281,9 @@ local function adopt(detected, detectedRaw)
     effectiveRaw = detectedRaw
     if detected == "ko" then active = "ko" else active = "en" end
     effectiveCode = active
-    Log.debug("language auto raw=" .. tostring(detectedRaw) .. " -> " .. active, "locale:auto:" .. tostring(detectedRaw))
+    if Log.isDeveloperMode() then
+        Log.debug("language auto raw=" .. tostring(detectedRaw) .. " -> " .. active, "locale:auto:" .. tostring(detectedRaw))
+    end
     return active
 end
 
@@ -307,7 +309,9 @@ function Locale.resolve(setting_)
     local now = clock()
     if pendingRaw ~= detectedRaw then
         pendingRaw, pendingSince = detectedRaw, now
-        Log.debug("text language pending raw=" .. tostring(effectiveRaw) .. " -> " .. tostring(detectedRaw), "locale:pending:" .. tostring(detectedRaw))
+        if Log.isDeveloperMode() then
+            Log.debug("text language pending raw=" .. tostring(effectiveRaw) .. " -> " .. tostring(detectedRaw), "locale:pending:" .. tostring(detectedRaw))
+        end
     end
     local ready = true
     if textReady then
@@ -320,7 +324,9 @@ function Locale.resolve(setting_)
         active = effectiveCode
         return active
     end
-    Log.debug("text language switched raw=" .. tostring(effectiveRaw) .. " -> " .. tostring(detectedRaw) .. " after " .. tostring(waited) .. "s " .. (ready and "ready" or "timeout"), "locale:switch:" .. tostring(detectedRaw))
+    if Log.isDeveloperMode() then
+        Log.debug("text language switched raw=" .. tostring(effectiveRaw) .. " -> " .. tostring(detectedRaw) .. " after " .. tostring(waited) .. "s " .. (ready and "ready" or "timeout"), "locale:switch:" .. tostring(detectedRaw))
+    end
     pendingRaw, pendingSince = nil, nil
     return adopt(detected, detectedRaw)
 end

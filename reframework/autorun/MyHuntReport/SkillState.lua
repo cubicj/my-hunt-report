@@ -337,7 +337,9 @@ local function burstState(info)
         return burst._Timer, burst._HitCount
     end)
     if not ok or timer == nil then return nil end
-    Log.debug(string.format("burst timer=%s hits=%s", tostring(timer), tostring(hitCount)), "skillstate:burst")
+    if Log.isDeveloperMode() then
+        Log.debug(string.format("burst timer=%s hits=%s", tostring(timer), tostring(hitCount)), "skillstate:burst")
+    end
     return SkillState.burstLevel(timer, hitCount)
 end
 

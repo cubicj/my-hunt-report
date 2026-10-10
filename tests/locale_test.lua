@@ -396,4 +396,41 @@ function T.sourceTextsMatchTheApprovedLabelsInBothLanguages()
     Locale.resolve("en")
 end
 
+function T.autoLanguageDiagnosticsAreBuiltOnlyInDeveloperMode()
+    local Log = require("MyHuntReport.Log")
+    local developerMode, language = Log.isDeveloperMode(), Locale.current()
+    local formatted = 0
+    local function probe(name)
+        return setmetatable({}, { __tostring = function() formatted = formatted + 1 return name end })
+    end
+    local first, second = probe("first"), probe("second")
+    local raw, now = first, 1000
+    local ok, err = pcall(function()
+        Log.resetCounts()
+        Locale.init({ gameLanguage = function() return "en", raw end, textReady = function() return false end, clock = function() return now end })
+        Log.setDeveloperMode(false)
+        Locale.resolve("auto")
+        raw = second
+        Locale.refresh()
+        now = 1010
+        Locale.refresh()
+        assert(formatted == 0, formatted)
+        assert(#stubs.logLines == 0)
+        Log.setDeveloperMode(true)
+        raw, now = first, 2000
+        Locale.refresh()
+        now = 2010
+        Locale.refresh()
+        assert(#stubs.logLines == 3, #stubs.logLines)
+        assert(stubs.logLines[1] == "[MyHuntReport] text language pending raw=second -> first", stubs.logLines[1])
+        assert(stubs.logLines[2] == "[MyHuntReport] text language switched raw=second -> first after 10s timeout", stubs.logLines[2])
+        assert(stubs.logLines[3] == "[MyHuntReport] language auto raw=first -> en", stubs.logLines[3])
+        assert(Log.count("locale:pending:first") == 1 and Log.count("locale:switch:first") == 1 and Log.count("locale:auto:first") == 1)
+    end)
+    Log.setDeveloperMode(developerMode)
+    Locale.init({})
+    Locale.resolve(language)
+    if not ok then error(err, 0) end
+end
+
 return T

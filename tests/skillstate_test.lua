@@ -777,4 +777,33 @@ function T.weaponStateNamesComeFromLocale()
     assert(SkillState.skillName(4031) == "Red Spirit Gauge", SkillState.skillName(4031))
 end
 
+function T.burstDiagnosticIsFormattedOnlyInDeveloperMode()
+    local format = string.format
+    local developerMode = Log.isDeveloperMode()
+    local formatted = 0
+    string.format = function(pattern, ...)
+        if pattern == "burst timer=%s hits=%s" then formatted = formatted + 1 end
+        return format(pattern, ...)
+    end
+    local ok, err = pcall(function()
+        Log.resetCounts()
+        withHunter(fakeInfo({}, { _Timer = 3, _HitCount = 5 }), {}, function()
+            Log.setDeveloperMode(false)
+            assert(SkillState.activeSet()["burst:stage2"] == true)
+            assert(formatted == 0 and Log.count("skillstate:burst") == 0, formatted)
+            Log.setDeveloperMode(true)
+            assert(SkillState.activeSet()["burst:stage2"] == true)
+            assert(formatted == 1 and Log.count("skillstate:burst") == 1, formatted)
+            local logged = false
+            for _, line in ipairs(stubs.logLines) do
+                if line == "[MyHuntReport] burst timer=3 hits=5" then logged = true end
+            end
+            assert(logged)
+        end)
+    end)
+    string.format = format
+    Log.setDeveloperMode(developerMode)
+    if not ok then error(err, 0) end
+end
+
 return T
