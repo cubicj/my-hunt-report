@@ -1222,9 +1222,9 @@ local function withAuditCapture(callback)
     local Log = require("MyHuntReport.Log")
     local Names = require("MyHuntReport.Names")
     local MotionNames = require("MyHuntReport.MotionNames")
-    local master, resolve, nameFor = Game.masterHunter, Names.resolve, MotionNames.nameFor
+    local master, resolve, nameFor, guideName = Game.masterHunter, Names.resolve, MotionNames.nameFor, MotionNames.guideName
     local developerMode = Log.isDeveloperMode()
-    local state = { base = "cSlash", guideId = 100, sub = "cCharge", object = "weapon", reads = 0 }
+    local state = { base = "cSlash", guideId = 100, sub = "cCharge", subGuideId = 200, object = "weapon", reads = 0, guideNames = {} }
     Game.masterHunter = function()
         return { call = function(_, getter)
             local base = getter == "get_BaseActionController"
@@ -1239,13 +1239,17 @@ local function withAuditCapture(callback)
                 }, { __index = function(_, field)
                     assert(field == "_ActionGuideID")
                     if state.guideError then error("guide unavailable") end
-                    return base and state.guideId or 200
+                    return base and state.guideId or state.subGuideId
                 end })
             end }
         end }
     end
     Names.resolve = function(label) return label.kind == "kinsect" and "Kinsect" or "Slash" end
     MotionNames.nameFor = function() return "Slash", "guide" end
+    MotionNames.guideName = function(guideId)
+        state.guideNames[#state.guideNames + 1] = guideId
+        return state.subName
+    end
     Log.setDeveloperMode(true)
     local ok, err = pcall(function()
         withCapture(function(hits)
@@ -1257,7 +1261,7 @@ local function withAuditCapture(callback)
             callback(state, hits, object)
         end)
     end)
-    Game.masterHunter, Names.resolve, MotionNames.nameFor = master, resolve, nameFor
+    Game.masterHunter, Names.resolve, MotionNames.nameFor, MotionNames.guideName = master, resolve, nameFor, guideName
     Log.setDeveloperMode(developerMode)
     if not ok then error(err, 0) end
 end
@@ -1281,7 +1285,7 @@ function T.ledgerUsesCapturedFieldsAndCompletedHitNumber()
         assert(hits[1].motionKey == "7:cSlash" and hits[1].motionLabel.guideId == 100)
         local lines = ledgerLines()
         assert(#lines == 1)
-        assert(lines[1] == "[MyHuntReport] hit #1 dmg=90(70/20) wp=7 act=1 mv=12.5 obj=weapon base=cSlash/100 sub=cCharge row=Slash via=action name=guide mon=26 src=- root=- key=7:?:? atk=nil", lines[1])
+        assert(lines[1] == "[MyHuntReport] hit #1 dmg=90(70/20) wp=7 act=1 mv=12.5 obj=weapon base=cSlash/100 sub=cCharge/200 subName=none row=Slash via=action name=guide mon=26 src=- root=- key=7:?:? atk=nil", lines[1])
         for _ = 1, 6 do
             local nextHit = hitInfo(#hits + 1, 1, {}, nil, object)
             HitCapture.handleStockDamageDetail(nextHit)
@@ -1290,6 +1294,31 @@ function T.ledgerUsesCapturedFieldsAndCompletedHitNumber()
         lines = ledgerLines()
         assert(#lines == 7 and lines[7]:find("hit #7 ", 1, true))
         assert(lines[7]:find("via=nonattack", 1, true))
+    end)
+end
+
+function T.ledgerPrintsResolvedSubGuideText()
+    withAuditCapture(function(state, hits, object)
+        state.subName = "베어내리기"
+        local info = hitInfo(1, 1, {}, nil, object)
+        HitCapture.handleStockDamageDetail(info)
+        complete(info)
+        local line = ledgerLines()[1]
+        assert(line:find("base=cSlash/100 sub=cCharge/200 subName=베어내리기 row=Slash", 1, true), line)
+        assert(#state.guideNames == 1 and state.guideNames[1] == 200)
+    end)
+end
+
+function T.ledgerSkipsSubNameWhenSubGuideIsUnreadableOrMissing()
+    withAuditCapture(function(state, hits, object)
+        state.subGuideId = -1
+        local info = hitInfo(1, 1, {}, nil, object)
+        HitCapture.handleStockDamageDetail(info)
+        complete(info)
+        local line = ledgerLines()[1]
+        assert(line:find("sub=cCharge/-1 row=", 1, true), line)
+        assert(not line:find("subName=", 1, true), line)
+        assert(#state.guideNames == 0)
     end)
 end
 
@@ -1343,11 +1372,11 @@ function T.auditReadFailuresNeverDropHits()
             local line = ledgerLines()[#ledgerLines()]
             assert(line, failure)
             if failure == "nameError" then
-                assert(line:find("obj=- base=cSlash/100", 1, true), line)
+                assert(line:find("obj=- base=cSlash/100 sub=cCharge/200 subName=none row=", 1, true), line)
             elseif failure == "guideError" then
-                assert(line:find("base=cSlash/-1 sub=cCharge", 1, true), line)
+                assert(line:find("base=cSlash/-1 sub=cCharge/-1 row=", 1, true), line)
             else
-                assert(line:find("base=-/-1 sub=-", 1, true), line)
+                assert(line:find("base=-/-1 sub=-/-1 row=", 1, true), line)
             end
         end)
     end

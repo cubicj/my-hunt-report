@@ -77,6 +77,10 @@ local function guideText(guideId)
     return nil, available
 end
 
+function MotionNames.guideName(guideId)
+    return (guideText(guideId))
+end
+
 function MotionNames.nameFor(key, guideId)
     local cacheKey = Locale.textKey() .. ":" .. key .. ":" .. tostring(guideId)
     local cached = names[cacheKey]

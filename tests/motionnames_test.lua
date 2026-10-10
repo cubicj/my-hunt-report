@@ -50,6 +50,19 @@ local function withGuides(texts, callback)
     if not ok then error(err, 0) end
 end
 
+function T.guideNameReturnsGuideTextWithoutFallbacks()
+    withGuides({ ["ko:guid-9328"] = "강나락 베기", ["en:guid-9328"] = "Overhead Slash" }, function()
+        Locale.init({})
+        Locale.resolve("ko")
+        assert(MotionNames.guideName(9328) == "강나락 베기")
+        Locale.resolve("en")
+        assert(MotionNames.guideName(9328) == "Overhead Slash")
+        assert(MotionNames.guideName(777) == nil)
+        assert(MotionNames.guideName(-90670656) == nil)
+    end)
+    Locale.resolve("en")
+end
+
 function T.guideTextNamesTheAction()
     withGuides({ ["ko:guid-9328"] = "강나락 베기", ["en:guid-9328"] = "Overhead Slash" }, function()
         Locale.init({})
