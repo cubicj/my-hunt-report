@@ -336,7 +336,7 @@ function T.entryRegistersTheHoverCursorRestoreForScriptReset()
     assert(restores == 1)
 end
 
-function T.entryInstallsTheSourceProbeDirectlyAfterTheQuestHooks()
+function T.entryDoesNotLoadOrInstallTheRetiredSourceProbe()
     local noop = function() end
     local calls, required = {}, {}
     local function module(name)
@@ -358,13 +358,10 @@ function T.entryInstallsTheSourceProbeDirectlyAfterTheQuestHooks()
         re = { on_draw_ui = noop, on_frame = noop, on_config_save = noop },
     }, { __index = _G })
     assert(loadfile("reframework/autorun/my_hunt_report.lua", "t", environment))()
-    assert(required["MyHuntReport.SourceProbe"] == true)
-    local questAt, probeAt
-    for index, call in ipairs(calls) do
-        if call == "MyHuntReport.Quest.install" then questAt = index end
-        if call == "MyHuntReport.SourceProbe.install" then probeAt = index end
-    end
-    assert(questAt ~= nil and probeAt == questAt + 1, table.concat(calls, ","))
+    assert(required["MyHuntReport.SourceProbe"] == nil)
+    for _, call in ipairs(calls) do assert(call ~= "MyHuntReport.SourceProbe.install", call) end
+    assert(loadfile("reframework/autorun/MyHuntReport/SourceProbe.lua") == nil)
+    assert(loadfile("tests/sourceprobe_test.lua") == nil)
 end
 
 return T
