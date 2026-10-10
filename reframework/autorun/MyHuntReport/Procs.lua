@@ -90,8 +90,10 @@ local function onSetParam(args)
     else
         isMaster = invokerIsMaster(bracket)
     end
-    Log.debug("proc " .. bracket.kind .. " setParam value=" .. (ok and tostring(value) or "?")
-        .. " master=" .. tostring(isMaster), "proc:" .. bracket.kind .. ":setParam")
+    if Log.isDeveloperMode() then
+        Log.debug("proc " .. bracket.kind .. " setParam value=" .. (ok and tostring(value) or "?")
+            .. " master=" .. tostring(isMaster), "proc:" .. bracket.kind .. ":setParam")
+    end
     if not ok or type(value) ~= "number" or value <= 0 or bracket.recorded then return end
     if isMaster then
         bracket.recorded = true
@@ -161,7 +163,9 @@ local function onWoundBreakDamage(args)
     local okValue, value = pcall(sdk.to_float, args[3])
     if not okValue or type(value) ~= "number" or value <= 0 then return end
     local isMaster = Procs.attackerIsMaster(key)
-    Log.debug("proc woundBreak external value=" .. tostring(value) .. " master=" .. tostring(isMaster), "proc:woundBreak:external")
+    if Log.isDeveloperMode() then
+        Log.debug("proc woundBreak external value=" .. tostring(value) .. " master=" .. tostring(isMaster), "proc:woundBreak:external")
+    end
     if not isMaster then return end
     Session.addProc({ kind = "woundBreak", damage = value, time = Game.uptime() })
 end
@@ -198,7 +202,9 @@ local function onActivatePacket(kind)
         else
             packetDamage[kind] = nil
         end
-        Log.debug("proc " .. kind .. " packet damage=" .. (ok and tostring(value) or "?"), "proc:" .. kind .. ":packet")
+        if Log.isDeveloperMode() then
+            Log.debug("proc " .. kind .. " packet damage=" .. (ok and tostring(value) or "?"), "proc:" .. kind .. ":packet")
+        end
     end
 end
 

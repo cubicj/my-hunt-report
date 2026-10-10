@@ -309,4 +309,37 @@ function T.mountedBattleAttacksShareOneFixedLabel()
     end)
 end
 
+function T.motionDiagnosticIsFormattedOnlyInDeveloperMode()
+    local Log = require("MyHuntReport.Log")
+    local format = string.format
+    local developerMode = Log.isDeveloperMode()
+    local formatted = 0
+    string.format = function(pattern, ...)
+        if pattern == "motion guide=%d class=%s -> %s" then formatted = formatted + 1 end
+        return format(pattern, ...)
+    end
+    local ok, err = pcall(function()
+        withGuides({}, function()
+            Locale.init({})
+            Locale.resolve("en")
+            Log.resetCounts()
+            Log.setDeveloperMode(false)
+            assert(MotionNames.nameFor("cProbeAction", 77) == "Other action")
+            assert(formatted == 0, formatted)
+            Log.setDeveloperMode(true)
+            assert(MotionNames.nameFor("cProbeAction", 77) == "Other action")
+            local key = "motion:" .. Locale.textKey() .. ":cProbeAction:77"
+            assert(formatted == 1 and Log.count(key) == 1, key)
+            local logged = false
+            for _, line in ipairs(stubs.logLines) do
+                if line == "[MyHuntReport] motion guide=77 class=cProbeAction -> Other action" then logged = true end
+            end
+            assert(logged)
+        end)
+    end)
+    string.format = format
+    Log.setDeveloperMode(developerMode)
+    if not ok then error(err, 0) end
+end
+
 return T

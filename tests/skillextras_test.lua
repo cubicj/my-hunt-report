@@ -87,4 +87,27 @@ function T.installRegistersOnlyCalcAndRyukiExplosionHooks()
     if not ok then error(err, 0) end
 end
 
+function T.recordBuildsItsDiagnosticOnlyInDeveloperMode()
+    local stubs = require("stubs")
+    local Log = require("MyHuntReport.Log")
+    local developerMode = Log.isDeveloperMode()
+    local formatted = 0
+    local kind = setmetatable({}, { __tostring = function() formatted = formatted + 1 return "probe" end })
+    local ok, err = pcall(function()
+        Log.resetCounts()
+        SkillExtras.reset()
+        SkillExtras.enter(true)
+        Log.setDeveloperMode(false)
+        assert(SkillExtras.record(kind, 12) == true)
+        assert(formatted == 0 and #stubs.logLines == 0 and Log.count("extra:probe") == 0, formatted)
+        Log.setDeveloperMode(true)
+        assert(SkillExtras.record(kind, 12) == true)
+        assert(stubs.logLines[1] == "[MyHuntReport] skill extra probe value=12", stubs.logLines[1])
+        assert(Log.count("extra:probe") == 1)
+    end)
+    SkillExtras.reset()
+    Log.setDeveloperMode(developerMode)
+    if not ok then error(err, 0) end
+end
+
 return T
