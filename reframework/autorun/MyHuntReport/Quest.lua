@@ -48,7 +48,7 @@ end
 
 local function equippedSkills()
     local list = {}
-    for index, entry in ipairs(SkillState.equippedTracked()) do list[index] = { id = entry.id } end
+    for index, id in ipairs(SkillState.trackedIds()) do list[index] = { id = id } end
     return list
 end
 

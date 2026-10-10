@@ -524,12 +524,12 @@ end
 
 function T.snapshotOptionsCarryOnlyEquippedSkillIds()
     local SkillState = require("MyHuntReport.SkillState")
-    local snapshot, equipped = Session.snapshot, SkillState.equippedTracked
+    local snapshot, tracked = Session.snapshot, SkillState.trackedIds
     local calls = 0
     local ok, err = pcall(function()
         Quest.resetForTests()
         ReportWindow.hide()
-        SkillState.equippedTracked = function() return { { id = "burst:stage2", name = "old" } } end
+        SkillState.trackedIds = function() return { "burst:stage2" } end
         Session.snapshot = function(options)
             calls = calls + 1
             assert(options.resolveName == Names.resolve)
@@ -540,7 +540,7 @@ function T.snapshotOptionsCarryOnlyEquippedSkillIds()
         Quest.handleResultStart()
         assert(calls == 2)
     end)
-    Session.snapshot, SkillState.equippedTracked = snapshot, equipped
+    Session.snapshot, SkillState.trackedIds = snapshot, tracked
     if not ok then error(err, 0) end
 end
 

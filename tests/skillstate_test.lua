@@ -806,4 +806,29 @@ function T.burstDiagnosticIsFormattedOnlyInDeveloperMode()
     if not ok then error(err, 0) end
 end
 
+function T.trackedIdsMatchTheNamedRowsWithoutResolvingNames()
+    local ids = { 19, 56, 59, 60, 63, "wex:wound", 65, 101, 111, "burst:stage1", "burst:stage2", 194 }
+    local equipped = { [115] = true }
+    for _, id in ipairs(ids) do equipped[id] = true end
+    withHunter(fakeInfo({ _Counter = { _Skill = 111, _Timer = 0 }, _BurstSlot = { _Skill = 115, _Timer = 0 } }), equipped, function()
+        local skillName = SkillState.skillName
+        local named = 0
+        SkillState.skillName = function(id)
+            named = named + 1
+            return skillName(id)
+        end
+        local ok, err = pcall(function()
+            local tracked = SkillState.trackedIds()
+            assert(named == 0, named)
+            assert(#tracked == #ids, tostring(#tracked))
+            for index, id in ipairs(ids) do assert(tracked[index] == id, index) end
+            local rows = SkillState.equippedTracked()
+            assert(#rows == #ids and named > 0)
+            for index, id in ipairs(ids) do assert(rows[index].id == id and rows[index].name == skillName(id)) end
+        end)
+        SkillState.skillName = skillName
+        if not ok then error(err, 0) end
+    end)
+end
+
 return T
