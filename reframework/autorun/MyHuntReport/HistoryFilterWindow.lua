@@ -3,6 +3,7 @@ local Fonts = require("MyHuntReport.Fonts")
 local Draw = require("MyHuntReport.Draw")
 local Locale = require("MyHuntReport.Locale")
 local Log = require("MyHuntReport.Log")
+local UiText = require("MyHuntReport.UiText")
 
 local HistoryFilterWindow = {}
 
@@ -13,15 +14,6 @@ local AXES = {
     { key = "variants", columns = 4 },
 }
 
-local function textIn(font, text, color)
-    local pushed = Fonts.push(font)
-    local colored = pcall(imgui.push_style_color, 0, color or Theme.colors.text)
-    local ok, err = pcall(imgui.text, text)
-    if colored then pcall(imgui.pop_style_color, 1) end
-    Fonts.pop(pushed)
-    if not ok then error(err, 0) end
-end
-
 function HistoryFilterWindow.placement(bounds, display, scale)
     if not bounds then return { centered = true, x = display.x / 2, y = display.y / 2 } end
     local width = math.floor(Theme.metrics.filterWidth * scale) + Theme.metrics.padding * 2
@@ -30,11 +22,11 @@ function HistoryFilterWindow.placement(bounds, display, scale)
     return { centered = false, x = x, y = bounds.y }
 end
 
-local function drawContents(ctx, options, labels, selection, change, clipName)
+local function drawContents(ctx, options, labels, selection, change)
     local m = Theme.metrics
     local width = math.floor(m.filterWidth * ctx.scale)
     local top = imgui.get_cursor_pos()
-    textIn(ctx.fonts.header, Locale.text("history_filter"))
+    UiText.inFont(ctx.fonts.header, Locale.text("history_filter"))
     local clearText = Locale.text("history_filter_clear_all")
     local size = imgui.calc_text_size(clearText)
     local clearWidth = size.x + m.itemSpacing * 2
@@ -60,7 +52,7 @@ local function drawContents(ctx, options, labels, selection, change, clipName)
         local clearHeight = m.iconButton
         imgui.set_cursor_pos(Vector2f.new(top.x, lineTop.y + (clearHeight - ctx.sizes.small) / 2))
         local title = Locale.text("history_filter_" .. axis.key)
-        textIn(ctx.fonts.small, title, Theme.colors.textMuted)
+        UiText.inFont(ctx.fonts.small, title, Theme.colors.textMuted)
         if next(selection[axis.key]) then
             local smallPushed = Fonts.push(ctx.fonts.small)
             local titleWidth = imgui.calc_text_size(title).x
@@ -74,7 +66,7 @@ local function drawContents(ctx, options, labels, selection, change, clipName)
         local values = options[axis.key]
         local bottom
         if #values == 0 then
-            textIn(ctx.fonts.body, "-", Theme.colors.textMuted)
+            UiText.inFont(ctx.fonts.body, "-", Theme.colors.textMuted)
             bottom = imgui.get_cursor_pos().y
         else
             local origin = imgui.get_cursor_pos()
@@ -84,7 +76,7 @@ local function drawContents(ctx, options, labels, selection, change, clipName)
                 local column = (index - 1) % axis.columns
                 if column == 0 then rowY = nextY end
                 imgui.set_cursor_pos(Vector2f.new(origin.x + column * columnWidth, rowY))
-                local label = clipName(labels[axis.key][value], columnWidth - ctx.sizes.body - m.itemSpacing * 2)
+                local label = UiText.clip(labels[axis.key][value], columnWidth - ctx.sizes.body - m.itemSpacing * 2)
                 local changed, checked = imgui.checkbox(label .. "##filter" .. axis.key .. ":" .. tostring(value), selection[axis.key][value] == true)
                 if changed then change(axis.key, value, checked) end
                 nextY = math.max(nextY, imgui.get_cursor_pos().y)
@@ -98,7 +90,7 @@ local function drawContents(ctx, options, labels, selection, change, clipName)
     return not closed
 end
 
-function HistoryFilterWindow.draw(ctx, options, labels, selection, change, reportBounds, clipName)
+function HistoryFilterWindow.draw(ctx, options, labels, selection, change, reportBounds)
     pcall(function()
         local place = HistoryFilterWindow.placement(reportBounds, imgui.get_display_size(), ctx.scale)
         imgui.set_next_window_pos({ place.x, place.y }, 8, place.centered and { 0.5, 0.5 } or { 0, 0 })
@@ -108,7 +100,7 @@ function HistoryFilterWindow.draw(ctx, options, labels, selection, change, repor
     local bounds
     if okBegin then
         local pushed = Fonts.push(ctx.fonts.body)
-        local ok, result = pcall(drawContents, ctx, options, labels, selection, change, clipName)
+        local ok, result = pcall(drawContents, ctx, options, labels, selection, change)
         Fonts.pop(pushed)
         pcall(function()
             local pos, size = imgui.get_window_pos(), imgui.get_window_size()

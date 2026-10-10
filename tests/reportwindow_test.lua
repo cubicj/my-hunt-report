@@ -2812,4 +2812,30 @@ function T.reportWindowForwardsReportText()
     end
 end
 
+function T.historyFilterWindowClipsLongLabelsWithoutAClipCallback()
+    local Window = require("MyHuntReport.HistoryFilterWindow")
+    local original = imgui
+    local labels = {}
+    local ok, err = pcall(function()
+        imgui = setmetatable({
+            ImGuiStyleVar = { ItemSpacing = 14, ButtonTextAlign = 23, FrameRounding = 12, FrameBorderSize = 13 },
+            begin_window = function() return true end,
+            calc_text_size = function(text) return { x = utf8.len(text) * 10, y = 18 } end,
+            checkbox = function(label) labels[#labels + 1] = label return false, false end,
+            button = function() return false end,
+        }, { __index = original })
+        local ctx = { fonts = {}, sizes = { body = 18, small = 18 }, scale = 1 }
+        local options = { weapons = { 1 }, levels = {}, species = {}, variants = {} }
+        local names = { weapons = { [1] = string.rep("가", 40) }, levels = {}, species = {}, variants = {} }
+        local selection = { weapons = {}, levels = {}, species = {}, variants = {} }
+        local opened = Window.draw(ctx, options, names, selection, function() end, nil)
+        assert(opened == true)
+        assert(#labels == 1, #labels)
+        local text = labels[1]:match("^(.-)##")
+        assert(text:sub(-3) == "…" and utf8.len(text) < 40, labels[1])
+    end)
+    imgui = original
+    if not ok then error(err, 0) end
+end
+
 return T

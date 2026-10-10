@@ -925,7 +925,7 @@ function ReportWindow.draw()
     if state.filterOpen then
         local ctx = { fonts = fonts, sizes = sizes, scale = size / 18 }
         state.filterOpen, state.filterBounds = HistoryFilterWindow.draw(ctx, state.historyOptions, state.historyLabels,
-            state.historySelection, changeHistoryFilter, state.bounds, UiText.clip)
+            state.historySelection, changeHistoryFilter, state.bounds)
     end
 end
 
