@@ -133,6 +133,10 @@ local function onSetUp(args)
     local parentHash = nil
     if parent ~= nil then parentHash = read(function() return parent:call("get_NameHash") end) end
     local parentRecord = parentAddress and shells[parentAddress] or nil
+    if parentRecord ~= nil and parentRecord.hash ~= parentHash then
+        shells[parentAddress] = nil
+        parentRecord = nil
+    end
     local hasParent = nil
     if parentOk then hasParent = parent ~= nil end
     local depth, root, path = SourceProbe.lineage(hash, parentRecord, hasParent, parentHash)
@@ -177,7 +181,10 @@ local function shellText(attackObj, shell, now)
     local rowKey, _, hitTime = ShellTracker.nameForAttackObject(attackObj)
     local row = rowKey or (hitTime and "hitTime") or "-"
     local record = address and shells[address] or nil
-    if record ~= nil and record.hash ~= hash then record = nil end
+    if record ~= nil and record.hash ~= hash then
+        shells[address] = nil
+        record = nil
+    end
     if record == nil then
         counters.noSetup = counters.noSetup + 1
         return string.format("shell=%s hash=%s root=? path=? depth=? owner=? age=? setupBase=? setupSub=? setupWp=? row=%s",

@@ -411,4 +411,43 @@ function T.hashMismatchRejectsCachedSetupIdentity()
     end)
 end
 
+function T.hitHashMismatchInvalidatesParentCacheBeforeChildSetup()
+    withProbe(function(c)
+        local old = shellObject(0x700, 10, "it0700_0027_0", nil)
+        c.setup(old)
+        local parent = shellObject(0x700, 20, "it0700_0027_0", nil)
+        c.hit({ obj = c.object("Wp07Shell", parent) })
+        local line = linesWith("hit ")[1]
+        assert(has(line, "shell=0x700 hash=20 root=? path=? depth=?"), line)
+        c.hit({ obj = c.object("Wp07Shell", old) })
+        line = linesWith("hit ")[2]
+        assert(has(line, "shell=0x700 hash=10 root=? path=? depth=?"), line)
+        local child = shellObject(0x701, 30, "it0700_0027_0", parent)
+        c.setup(child)
+        line = linesWith("setup ")[2]
+        assert(has(line, "parent=0x700/20 root=20 depth=? path=20>30"), line)
+        c.hit({ obj = c.object("Wp07Shell", child) })
+        line = linesWith("hit ")[3]
+        assert(has(line, "shell=0x701 hash=30 root=20 path=20>30 depth=?"), line)
+    end)
+end
+
+function T.parentHashMismatchInvalidatesCacheWithoutAPrecedingHit()
+    withProbe(function(c)
+        local old = shellObject(0x700, 10, "it0700_0027_0", nil)
+        c.setup(old)
+        local parent = shellObject(0x700, 20, "it0700_0027_0", nil)
+        local child = shellObject(0x701, 30, "it0700_0027_0", parent)
+        c.setup(child)
+        local line = linesWith("setup ")[2]
+        assert(has(line, "parent=0x700/20 root=20 depth=? path=20>30"), line)
+        c.hit({ obj = c.object("Wp07Shell", child) })
+        line = linesWith("hit ")[1]
+        assert(has(line, "shell=0x701 hash=30 root=20 path=20>30 depth=?"), line)
+        c.hit({ obj = c.object("Wp07Shell", old) })
+        line = linesWith("hit ")[2]
+        assert(has(line, "shell=0x700 hash=10 root=? path=? depth=?"), line)
+    end)
+end
+
 return T
