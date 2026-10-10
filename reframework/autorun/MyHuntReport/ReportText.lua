@@ -119,6 +119,50 @@ function ReportText.historyRow(entry)
     }
 end
 
+local BURST_SKILL_ID = 115
+local BURST_STAGE1, BURST_STAGE2 = "burst:stage1", "burst:stage2"
+local WEAKNESS_EXPLOIT_ID = 63
+local WEX_WOUND = "wex:wound"
+
+local function shareOf(row)
+    return row and type(row.share) == "number" and row.share or 0
+end
+
+function ReportText.skillRows(rows, skillName)
+    local byId = {}
+    for _, row in ipairs(rows or {}) do
+        if row.id ~= nil then byId[row.id] = row end
+    end
+    local display = {}
+    local function add(name, share, valueKind, child)
+        display[#display + 1] = { name = name, share = share, valueKind = valueKind, child = child }
+    end
+    local function addChild(key, share)
+        if share > 0 then add(L(key), share, nil, true) end
+    end
+    local burstShown = false
+    for _, row in ipairs(rows or {}) do
+        local id = row.id
+        if id == BURST_STAGE1 or id == BURST_STAGE2 then
+            if not burstShown then
+                burstShown = true
+                local stage1, stage2 = shareOf(byId[BURST_STAGE1]), shareOf(byId[BURST_STAGE2])
+                add(skillName(BURST_SKILL_ID), stage1 + stage2, nil, false)
+                addChild("skill_burst_stage1", stage1)
+                addChild("skill_burst_stage2", stage2)
+            end
+        elseif id == WEAKNESS_EXPLOIT_ID then
+            local wound = shareOf(byId[WEX_WOUND])
+            add(row.name, row.share, row.valueKind, false)
+            addChild("skill_wex_weak_point", math.max(0, shareOf(row) - wound))
+            addChild("skill_wex_wound", wound)
+        elseif not (id == WEX_WOUND and byId[WEAKNESS_EXPLOIT_ID]) then
+            add(row.name, row.share, row.valueKind, false)
+        end
+    end
+    return display
+end
+
 function ReportText.shareText(value, total)
     if type(value) ~= "number" then return "-" end
     return Format.percent(total > 0 and value / total or 0)

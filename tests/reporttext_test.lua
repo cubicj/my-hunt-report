@@ -203,4 +203,99 @@ function T.versionTextIsLocalized()
     Locale.resolve("en")
 end
 
+local function burstName(id)
+    assert(id == 115, tostring(id))
+    return "Burst"
+end
+
+local function shape(rows)
+    local parts = {}
+    for _, row in ipairs(rows) do
+        parts[#parts + 1] = (row.child and ">" or "") .. row.name .. "=" .. tostring(row.share)
+    end
+    return table.concat(parts, "|")
+end
+
+function T.skillRowsGroupBurstStagesAtTheFirstStagePosition()
+    Locale.resolve("en")
+    local rows = ReportText.skillRows({
+        { id = 10, name = "A", share = 0.5 },
+        { id = "burst:stage2", name = "Burst Stage 2", share = 0.25 },
+        { id = 11, name = "B", share = 0.125 },
+        { id = "burst:stage1", name = "Burst Stage 1", share = 0.0625 },
+    }, burstName)
+    assert(shape(rows) == "A=0.5|Burst=0.3125|>Stage 1=0.0625|>Stage 2=0.25|B=0.125", shape(rows))
+    assert(rows[1].child == false and rows[2].child == false and rows[3].child == true)
+end
+
+function T.skillRowsBurstWithOneStageShowsOneChild()
+    Locale.resolve("en")
+    local rows = ReportText.skillRows({ { id = "burst:stage1", name = "Burst Stage 1", share = 0.25 } }, burstName)
+    assert(shape(rows) == "Burst=0.25|>Stage 1=0.25", shape(rows))
+end
+
+function T.skillRowsSplitWeaknessExploitIntoWeakPointAndWound()
+    Locale.resolve("en")
+    local rows = ReportText.skillRows({
+        { id = 63, name = "Weakness Exploit", share = 0.5 },
+        { id = 20, name = "C", share = 0.375 },
+        { id = "wex:wound", name = "Weakness Exploit · Wound", share = 0.125 },
+    }, burstName)
+    assert(shape(rows) == "Weakness Exploit=0.5|>Weak point=0.375|>Wound=0.125|C=0.375", shape(rows))
+end
+
+function T.skillRowsClampWeakPointAtZero()
+    Locale.resolve("en")
+    local rows = ReportText.skillRows({
+        { id = 63, name = "Weakness Exploit", share = 0.125 },
+        { id = "wex:wound", name = "Weakness Exploit · Wound", share = 0.25 },
+    }, burstName)
+    assert(shape(rows) == "Weakness Exploit=0.125|>Wound=0.25", shape(rows))
+end
+
+function T.skillRowsHideZeroChildrenAndKeepTheParentAlone()
+    Locale.resolve("en")
+    local rows = ReportText.skillRows({
+        { id = "burst:stage1", name = "Burst Stage 1", share = 0 },
+        { id = "burst:stage2", name = "Burst Stage 2", share = 0 },
+        { id = 63, name = "Weakness Exploit", share = 0 },
+        { id = "wex:wound", name = "Weakness Exploit · Wound", share = 0 },
+    }, burstName)
+    assert(shape(rows) == "Burst=0|Weakness Exploit=0", shape(rows))
+    rows = ReportText.skillRows({ { id = 63, name = "Weakness Exploit", share = 0.25 } }, burstName)
+    assert(shape(rows) == "Weakness Exploit=0.25|>Weak point=0.25", shape(rows))
+end
+
+function T.skillRowsShowAnOrphanWoundRowWithItsFullName()
+    Locale.resolve("en")
+    local rows = ReportText.skillRows({ { id = "wex:wound", name = "Weakness Exploit · Wound", share = 0.25 } }, burstName)
+    assert(shape(rows) == "Weakness Exploit · Wound=0.25", shape(rows))
+    assert(rows[1].child == false)
+end
+
+function T.skillRowsKeepUnrelatedRowsAndValueKinds()
+    local rows = ReportText.skillRows({
+        { id = 1, name = "X", share = 0.5 },
+        { label = { kind = "heal" }, name = "Hasten Recovery", share = 0.25, valueKind = "hp" },
+    }, burstName)
+    assert(shape(rows) == "X=0.5|Hasten Recovery=0.25", shape(rows))
+    assert(rows[1].valueKind == nil and rows[2].valueKind == "hp")
+    assert(#ReportText.skillRows({}, burstName) == 0)
+end
+
+function T.skillRowsChildNamesFollowTheLanguage()
+    local input = {
+        { id = "burst:stage1", name = "연격 1단계", share = 0.25 },
+        { id = "burst:stage2", name = "연격 2단계", share = 0.25 },
+        { id = 63, name = "약점 특효", share = 0.5 },
+        { id = "wex:wound", name = "약점 특효 · 상처", share = 0.25 },
+    }
+    Locale.resolve("ko")
+    local rows = ReportText.skillRows(input, function() return "연격" end)
+    assert(shape(rows) == "연격=0.5|>1단계=0.25|>2단계=0.25|약점 특효=0.5|>약점 부위=0.25|>상처=0.25", shape(rows))
+    Locale.resolve("en")
+    rows = ReportText.skillRows(input, burstName)
+    assert(shape(rows) == "Burst=0.5|>Stage 1=0.25|>Stage 2=0.25|약점 특효=0.5|>Weak point=0.25|>Wound=0.25", shape(rows))
+end
+
 return T

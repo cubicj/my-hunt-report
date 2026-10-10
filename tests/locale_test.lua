@@ -441,4 +441,17 @@ function T.unusedMonstersAndElapsedValuesAreGone()
     end
 end
 
+function T.skillGroupChildLabelsMatchTheDesign()
+    local expected = {
+        en = { "Stage 1", "Stage 2", "Weak point", "Wound" },
+        ko = { "1단계", "2단계", "약점 부위", "상처" },
+    }
+    local keys = { "skill_burst_stage1", "skill_burst_stage2", "skill_wex_weak_point", "skill_wex_wound" }
+    for language, values in pairs(expected) do
+        Locale.resolve(language)
+        for index, key in ipairs(keys) do assert(Locale.text(key) == values[index], key) end
+    end
+    Locale.resolve("en")
+end
+
 return T
