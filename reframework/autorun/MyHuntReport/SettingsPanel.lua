@@ -9,6 +9,7 @@ local Theme = require("MyHuntReport.Theme")
 local Draw = require("MyHuntReport.Draw")
 local Procs = require("MyHuntReport.Procs")
 local Hdr = require("MyHuntReport.Hdr")
+local UiText = require("MyHuntReport.UiText")
 
 local SettingsPanel = {}
 
@@ -67,9 +68,7 @@ local function drawClearHistory()
     local textKey = armedAt and "settings_clear_history_warning" or statusKey
     if textKey then
         local color = armedAt and Theme.colors.warning or Theme.colors.textMuted
-        local pushed = pcall(imgui.push_style_color, 0, color)
-        local okText, err = pcall(imgui.text, Locale.text(textKey))
-        if pushed then pcall(imgui.pop_style_color, 1) end
+        local okText, err = pcall(UiText.colored, Locale.text(textKey), color)
         if not okText then Log.error("history clear text failed: " .. tostring(err), "panel:history") end
     end
 end
@@ -78,9 +77,7 @@ local function drawHotkey(s, L)
     imgui.text(L("settings_toggle_key") .. ": " .. Hotkey.name(s.toggleKey))
     imgui.same_line()
     if Hotkey.isCapturing() then
-        local pushed = pcall(imgui.push_style_color, 0, Theme.colors.textMuted)
-        local ok, err = pcall(imgui.text, L("settings_toggle_listening"))
-        if pushed then pcall(imgui.pop_style_color, 1) end
+        local ok, err = pcall(UiText.colored, L("settings_toggle_listening"), Theme.colors.textMuted)
         if not ok then Log.error("hotkey capture text failed: " .. tostring(err), "panel:hotkey") end
         imgui.same_line()
         if imgui.button(L("settings_toggle_cancel")) then Hotkey.cancelCapture() end
@@ -90,9 +87,7 @@ local function drawHotkey(s, L)
 end
 
 local function drawMutedHint(text, label)
-    local pushed = pcall(imgui.push_style_color, 0, Theme.colors.textMuted)
-    local ok, err = pcall(imgui.text, text)
-    if pushed then pcall(imgui.pop_style_color, 1) end
+    local ok, err = pcall(UiText.colored, text, Theme.colors.textMuted)
     if not ok then Log.error(label .. " hint text failed: " .. tostring(err), "panel:" .. label) end
 end
 
