@@ -34,7 +34,7 @@ end
 
 function AttackLog.update()
     if not Log.isDeveloperMode() then
-        previous = {}
+        if next(previous) ~= nil then previous = {} end
         return
     end
     local power = attackPower()
