@@ -433,4 +433,12 @@ function T.autoLanguageDiagnosticsAreBuiltOnlyInDeveloperMode()
     if not ok then error(err, 0) end
 end
 
+function T.unusedMonstersAndElapsedValuesAreGone()
+    for _, code in ipairs({ "en", "ko" }) do
+        for _, key in ipairs(Locale.keys(code)) do
+            assert(key ~= "monsters" and key ~= "elapsed", code .. ":" .. key)
+        end
+    end
+end
+
 return T
