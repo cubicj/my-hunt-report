@@ -349,6 +349,18 @@ function ReportWindow.resultText(quest)
     return label, color, stars
 end
 
+local OUTCOMES = {
+    clear = { "result_clear", "success" },
+    fail = { "result_fail", "warning" },
+    abandon = { "result_abandon", "textMuted" },
+}
+
+function ReportWindow.outcomeText(quest)
+    local outcome = type(quest) == "table" and OUTCOMES[quest.result]
+    if not outcome then return nil end
+    return L(outcome[1]), Theme.colors[outcome[2]]
+end
+
 local function weaponNames(quest)
     quest = quest or {}
     local names = {}
@@ -457,6 +469,11 @@ local function drawHeader(snapshot, ctx)
     moveCursor(Theme.metrics.chipGap - Theme.metrics.itemSpacing, ctx.sizes.header - ctx.sizes.body)
     local label, color = ReportWindow.resultText(quest)
     textIn(ctx.fonts.body, label, color)
+    local outcome, outcomeColor = ReportWindow.outcomeText(quest)
+    if outcome then
+        sameLineGap(Theme.metrics.chipGap)
+        textIn(ctx.fonts.body, outcome, outcomeColor)
+    end
 end
 
 local function drawMeta(snapshot, ctx)

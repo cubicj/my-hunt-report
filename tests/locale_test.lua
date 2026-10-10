@@ -136,6 +136,18 @@ function T.clearHistoryStringsMatchTheDesign()
     end
 end
 
+function T.questOutcomeStringsMatchTheDesign()
+    local expected = {
+        en = { "Clear", "Failed", "Abandoned" },
+        ko = { "클리어", "실패", "포기" },
+    }
+    local keys = { "result_clear", "result_fail", "result_abandon" }
+    for language, values in pairs(expected) do
+        Locale.resolve(language)
+        for index, key in ipairs(keys) do assert(Locale.text(key) == values[index], key) end
+    end
+end
+
 function T.slingerAndRidingLabelsMatchInBothLocales()
     Locale.init({})
     Locale.resolve("en")
