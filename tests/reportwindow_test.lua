@@ -245,10 +245,11 @@ function T.headerDrawsWeaponThenQuestLevelThenOutcomeThenMeta()
         shown.monsters = { { name = "미즈츠네" } }
         ReportWindow.show(shown)
         ui.draw()
-        local texts, outcome = {}, nil
+        local texts, label, outcome = {}, nil, nil
         for _, event in ipairs(ui.events) do
             if event.kind == "text" then
                 texts[#texts + 1] = event.value
+                if #texts == 2 then label = event end
                 if #texts == 3 then outcome = event end
             end
         end
@@ -256,8 +257,10 @@ function T.headerDrawsWeaponThenQuestLevelThenOutcomeThenMeta()
         assert(texts[2] == Locale.text("result_quest") .. " ★5", texts[2])
         assert(texts[3] == Locale.text("result_clear"), texts[3])
         assert(outcome.textColor == Theme.colors.success)
-        local gap = ui.positions[outcome.positionCount]
-        assert(gap.x == 18 + Theme.metrics.chipGap - Theme.metrics.itemSpacing and gap.y == 20)
+        local labelAt, outcomeAt = ui.positions[label.positionCount], ui.positions[outcome.positionCount]
+        assert(labelAt.y > 20, labelAt.y)
+        assert(outcomeAt.x == 18 + Theme.metrics.chipGap - Theme.metrics.itemSpacing)
+        assert(outcomeAt.y == labelAt.y, outcomeAt.y .. " vs " .. labelAt.y)
         assert(texts[4] == "미즈츠네 · 12:34", texts[4])
         for _, event in ipairs(ui.events) do
             assert(event.kind ~= "separator", "separator drawn")

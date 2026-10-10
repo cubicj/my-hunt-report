@@ -462,18 +462,19 @@ local function drawRows(idPrefix, rows, columnWidth, layout)
     if not ok then error(err, 0) end
 end
 
+local function headerBodyText(ctx, text, color)
+    imgui.same_line()
+    moveCursor(Theme.metrics.chipGap - Theme.metrics.itemSpacing, ctx.sizes.header - ctx.sizes.body)
+    textIn(ctx.fonts.body, text, color)
+end
+
 local function drawHeader(snapshot, ctx)
     local quest = snapshot.quest or {}
     textIn(ctx.fonts.header, ReportWindow.headerWeaponText(quest))
-    imgui.same_line()
-    moveCursor(Theme.metrics.chipGap - Theme.metrics.itemSpacing, ctx.sizes.header - ctx.sizes.body)
     local label, color = ReportWindow.resultText(quest)
-    textIn(ctx.fonts.body, label, color)
+    headerBodyText(ctx, label, color)
     local outcome, outcomeColor = ReportWindow.outcomeText(quest)
-    if outcome then
-        sameLineGap(Theme.metrics.chipGap)
-        textIn(ctx.fonts.body, outcome, outcomeColor)
-    end
+    if outcome then headerBodyText(ctx, outcome, outcomeColor) end
 end
 
 local function drawMeta(snapshot, ctx)
