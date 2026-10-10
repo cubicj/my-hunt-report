@@ -10,18 +10,32 @@ local HistoryFilter = require("MyHuntReport.HistoryFilter")
 local HistoryFilterWindow = require("MyHuntReport.HistoryFilterWindow")
 local Game = require("MyHuntReport.Game")
 local Hdr = require("MyHuntReport.Hdr")
-local Version = require("MyHuntReport.Version")
+local ReportLayout = require("MyHuntReport.ReportLayout")
+local ReportText = require("MyHuntReport.ReportText")
+local UiText = require("MyHuntReport.UiText")
 
 local ReportWindow = {}
+
+ReportWindow.placement = ReportLayout.placement
+ReportWindow.rowAreaLayout = ReportLayout.rowAreaLayout
+ReportWindow.barSegments = ReportLayout.barSegments
+ReportWindow.historyColumns = ReportLayout.historyColumns
+ReportWindow.tileLayout = ReportLayout.tileLayout
+ReportWindow.wrapBreaks = ReportLayout.wrapBreaks
+ReportWindow.statTiles = ReportText.statTiles
+ReportWindow.resultText = ReportText.resultText
+ReportWindow.outcomeText = ReportText.outcomeText
+ReportWindow.headerWeaponText = ReportText.headerWeaponText
+ReportWindow.metaText = ReportText.metaText
+ReportWindow.versionText = ReportText.versionText
+ReportWindow.historyRow = ReportText.historyRow
+ReportWindow.shareText = ReportText.shareText
+ReportWindow.skillDamageName = ReportText.skillDamageName
 
 local WINDOW_ID = "##MyHuntReportWindow"
 local COND_APPEARING = 8
 local REFRESH_INTERVAL = 0.25
 local POSITION_SETTLE_SECONDS = 1.0
-local ELEMENT_LABELS = {
-    [1] = "avg_hitzone_fire", [2] = "avg_hitzone_water", [3] = "avg_hitzone_thunder",
-    [4] = "avg_hitzone_ice", [5] = "avg_hitzone_dragon",
-}
 
 local state = {
     open = false,
@@ -58,51 +72,49 @@ local function L(key)
     return Locale.text(key)
 end
 
-local function coloredText(text, color)
-    local pushed = pcall(imgui.push_style_color, 0, color)
-    local ok, err = pcall(imgui.text, text)
-    if pushed then pcall(imgui.pop_style_color, 1) end
-    if not ok then error(err, 0) end
+local historyRows = {}
+local reportText = nil
+local frameFonts = nil
+local presented = {}
+
+local function dropReportText()
+    reportText = nil
 end
 
-local function textWidth(text)
-    local ok, size = pcall(imgui.calc_text_size, text)
-    if ok and size and type(size.x) == "number" then return size.x end
-    return nil
+local function invalidatePresentation()
+    historyRows = {}
+    reportText = nil
+    frameFonts = nil
+    UiText.resetCache()
 end
 
-local function trimUtf8(text)
-    local length = #text
-    if length == 0 then return text end
-    local cut = length
-    while cut > 1 do
-        local byte = text:byte(cut)
-        if byte < 0x80 or byte > 0xBF then break end
-        cut = cut - 1
+local function fontsFor(size)
+    if frameFonts == nil or frameFonts.size ~= size then
+        frameFonts = {
+            size = size,
+            fonts = { header = Fonts.header(size), body = Fonts.body(size), meta = Fonts.meta(size), small = Fonts.small(size) },
+            sizes = { header = Fonts.size("header", size), body = size, meta = Fonts.size("meta", size), small = Fonts.size("small", size) },
+        }
     end
-    return text:sub(1, cut - 1)
+    return frameFonts.fonts, frameFonts.sizes
 end
 
-local function clipName(text, maxWidth)
-    local width = textWidth(text)
-    if not width or width <= maxWidth then return text end
-    local ellipsis = "…"
-    local body = text
-    while #body > 0 do
-        body = trimUtf8(body)
-        local candidate = body .. ellipsis
-        local w = textWidth(candidate)
-        if not w then return text end
-        if w <= maxWidth then return candidate end
+local function syncPresentation(textKey, size, mode, displayX, displayY)
+    if presented.textKey == textKey and presented.size == size and presented.mode == mode
+        and presented.displayX == displayX and presented.displayY == displayY then
+        return
     end
-    return ellipsis
+    invalidatePresentation()
+    presented = { textKey = textKey, size = size, mode = mode, displayX = displayX, displayY = displayY }
 end
 
-local function textIn(font, text, color)
-    local pushed = Fonts.push(font)
-    local ok, err = pcall(coloredText, text, color or Theme.colors.text)
-    Fonts.pop(pushed)
-    if not ok then error(err, 0) end
+local function historyRowFor(entry)
+    local row = historyRows[entry]
+    if row == nil then
+        row = ReportText.historyRow(entry)
+        historyRows[entry] = row
+    end
+    return row
 end
 
 local function moveCursor(dx, dy)
@@ -122,10 +134,10 @@ end
 local function sectionLabel(id, text, ctx, width)
     verticalGap(Theme.metrics.sectionGap)
     local pushed = Fonts.push(ctx.fonts.small)
-    local textW = textWidth(text) or 0
+    local textW = UiText.width(text) or 0
     Fonts.pop(pushed)
     local origin = imgui.get_cursor_pos()
-    textIn(ctx.fonts.small, text, Theme.colors.textMuted)
+    UiText.inFont(ctx.fonts.small, text, Theme.colors.textMuted)
     imgui.same_line()
     imgui.set_cursor_pos(Vector2f.new(origin.x + textW + Theme.metrics.ruleGap, origin.y))
     local screen = imgui.get_cursor_screen_pos()
@@ -138,20 +150,10 @@ end
 local LABEL_VALUE_GAP = 6
 
 local function labeledValue(ctx, name, value)
-    textIn(ctx.fonts.body, name)
+    UiText.inFont(ctx.fonts.body, name)
     sameLineGap(LABEL_VALUE_GAP)
     moveCursor(0, ctx.sizes.body - ctx.sizes.meta)
-    textIn(ctx.fonts.meta, value, Theme.colors.textMuted)
-end
-
-local EDGE_MARGIN = 64
-
-function ReportWindow.placement(settings, display)
-    local x, y = tonumber(settings.windowX) or -1, tonumber(settings.windowY) or -1
-    if x < 0 or y < 0 then return { centered = true } end
-    local maxX = math.max(0, (display and display.x or 0) - EDGE_MARGIN)
-    local maxY = math.max(0, (display and display.y or 0) - EDGE_MARGIN)
-    return { centered = false, x = math.min(x, maxX), y = math.min(y, maxY) }
+    UiText.inFont(ctx.fonts.meta, value, Theme.colors.textMuted)
 end
 
 function ReportWindow.rememberPosition(x, y)
@@ -193,6 +195,7 @@ end
 local function close()
     state.filterOpen, state.filterBounds = false, nil
     clearForward()
+    invalidatePresentation()
     state.open = false
     ReportWindow.persistPosition()
 end
@@ -203,228 +206,7 @@ local function displayHeight()
     return 1080
 end
 
-function ReportWindow.rowAreaLayout(rowCount, displayHeight_, scale, rowHeightPx)
-    scale = scale or 1
-    local count = rowCount or 0
-    local rowHeight
-    if rowHeightPx then
-        rowHeight = math.floor(rowHeightPx * scale + 0.5)
-    else
-        rowHeight = math.floor(18 * scale + 0.5) + Theme.metrics.rowSpacing
-    end
-    local cap = math.max(1, math.floor((displayHeight_ or 1080) * 0.5 / rowHeight))
-    local visible = math.max(1, math.min(count, cap))
-    return {
-        rowHeight = rowHeight,
-        visibleRows = visible,
-        scrolls = count > cap,
-        height = rowHeight * visible + 4,
-        scale = scale,
-    }
-end
-
-function ReportWindow.barSegments(width, shares, gap)
-    local segments = {}
-    for _, item in ipairs(shares or {}) do
-        local w = math.floor((item.share or 0) * width)
-        if w >= 1 then segments[#segments + 1] = { id = item.id, color = item.color, width = w } end
-    end
-    local gaps = math.max(0, #segments - 1) * gap
-    local used = gaps
-    for _, segment in ipairs(segments) do used = used + segment.width end
-    while used > width and #segments > 0 do
-        local last = segments[#segments]
-        local trimmed = last.width - (used - width)
-        if trimmed >= 1 then
-            last.width = trimmed
-            used = width
-        else
-            used = used - last.width
-            if #segments > 1 then used = used - gap end
-            table.remove(segments)
-        end
-    end
-    local x = 0
-    for index, segment in ipairs(segments) do
-        segment.x = x
-        x = x + segment.width
-        if index < #segments then x = x + gap end
-    end
-    return { segments = segments, track = { x = x, width = math.max(0, width - x) } }
-end
-
-function ReportWindow.historyColumns(width, scale, scrolls)
-    local m = Theme.metrics
-    local buttonWidth = width - (scrolls and m.scrollbarWidth or 0)
-    local inner = buttonWidth - m.historyPadding * 2
-    local time = math.floor(m.historyTimeWidth * scale + 0.5)
-    local stars = math.floor(m.historyStarsWidth * scale + 0.5)
-    local rest = inner - time - stars - m.historyGap * 3
-    local weapons = math.floor(rest * m.historyWeaponShare)
-    local x = m.historyPadding
-    local columns = { buttonWidth = buttonWidth }
-    columns.time = { x = x, width = time }
-    x = x + time + m.historyGap
-    columns.weapons = { x = x, width = weapons }
-    x = x + weapons + m.historyGap
-    columns.stars = { x = x, width = stars }
-    x = x + stars + m.historyGap
-    columns.monsters = { x = x, width = rest - weapons }
-    return columns
-end
-
-function ReportWindow.statTiles(snapshot)
-    local stats = snapshot.stats or {}
-    local tiles = {}
-    if not (snapshot.quest and snapshot.quest.result == "training") then
-        tiles[#tiles + 1] = { label = L("combat_dps"), value = Format.decimal(stats.combatDps, 1) }
-    end
-    tiles[#tiles + 1] = { label = L("crit_rate"), value = Format.rate(stats.critRate) }
-    if type(stats.negativeCritRate) == "number" and stats.negativeCritRate > 0 then
-        tiles[#tiles + 1] = { label = L("negative_crit_rate"), value = Format.rate(stats.negativeCritRate) }
-    end
-    tiles[#tiles + 1] = { label = L("avg_attack"), value = Format.decimal(stats.avgAttack, 1) }
-    tiles[#tiles + 1] = { label = L("avg_hitzone"), value = Format.decimal(stats.avgHitzone, 1) }
-    if stats.attributeHitzones then
-        for _, entry in ipairs(stats.attributeHitzones) do
-            tiles[#tiles + 1] = { label = L(ELEMENT_LABELS[entry.attribute] or "avg_attribute_hitzone"), value = Format.decimal(entry.avgHitzone, 1) }
-        end
-    elseif (stats.attribute or 0) > 0 then
-        local key = ELEMENT_LABELS[stats.attribute] or "avg_attribute_hitzone"
-        tiles[#tiles + 1] = { label = L(key), value = Format.decimal(stats.avgAttributeHitzone, 1) }
-    end
-    return tiles
-end
-
-function ReportWindow.tileLayout(widths, totalWidth, minGap)
-    local layout = {}
-    local count = #widths
-    if count == 0 then return layout end
-    local maxWidth = 0
-    for _, width in ipairs(widths) do
-        if width > maxWidth then maxWidth = width end
-    end
-    local columns = count
-    if maxWidth + minGap > math.floor(totalWidth / count) then
-        columns = math.max(1, math.floor(totalWidth / (maxWidth + minGap)))
-    end
-    local columnWidth = math.floor(totalWidth / columns)
-    for index = 1, count do
-        layout[index] = { row = (index - 1) // columns + 1, x = columnWidth * ((index - 1) % columns) }
-    end
-    return layout
-end
-
-function ReportWindow.wrapBreaks(widths, totalWidth, gap)
-    local breaks = {}
-    local used = 0
-    for index, width in ipairs(widths) do
-        if index == 1 then
-            breaks[index] = false
-            used = width
-        elseif used + gap + width > totalWidth then
-            breaks[index] = true
-            used = width
-        else
-            breaks[index] = false
-            used = used + gap + width
-        end
-    end
-    return breaks
-end
-
-local function resultLabel(result)
-    if result == "training" then return L("result_training"), Theme.colors.accent end
-    return L("result_quest"), Theme.colors.accent
-end
-
-function ReportWindow.resultText(quest)
-    quest = quest or {}
-    local label, color = resultLabel(quest.result)
-    local stars = ""
-    if quest.result ~= "training" and type(quest.level) == "number" and quest.level > 0 then
-        stars = "★" .. quest.level
-        label = label .. " " .. stars
-    end
-    return label, color, stars
-end
-
-local OUTCOMES = {
-    clear = { "result_clear", "success" },
-    fail = { "result_fail", "warning" },
-    abandon = { "result_abandon", "textMuted" },
-}
-
-function ReportWindow.outcomeText(quest)
-    local outcome = type(quest) == "table" and OUTCOMES[quest.result]
-    if not outcome then return nil end
-    return L(outcome[1]), Theme.colors[outcome[2]]
-end
-
-local function weaponNames(quest)
-    quest = quest or {}
-    local names = {}
-    for _, weapon in ipairs(type(quest.weapons) == "table" and quest.weapons or {}) do
-        if type(weapon.name) == "string" and #weapon.name > 0 then names[#names + 1] = weapon.name end
-    end
-    if #names > 0 then return table.concat(names, ", ") end
-    if type(quest.weapon) == "table" and type(quest.weapon.name) == "string" and #quest.weapon.name > 0 then
-        return quest.weapon.name
-    end
-    return L("weapon_unknown")
-end
-
-local function monsterNames(list)
-    local names = {}
-    for _, monster in ipairs(type(list) == "table" and list or {}) do
-        names[#names + 1] = tostring(monster.name or monster.id)
-    end
-    return table.concat(names, ", ")
-end
-
-function ReportWindow.headerWeaponText(quest)
-    return weaponNames(quest)
-end
-
-function ReportWindow.metaText(snapshot)
-    snapshot = snapshot or {}
-    local quest = snapshot.quest or {}
-    local time = Format.duration(quest.elapsedSeconds or 0)
-    local monsters = monsterNames(snapshot.monsters)
-    if monsters == "" then return time end
-    return monsters .. " · " .. time
-end
-
-function ReportWindow.versionText(snapshot)
-    local version = type(snapshot) == "table" and snapshot.modVersion
-    if type(version) ~= "string" or version == "" then
-        version = string.format(L("mod_version_legacy"), Version.LAST_UNRECORDED)
-    end
-    return string.format(L("mod_version"), version)
-end
-
-function ReportWindow.historyRow(entry)
-    entry = entry or {}
-    local quest = entry.quest or {}
-    local _, _, stars = ReportWindow.resultText(quest)
-    return {
-        time = Format.clock(quest.endedAt or 0),
-        stars = stars,
-        weapons = weaponNames(quest),
-        monsters = monsterNames(entry.monsters),
-    }
-end
-
-function ReportWindow.shareText(value, total)
-    if type(value) ~= "number" then return "-" end
-    return Format.percent(total > 0 and value / total or 0)
-end
-
-function ReportWindow.skillDamageName(kind)
-    return L("skill_damage_" .. tostring(kind))
-end
-
-local function drawRows(idPrefix, rows, columnWidth, layout)
+local function drawRows(idPrefix, rows, percents, columnWidth, layout)
     local token = Theme.pushRows()
     local okBegin, beginErr = pcall(imgui.begin_child_window, idPrefix .. "##rows", { columnWidth, layout.height }, false, 0)
     if not okBegin then
@@ -443,15 +225,14 @@ local function drawRows(idPrefix, rows, columnWidth, layout)
                         columnWidth - (layout.scrolls and Theme.metrics.scrollbarWidth or 0), layout.rowHeight,
                         Theme.colors.rowStripe, Theme.metrics.stripeRounding, Draw.CORNERS.all)
                 end
-                local percent = Format.percent(row.share)
-                if row.valueKind == "hp" then percent = "HP " .. percent end
-                local w = textWidth(percent)
+                local percent = percents[index]
+                local w = UiText.width(percent)
                 local nameWidth = rightEdge - math.max(percentWidth, w or 0) - 8
-                imgui.text(clipName(tostring(row.name), nameWidth))
+                imgui.text(UiText.clip(tostring(row.name), nameWidth))
                 imgui.same_line()
                 local x = w and (rightEdge - w) or (rightEdge - percentWidth)
                 imgui.set_cursor_pos(Vector2f.new(x, imgui.get_cursor_pos().y))
-                coloredText(percent, Theme.colors.text)
+                UiText.colored(percent, Theme.colors.text)
             end)
             imgui.pop_id()
             if not okRow then error(rowErr, 0) end
@@ -465,36 +246,36 @@ end
 local function headerBodyText(ctx, text, color)
     imgui.same_line()
     moveCursor(Theme.metrics.chipGap - Theme.metrics.itemSpacing, ctx.sizes.header - ctx.sizes.body)
-    textIn(ctx.fonts.body, text, color)
+    UiText.inFont(ctx.fonts.body, text, color)
 end
 
-local function drawHeader(snapshot, ctx)
+local function drawHeader(snapshot, ctx, text)
     local quest = snapshot.quest or {}
-    textIn(ctx.fonts.header, ReportWindow.headerWeaponText(quest))
-    local label, color = ReportWindow.resultText(quest)
+    UiText.inFont(ctx.fonts.header, text.weapon)
+    local label, color = ReportText.resultText(quest)
     headerBodyText(ctx, label, color)
-    local outcome, outcomeColor = ReportWindow.outcomeText(quest)
+    local outcome, outcomeColor = ReportText.outcomeText(quest)
     if outcome then headerBodyText(ctx, outcome, outcomeColor) end
 end
 
-local function drawMeta(snapshot, ctx)
-    textIn(ctx.fonts.meta, ReportWindow.metaText(snapshot), Theme.colors.textMuted)
+local function drawMeta(ctx, text)
+    UiText.inFont(ctx.fonts.meta, text.meta, Theme.colors.textMuted)
 end
 
-local function drawVersion(snapshot, ctx)
-    textIn(ctx.fonts.meta, ReportWindow.versionText(snapshot), Theme.colors.textMuted)
+local function drawVersion(ctx, text)
+    UiText.inFont(ctx.fonts.meta, text.version, Theme.colors.textMuted)
 end
 
-local function drawStats(snapshot, ctx)
+local function drawStats(ctx, text)
     verticalGap(Theme.metrics.sectionGap)
-    local tiles = ReportWindow.statTiles(snapshot)
+    local tiles = text.tiles
     local widths, measured = {}, true
     for index, tile in ipairs(tiles) do
         local pushed = Fonts.push(ctx.fonts.small)
-        local labelWidth = textWidth(tile.label)
+        local labelWidth = UiText.width(tile.label)
         Fonts.pop(pushed)
         pushed = Fonts.push(ctx.fonts.header)
-        local valueWidth = textWidth(tile.value)
+        local valueWidth = UiText.width(tile.value)
         Fonts.pop(pushed)
         if labelWidth and valueWidth then
             widths[index] = math.ceil(math.max(labelWidth, valueWidth))
@@ -507,7 +288,7 @@ local function drawStats(snapshot, ctx)
         for index = 1, #tiles do widths[index] = 0 end
         minGap = 0
     end
-    local layout = ReportWindow.tileLayout(widths, ctx.width, minGap)
+    local layout = ReportLayout.tileLayout(widths, ctx.width, minGap)
     local origin = imgui.get_cursor_pos()
     local first = 1
     while first <= #tiles do
@@ -517,12 +298,12 @@ local function drawStats(snapshot, ctx)
         while last < #tiles and layout[last + 1].row == layout[first].row do last = last + 1 end
         for index = first, last do
             imgui.set_cursor_pos(Vector2f.new(origin.x + layout[index].x, labelY))
-            textIn(ctx.fonts.small, tiles[index].label, Theme.colors.textMuted)
+            UiText.inFont(ctx.fonts.small, tiles[index].label, Theme.colors.textMuted)
         end
         local valueY = imgui.get_cursor_pos().y
         for index = first, last do
             imgui.set_cursor_pos(Vector2f.new(origin.x + layout[index].x, valueY))
-            textIn(ctx.fonts.header, tiles[index].value)
+            UiText.inFont(ctx.fonts.header, tiles[index].value)
         end
         first = last + 1
     end
@@ -535,6 +316,53 @@ local DAMAGE_TYPES = {
     { id = "stat", key = "status", field = "status", color = "status" },
 }
 
+local function rowPercents(rows)
+    local percents = {}
+    for index, row in ipairs(rows) do
+        local percent = Format.percent(row.share)
+        if row.valueKind == "hp" then percent = "HP " .. percent end
+        percents[index] = percent
+    end
+    return percents
+end
+
+local function skillDamageItems(snapshot)
+    local items = {}
+    for _, row in ipairs(snapshot.sources or {}) do
+        items[#items + 1] = { name = row.name, value = Format.percent(row.share) }
+    end
+    if type(snapshot.skillDamage) == "table" then
+        for _, row in ipairs(snapshot.skillDamage) do
+            items[#items + 1] = { name = ReportText.skillDamageName(row.kind), value = Format.percent(row.share) }
+        end
+    end
+    local palico = snapshot.palico
+    if type(palico) == "table" and type(palico.share) == "number" and palico.share > 0 then
+        items[#items + 1] = { name = L("palico_share"), value = Format.percent(palico.share) }
+    end
+    return items
+end
+
+local function presentation(snapshot)
+    if reportText and reportText.snapshot == snapshot then return reportText end
+    local damage = snapshot.damage or {}
+    local total = damage.total or 0
+    local shares = {}
+    for index, kind in ipairs(DAMAGE_TYPES) do shares[index] = ReportText.shareText(damage[kind.field], total) end
+    reportText = {
+        snapshot = snapshot,
+        weapon = ReportText.headerWeaponText(snapshot.quest or {}),
+        meta = ReportText.metaText(snapshot),
+        version = ReportText.versionText(snapshot),
+        tiles = ReportText.statTiles(snapshot),
+        shares = shares,
+        items = skillDamageItems(snapshot),
+        skills = rowPercents(snapshot.skills or {}),
+        motions = rowPercents(snapshot.motions or {}),
+    }
+    return reportText
+end
+
 local function drawDamageBar(damage, ctx)
     local m = Theme.metrics
     local total = damage.total or 0
@@ -543,7 +371,7 @@ local function drawDamageBar(damage, ctx)
         local value = damage[kind.field] or 0
         shares[index] = { id = kind.id, color = Theme.colors[kind.color], share = total > 0 and value / total or 0 }
     end
-    local layout = ReportWindow.barSegments(ctx.width, shares, m.barGap)
+    local layout = ReportLayout.barSegments(ctx.width, shares, m.barGap)
     local screen = imgui.get_cursor_screen_pos()
     imgui.invisible_button("##damagebar", { ctx.width, m.barHeight })
     local radius = m.barHeight / 2
@@ -562,9 +390,8 @@ local function drawDamageBar(damage, ctx)
     end
 end
 
-local function drawLegend(damage, ctx)
+local function drawLegend(ctx, text)
     local m = Theme.metrics
-    local total = damage.total or 0
     for index, kind in ipairs(DAMAGE_TYPES) do
         if index > 1 then sameLineGap(m.legendGap) end
         local origin = imgui.get_cursor_pos()
@@ -572,31 +399,19 @@ local function drawLegend(damage, ctx)
         imgui.invisible_button("##dot" .. kind.id, { m.dotRadius * 2, ctx.sizes.body })
         Draw.dot("dot" .. kind.id, screen.x + m.dotRadius, screen.y + ctx.sizes.body / 2, m.dotRadius, Theme.colors[kind.color])
         imgui.set_cursor_pos(Vector2f.new(origin.x + m.dotRadius * 2 + 8, origin.y))
-        labeledValue(ctx, L(kind.key), ReportWindow.shareText(damage[kind.field], total))
+        labeledValue(ctx, L(kind.key), text.shares[index])
     end
 end
 
-local function drawSkillDamage(snapshot, ctx)
-    local items, widths, measured = {}, {}, true
-    for _, row in ipairs(snapshot.sources or {}) do
-        items[#items + 1] = { name = row.name, value = Format.percent(row.share) }
-    end
-    if type(snapshot.skillDamage) == "table" then
-        for _, row in ipairs(snapshot.skillDamage) do
-            items[#items + 1] = { name = ReportWindow.skillDamageName(row.kind), value = Format.percent(row.share) }
-        end
-    end
-    local palico = snapshot.palico
-    if type(palico) == "table" and type(palico.share) == "number" and palico.share > 0 then
-        items[#items + 1] = { name = L("palico_share"), value = Format.percent(palico.share) }
-    end
+local function drawSkillDamage(ctx, text)
+    local items, widths, measured = text.items, {}, true
     if #items == 0 then return end
     for index, item in ipairs(items) do
         local pushed = Fonts.push(ctx.fonts.body)
-        local nameWidth = textWidth(item.name)
+        local nameWidth = UiText.width(item.name)
         Fonts.pop(pushed)
         pushed = Fonts.push(ctx.fonts.meta)
-        local valueWidth = textWidth(item.value)
+        local valueWidth = UiText.width(item.value)
         Fonts.pop(pushed)
         if nameWidth and valueWidth then
             widths[index] = math.ceil(nameWidth + LABEL_VALUE_GAP + valueWidth)
@@ -604,29 +419,29 @@ local function drawSkillDamage(snapshot, ctx)
             measured = false
         end
     end
-    local breaks = measured and ReportWindow.wrapBreaks(widths, ctx.width, Theme.metrics.procGap) or {}
+    local breaks = measured and ReportLayout.wrapBreaks(widths, ctx.width, Theme.metrics.procGap) or {}
     for index, item in ipairs(items) do
         if index > 1 and not breaks[index] then sameLineGap(Theme.metrics.procGap) end
         labeledValue(ctx, item.name, item.value)
     end
 end
 
-local function drawDamage(snapshot, ctx)
+local function drawDamage(snapshot, ctx, text)
     local damage = snapshot.damage or {}
     sectionLabel("damage", L("damage_types"), ctx)
     drawDamageBar(damage, ctx)
-    drawLegend(damage, ctx)
-    drawSkillDamage(snapshot, ctx)
+    drawLegend(ctx, text)
+    drawSkillDamage(ctx, text)
 end
 
-local function drawBody(snapshot, ctx)
+local function drawBody(snapshot, ctx, text)
     local columnWidth = math.floor((ctx.width - Theme.metrics.columnGap) / 2)
     local skills, motions = snapshot.skills or {}, snapshot.motions or {}
-    local layout = ReportWindow.rowAreaLayout(math.max(#skills, #motions), displayHeight(), ctx.scale)
+    local layout = ReportLayout.rowAreaLayout(math.max(#skills, #motions), displayHeight(), ctx.scale)
     imgui.begin_group()
     local ok, err = pcall(function()
         sectionLabel("skills", L("skills_header"), ctx, columnWidth)
-        drawRows("skill", skills, columnWidth, layout)
+        drawRows("skill", skills, text.skills, columnWidth, layout)
     end)
     imgui.end_group()
     if not ok then error(err, 0) end
@@ -635,7 +450,7 @@ local function drawBody(snapshot, ctx)
     imgui.begin_group()
     ok, err = pcall(function()
         sectionLabel("motions", L("motions_header"), ctx, columnWidth)
-        drawRows("motion", motions, columnWidth, layout)
+        drawRows("motion", motions, text.motions, columnWidth, layout)
     end)
     imgui.end_group()
     if not ok then error(err, 0) end
@@ -643,6 +458,7 @@ end
 
 local function returnFromHistory()
     state.filterOpen, state.filterBounds = false, nil
+    invalidatePresentation()
     if state.view == "history" then
         state.snapshot = state.liveSnapshot
         state.notSaved = state.liveNotSaved
@@ -692,7 +508,7 @@ function ReportWindow.drawTopBar(ctx)
                 local okHover, hovered = pcall(imgui.is_item_hovered)
                 local color = okHover and hovered and Theme.colors.text or Theme.colors.textMuted
                 local fontPushed = Fonts.push(ctx.fonts.body)
-                local width = textWidth(label) or 0
+                local width = UiText.width(label) or 0
                 Draw.text("history", screen.x + (m.navButtonWidth - width) / 2,
                     screen.y + (m.iconButton - ctx.sizes.body) / 2 - Fonts.centerNudge(ctx.sizes.body), color, label)
                 Fonts.pop(fontPushed)
@@ -746,19 +562,19 @@ local function drawFooter(snapshot, ctx)
     imgui.invisible_button("##footerrule", { ctx.width, 1 })
     Draw.line("footer", screen.x, screen.y, screen.x + ctx.width, screen.y, Theme.colors.rule)
     if showNotSaved then
-        textIn(ctx.fonts.meta, L("not_saved"), Theme.colors.warning)
+        UiText.inFont(ctx.fonts.meta, L("not_saved"), Theme.colors.warning)
     end
     if showDiagnostics then
         local d = snapshot.diagnostics
-        textIn(ctx.fonts.small, string.format("%s: weightFallbacks=%d droppedPending=%d fightingFallback=%s",
+        UiText.inFont(ctx.fonts.small, string.format("%s: weightFallbacks=%d droppedPending=%d fightingFallback=%s",
             L("diagnostics"), d.weightFallbacks or 0, d.droppedPending or 0,
             tostring(d.fightingFallback == true)), Theme.colors.textMuted)
         local a, n = d.attribution or {}, d.names or {}
-        textIn(ctx.fonts.small, string.format("attribution: action=%d shell=%d kinsect=%d slinger=%d",
+        UiText.inFont(ctx.fonts.small, string.format("attribution: action=%d shell=%d kinsect=%d slinger=%d",
             a.action or 0, a.shell or 0, a.kinsect or 0, a.slinger or 0), Theme.colors.textMuted)
-        textIn(ctx.fonts.small, string.format("weapon-1=%d lastAttack=%d nonattack=%d",
+        UiText.inFont(ctx.fonts.small, string.format("weapon-1=%d lastAttack=%d nonattack=%d",
             a.weaponMinus1 or 0, a.lastAttack or 0, a.nonattack or 0), Theme.colors.textMuted)
-        textIn(ctx.fonts.small, string.format("names: sibling=%d unmapped=%d", n.sibling or 0, n.unmapped or 0), Theme.colors.textMuted)
+        UiText.inFont(ctx.fonts.small, string.format("names: sibling=%d unmapped=%d", n.sibling or 0, n.unmapped or 0), Theme.colors.textMuted)
     end
 end
 
@@ -779,6 +595,7 @@ local function filterName(label, id)
 end
 
 local function updateFilteredHistory(changed)
+    invalidatePresentation()
     state.filteredEntries = HistoryFilter.apply(state.entries, state.historySelection)
     state.historyActive = HistoryFilter.isActive(state.historySelection)
     state.historyChips = {}
@@ -842,9 +659,9 @@ local function drawHistoryChips(ctx)
         local height = ctx.sizes.body + m.itemSpacing
         for _, chip in ipairs(state.historyChips) do
             local suffix = " ×"
-            local suffixWidth = textWidth(suffix) or ctx.sizes.body
-            local text = clipName(chip.text, ctx.width - m.itemSpacing * 2 - suffixWidth) .. suffix
-            local width = math.min(ctx.width, (textWidth(text) or ctx.width - m.itemSpacing * 2) + m.itemSpacing * 2)
+            local suffixWidth = UiText.width(suffix) or ctx.sizes.body
+            local text = UiText.clip(chip.text, ctx.width - m.itemSpacing * 2 - suffixWidth) .. suffix
+            local width = math.min(ctx.width, (UiText.width(text) or ctx.width - m.itemSpacing * 2) + m.itemSpacing * 2)
             if x > 0 and x + width > ctx.width then
                 x, y = 0, y + height + m.itemSpacing
             end
@@ -872,13 +689,13 @@ end
 
 local function drawHistory(ctx)
     if #state.entries == 0 then
-        textIn(ctx.fonts.meta, L("history_empty"), Theme.colors.textMuted)
+        UiText.inFont(ctx.fonts.meta, L("history_empty"), Theme.colors.textMuted)
         return
     end
     drawHistoryChips(ctx)
     local m = Theme.metrics
-    local layout = ReportWindow.rowAreaLayout(#state.filteredEntries, displayHeight(), ctx.scale, m.historyRowHeight)
-    local columns = ReportWindow.historyColumns(ctx.width, ctx.scale, layout.scrolls)
+    local layout = ReportLayout.rowAreaLayout(#state.filteredEntries, displayHeight(), ctx.scale, m.historyRowHeight)
+    local columns = ReportLayout.historyColumns(ctx.width, ctx.scale, layout.scrolls)
     local token = Theme.pushListRows()
     local okBegin, beginErr = pcall(imgui.begin_child_window, "history##rows", { ctx.width, layout.height }, false, 0)
     if not okBegin then
@@ -887,7 +704,7 @@ local function drawHistory(ctx)
     end
     local ok, err = pcall(function()
         if #state.filteredEntries == 0 then
-            textIn(ctx.fonts.meta, L("history_no_matches"), Theme.colors.textMuted)
+            UiText.inFont(ctx.fonts.meta, L("history_no_matches"), Theme.colors.textMuted)
         end
         for index, entry in ipairs(state.filteredEntries) do
             local top = imgui.get_cursor_pos()
@@ -895,22 +712,23 @@ local function drawHistory(ctx)
                 state.pendingAction = function()
                     clearForward()
                     state.filterOpen, state.filterBounds = false, nil
+                    invalidatePresentation()
                     state.snapshot = entry
                     state.view = "report"
                     state.fromHistory = true
                 end
             end
-            local row = ReportWindow.historyRow(entry)
+            local row = historyRowFor(entry)
             local bodyY = top.y + math.floor((layout.rowHeight - ctx.sizes.body) / 2)
             local metaY = top.y + math.floor((layout.rowHeight - ctx.sizes.meta) / 2)
             imgui.set_cursor_pos(Vector2f.new(top.x + columns.time.x, metaY))
-            textIn(ctx.fonts.meta, row.time, Theme.colors.textMuted)
+            UiText.inFont(ctx.fonts.meta, row.time, Theme.colors.textMuted)
             imgui.set_cursor_pos(Vector2f.new(top.x + columns.weapons.x, bodyY))
-            textIn(ctx.fonts.body, clipName(row.weapons, columns.weapons.width))
+            UiText.inFont(ctx.fonts.body, UiText.clip(row.weapons, columns.weapons.width))
             imgui.set_cursor_pos(Vector2f.new(top.x + columns.stars.x, bodyY))
-            textIn(ctx.fonts.body, row.stars, Theme.colors.accent)
+            UiText.inFont(ctx.fonts.body, row.stars, Theme.colors.accent)
             imgui.set_cursor_pos(Vector2f.new(top.x + columns.monsters.x, bodyY))
-            textIn(ctx.fonts.body, clipName(row.monsters, columns.monsters.width))
+            UiText.inFont(ctx.fonts.body, UiText.clip(row.monsters, columns.monsters.width))
             imgui.set_cursor_pos(Vector2f.new(top.x, top.y + layout.rowHeight))
         end
     end)
@@ -925,23 +743,24 @@ local function drawContents(settings, fonts, sizes)
     if state.view == "history" then loadHistory() end
     ReportWindow.drawTopBar(ctx)
     if state.view == "history" then
-        textIn(ctx.fonts.header, L("history_title"))
+        UiText.inFont(ctx.fonts.header, L("history_title"))
         drawHistory(ctx)
         return
     end
     local snapshot = state.snapshot
     if not snapshot or not snapshot.damage or (snapshot.damage.total or 0) <= 0 then
-        textIn(ctx.fonts.header, L("report_title"))
-        textIn(ctx.fonts.meta, L("no_data"), Theme.colors.textMuted)
+        UiText.inFont(ctx.fonts.header, L("report_title"))
+        UiText.inFont(ctx.fonts.meta, L("no_data"), Theme.colors.textMuted)
         drawFooter(snapshot, ctx)
         return
     end
-    drawHeader(snapshot, ctx)
-    drawMeta(snapshot, ctx)
-    drawVersion(snapshot, ctx)
-    drawStats(snapshot, ctx)
-    drawDamage(snapshot, ctx)
-    drawBody(snapshot, ctx)
+    local text = presentation(snapshot)
+    drawHeader(snapshot, ctx, text)
+    drawMeta(ctx, text)
+    drawVersion(ctx, text)
+    drawStats(ctx, text)
+    drawDamage(snapshot, ctx, text)
+    drawBody(snapshot, ctx, text)
     drawFooter(snapshot, ctx)
 end
 
@@ -960,13 +779,17 @@ function ReportWindow.refreshLive(now)
         Log.error("snapshot provider failed: " .. tostring(produced), "report:provider")
         return false
     end
-    if produced then state.snapshot = produced end
+    if produced then
+        state.snapshot = produced
+        dropReportText()
+    end
     return true
 end
 
 function ReportWindow.show(snapshot)
     state.filterOpen, state.filterBounds = false, nil
     clearForward()
+    invalidatePresentation()
     Locale.refresh()
     state.placementLogged = false
     state.positionSettledAt = nil
@@ -993,7 +816,12 @@ function ReportWindow.replaceLiveView(snapshot)
     state.snapshot = snapshot
     state.notSaved = false
     state.liveRefreshAt = nil
+    dropReportText()
     return true
+end
+
+function ReportWindow.onSnapshotMutated()
+    invalidatePresentation()
 end
 
 local function enterHistory()
@@ -1004,6 +832,7 @@ local function enterHistory()
     state.view = "history"
     state.fromHistory = false
     state.entries = nil
+    invalidatePresentation()
     state.open = true
 end
 
@@ -1014,6 +843,7 @@ end
 
 function ReportWindow.onHistoryCleared()
     state.entries = nil
+    invalidatePresentation()
     clearForward()
 end
 
@@ -1048,6 +878,7 @@ function ReportWindow.forward()
         if snapshot == nil then return false end
         state.forwardSnapshot = nil
         state.filterOpen, state.filterBounds = false, nil
+        invalidatePresentation()
         relabelSnapshot(snapshot)
         state.snapshot = snapshot
         state.view = "report"
@@ -1082,6 +913,7 @@ function ReportWindow.onLanguageChanged()
     relabelSnapshot(state.liveSnapshot)
     for _, entry in ipairs(state.entries or {}) do relabelSnapshot(entry) end
     rebuildHistoryFilters()
+    invalidatePresentation()
     state.liveRefreshAt = nil
 end
 
@@ -1133,15 +965,16 @@ function ReportWindow.draw()
     Theme.apply(Hdr.targetNits(settings.hdrCorrection))
     local textKey = Locale.textKey()
     Locale.refresh()
-    if Locale.textKey() ~= textKey then ReportWindow.onLanguageChanged() end
+    local refreshedKey = Locale.textKey()
+    if refreshedKey ~= textKey then ReportWindow.onLanguageChanged() end
     ReportWindow.refreshLive(Game.uptime())
     local size = settings.fontSize or 18
     Fonts.setMode(Locale.bundledFontCovers())
-    local fonts = { header = Fonts.header(size), body = Fonts.body(size), meta = Fonts.meta(size), small = Fonts.small(size) }
-    local sizes = { header = Fonts.size("header", size), body = size, meta = Fonts.size("meta", size), small = Fonts.size("small", size) }
+    local displayX, displayY
     pcall(function()
         local display = imgui.get_display_size()
-        local place = ReportWindow.placement(settings, display)
+        displayX, displayY = display.x, display.y
+        local place = ReportLayout.placement(settings, display)
         if not state.placementLogged then
             state.placementLogged = true
             Log.debug(string.format("window placement centered=%s x=%s y=%s settings=%s,%s display=%s,%s",
@@ -1154,6 +987,8 @@ function ReportWindow.draw()
             imgui.set_next_window_pos({ place.x, place.y }, COND_APPEARING, { 0, 0 })
         end
     end)
+    syncPresentation(refreshedKey, size, Fonts.mode(), displayX, displayY)
+    local fonts, sizes = fontsFor(size)
     local token = Theme.pushWindow()
     local okBegin, opened = pcall(imgui.begin_window, WINDOW_ID, state.open, Theme.WINDOW_FLAGS)
     if okBegin then
@@ -1189,7 +1024,7 @@ function ReportWindow.draw()
     if state.filterOpen then
         local ctx = { fonts = fonts, sizes = sizes, scale = size / 18 }
         state.filterOpen, state.filterBounds = HistoryFilterWindow.draw(ctx, state.historyOptions, state.historyLabels,
-            state.historySelection, changeHistoryFilter, state.bounds, clipName)
+            state.historySelection, changeHistoryFilter, state.bounds)
     end
 end
 

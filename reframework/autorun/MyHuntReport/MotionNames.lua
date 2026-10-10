@@ -120,7 +120,9 @@ function MotionNames.nameFor(key, guideId)
             source = "unmapped"
         end
     end
-    Log.debug(string.format("motion guide=%d class=%s -> %s", guideId, key, name), "motion:" .. cacheKey)
+    if Log.isDeveloperMode() then
+        Log.debug(string.format("motion guide=%d class=%s -> %s", guideId, key, name), "motion:" .. cacheKey)
+    end
     return name, source
 end
 

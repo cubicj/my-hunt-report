@@ -196,45 +196,6 @@ function T.topBarUsesTextAfterAnIconDrawFailure()
     end)
 end
 
-function T.resultTextAddsStarsOnlyForPositiveQuestLevels()
-    assert(ReportWindow.resultText({ result = "clear" }) == Locale.text("result_quest"))
-    assert(ReportWindow.resultText({ result = "clear", level = 5 }) == Locale.text("result_quest") .. " ★5")
-    assert(ReportWindow.resultText({ result = "training", level = 5 }) == Locale.text("result_training"))
-    for _, level in ipairs({ 0, -1, "5", false }) do
-        assert(ReportWindow.resultText({ result = "clear", level = level }) == Locale.text("result_quest"))
-    end
-end
-
-function T.outcomeTextLabelsClearFailAndAbandonOnly()
-    local Theme = require("MyHuntReport.Theme")
-    local language = Locale.current()
-    local ok, err = pcall(function()
-        assert(Theme.colors.success ~= nil and Theme.colors.warning ~= nil and Theme.colors.textMuted ~= nil)
-        Locale.resolve("en")
-        local expected = {
-            clear = { "Clear", Theme.colors.success },
-            fail = { "Failed", Theme.colors.warning },
-            abandon = { "Abandoned", Theme.colors.textMuted },
-        }
-        for result, want in pairs(expected) do
-            local label, color = ReportWindow.outcomeText({ result = result })
-            assert(label == want[1], result)
-            assert(color == want[2], result)
-        end
-        for _, quest in ipairs({ { result = "running" }, { result = "unknown" }, { result = "training" }, { result = "victory" }, {} }) do
-            local label, color = ReportWindow.outcomeText(quest)
-            assert(label == nil and color == nil, tostring(quest.result))
-        end
-        assert(ReportWindow.outcomeText(nil) == nil)
-        Locale.resolve("ko")
-        assert(ReportWindow.outcomeText({ result = "clear" }) == "클리어")
-        assert(ReportWindow.outcomeText({ result = "fail" }) == "실패")
-        assert(ReportWindow.outcomeText({ result = "abandon" }) == "포기")
-    end)
-    Locale.resolve(language)
-    if not ok then error(err, 0) end
-end
-
 function T.headerDrawsWeaponThenQuestLevelThenOutcomeThenMeta()
     local Theme = require("MyHuntReport.Theme")
     withNavigation(function(ui)
@@ -1122,69 +1083,6 @@ function T.liveRefreshFreezesWhenProviderReportsResult()
     ReportWindow.setSnapshotProvider(nil)
 end
 
-function T.skillDamageNamesComeFromLocale()
-    Locale.init({})
-    Locale.resolve("en")
-    assert(ReportWindow.skillDamageName("violent") == "Violent Strike")
-    assert(ReportWindow.skillDamageName("flare") == "Rathalos's Flare")
-    assert(ReportWindow.skillDamageName("fury") == "Lagiacrus's Fury")
-    assert(ReportWindow.skillDamageName("darkWave") == "Dark Knight")
-    assert(ReportWindow.skillDamageName("flayer") == "Flayer")
-    assert(ReportWindow.skillDamageName("elementConvert") == "Element Convert")
-    Locale.resolve("ko")
-    assert(ReportWindow.skillDamageName("mirrorBlade") == "거울대검")
-    assert(ReportWindow.skillDamageName("flare") == "화룡의 힘")
-    assert(ReportWindow.skillDamageName("fury") == "해룡의 와뢰")
-    assert(ReportWindow.skillDamageName("darkWave") == "암흑기사")
-    assert(ReportWindow.skillDamageName("flayer") == "쇄인자격")
-    assert(ReportWindow.skillDamageName("elementConvert") == "속성 변환")
-end
-
-function T.headerWeaponTextJoinsUsedWeapons()
-    Locale.init({})
-    Locale.resolve("ko")
-    assert(ReportWindow.headerWeaponText({ weapons = { { type = 0, name = "대검" }, { type = 13, name = "라이트보우건" } } })
-        == "대검, 라이트보우건")
-    assert(ReportWindow.headerWeaponText({ weapons = {}, weapon = { type = 13, name = "라이트보우건" } }) == "라이트보우건")
-    assert(ReportWindow.headerWeaponText({ weapon = { type = 13, name = "라이트보우건" } }) == "라이트보우건")
-    assert(ReportWindow.headerWeaponText({}) == "알 수 없는 무기")
-    Locale.resolve("en")
-    assert(ReportWindow.headerWeaponText({ weapons = { { type = 0, name = "Great Sword" } } }) == "Great Sword")
-    assert(ReportWindow.headerWeaponText({}) == "Unknown weapon")
-    assert(Locale.text("used_weapons") == "used_weapons", "used_weapons key must be gone")
-end
-
-function T.metaTextJoinsMonstersAndTime()
-    assert(ReportWindow.metaText({ monsters = { { name = "미즈츠네" } }, quest = { elapsedSeconds = 754 } }) == "미즈츠네 · 12:34")
-    assert(ReportWindow.metaText({ monsters = { { name = "A" }, { id = 7 } }, quest = { elapsedSeconds = 5 } }) == "A, 7 · 0:05")
-    assert(ReportWindow.metaText({ monsters = {}, quest = { elapsedSeconds = 65 } }) == "1:05")
-    assert(ReportWindow.metaText({}) == "0:00")
-end
-
-function T.historyRowSplitsTimeStarsWeaponsMonsters()
-    Locale.init({})
-    Locale.resolve("ko")
-    local entry = snapshot("clear")
-    entry.quest.endedAt = os.time({ year = 2026, month = 9, day = 23, hour = 21, min = 36, sec = 0 })
-    entry.quest.weapons = { { name = "조충곤" }, { name = "라이트보우건" } }
-    entry.quest.weapon = { name = "대검" }
-    entry.monsters = { { name = "아자라칸" }, { id = 3 } }
-    entry.quest.level = 5
-    local row = ReportWindow.historyRow(entry)
-    assert(row.time == "26-09-23 21:36" and row.stars == "★5")
-    assert(row.weapons == "조충곤, 라이트보우건" and row.monsters == "아자라칸, 3")
-    entry.quest.weapons = {}
-    assert(ReportWindow.historyRow(entry).weapons == "대검")
-    entry.quest.weapon = nil
-    assert(ReportWindow.historyRow(entry).weapons == "알 수 없는 무기")
-    entry.quest.result = "training"
-    assert(ReportWindow.historyRow(entry).stars == "")
-    entry.quest.result = "clear"
-    entry.quest.level = nil
-    assert(ReportWindow.historyRow(entry).stars == "")
-    assert(ReportWindow.historyRow({}).monsters == "" and ReportWindow.historyRow({}).time == require("MyHuntReport.Format").clock(0))
-end
-
 function T.skillsHeaderReadsUptimeInKorean()
     Locale.init({})
     Locale.resolve("ko")
@@ -1258,12 +1156,6 @@ function T.replaceLiveViewClearsSaveWarningAndRefreshDeadline()
     ReportWindow.setSnapshotProvider(nil)
 end
 
-function T.shareTextPrintsDashForMissingValues()
-    assert(ReportWindow.shareText(nil, 100) == "-")
-    assert(ReportWindow.shareText(25, 100) == "25.0%")
-    assert(ReportWindow.shareText(0, 0) == "0.0%")
-end
-
 function T.developerDiagnosticsNeverShowAbsoluteDamage()
     local Log = require("MyHuntReport.Log")
     local originalImgui, developerMode = imgui, Log.isDeveloperMode()
@@ -1319,114 +1211,6 @@ function T.historyEntriesStayFooterFreeAfterLanguageChangeInDeveloperMode()
     ReportWindow.setRelabeler(nil)
     ReportWindow.hide()
     if not ok then error(err, 0) end
-end
-
-function T.barSegmentsFloorGapAndDrop()
-    local Theme = require("MyHuntReport.Theme")
-    local shares = {
-        { id = "phys", color = Theme.colors.physical, share = 0.784 },
-        { id = "elem", color = Theme.colors.element, share = 0.162 },
-        { id = "fixed", color = Theme.colors.fixed, share = 0.031 },
-        { id = "stat", color = Theme.colors.status, share = 0.023 },
-    }
-    local layout = ReportWindow.barSegments(800, shares, 2)
-    assert(#layout.segments == 4)
-    assert(layout.segments[1].x == 0 and layout.segments[1].width == 627)
-    assert(layout.segments[2].x == 629 and layout.segments[2].width == 129)
-    assert(layout.segments[3].x == 760 and layout.segments[3].width == 24)
-    assert(layout.segments[4].x == 786 and layout.segments[4].width == 14)
-    assert(layout.track.x == 800 and layout.track.width == 0)
-    local total = 0
-    for _, segment in ipairs(layout.segments) do total = total + segment.width end
-    assert(total + 3 * 2 == 800)
-    local sparse = ReportWindow.barSegments(100, {
-        { id = "phys", share = 0.5 }, { id = "elem", share = 0.004 }, { id = "fixed", share = 0 }, { id = "stat", share = 0.25 },
-    }, 2)
-    assert(#sparse.segments == 2 and sparse.segments[1].id == "phys" and sparse.segments[2].id == "stat")
-    assert(sparse.segments[2].x == 52 and sparse.segments[2].width == 25)
-    assert(sparse.track.x == 77 and sparse.track.width == 23)
-    local overflow = ReportWindow.barSegments(100, {
-        { id = "phys", share = 0.98 }, { id = "elem", share = 0.01 }, { id = "fixed", share = 0.01 },
-    }, 2)
-    for _, segment in ipairs(overflow.segments) do
-        assert(segment.width >= 1 and segment.x + segment.width <= 100)
-    end
-    assert(overflow.track.x + overflow.track.width == 100)
-    assert(#overflow.segments == 1 and overflow.segments[1].id == "phys")
-    assert(overflow.segments[1].x == 0 and overflow.segments[1].width == 98)
-    assert(overflow.track.x == 98 and overflow.track.width == 2)
-    local full = ReportWindow.barSegments(100, { { id = "phys", share = 1 } }, 2)
-    assert(#full.segments == 1 and full.segments[1].width == 100 and full.track.width == 0)
-    local empty = ReportWindow.barSegments(100, {}, 2)
-    assert(#empty.segments == 0 and empty.track.x == 0 and empty.track.width == 100)
-end
-
-function T.historyColumnsSplitTheRow()
-    local columns = ReportWindow.historyColumns(680, 1, false)
-    assert(columns.buttonWidth == 680)
-    assert(columns.time.x == 10 and columns.time.width == 132)
-    assert(columns.stars.x == 346 and columns.stars.width == 48)
-    assert(columns.weapons.x == 158 and columns.weapons.width == 172)
-    assert(columns.monsters.x == 410 and columns.monsters.width == 260)
-    assert(columns.monsters.x + columns.monsters.width == 680 - 10)
-    local scrolling = ReportWindow.historyColumns(680, 1, true)
-    assert(scrolling.buttonWidth == 666 and scrolling.weapons.width == 167 and scrolling.monsters.width == 251)
-    assert(scrolling.monsters.x + scrolling.monsters.width == 666 - 10)
-    local scaled = ReportWindow.historyColumns(1057, 28 / 18, false)
-    assert(scaled.time.width == 205 and scaled.stars.width == 75)
-    assert(scaled.weapons.width == 283 and scaled.monsters.width == 426)
-end
-
-function T.rowAreaLayoutGrowsToTheDataAndCapsAtHalfScreen()
-    local small = ReportWindow.rowAreaLayout(3, 1080, 1)
-    assert(small.visibleRows == 3 and small.scrolls == false and small.height == 27 * 3 + 4)
-    local big = ReportWindow.rowAreaLayout(40, 1080, 1)
-    assert(big.visibleRows == 20 and big.scrolls == true, tostring(big.visibleRows))
-    local scaled = ReportWindow.rowAreaLayout(40, 1080, 1.5)
-    assert(scaled.visibleRows == 15 and scaled.rowHeight == 36)
-    local smaller = ReportWindow.rowAreaLayout(40, 1080, 0.8)
-    assert(smaller.visibleRows == 23 and smaller.rowHeight == 23)
-    local pixels = ReportWindow.rowAreaLayout(40, 1080, 24 / 18)
-    assert(pixels.rowHeight == 24 + require("MyHuntReport.Theme").metrics.rowSpacing)
-    assert(pixels.visibleRows == 16 and pixels.scrolls == true)
-    local empty = ReportWindow.rowAreaLayout(0, 1080, 1)
-    assert(empty.visibleRows == 1 and empty.scrolls == false)
-    local history = ReportWindow.rowAreaLayout(22, 1080, 1, 36)
-    assert(history.rowHeight == 36 and history.visibleRows == 15 and history.scrolls == true and history.height == 36 * 15 + 4)
-    local historyScaled = ReportWindow.rowAreaLayout(3, 1080, 24 / 18, 36)
-    assert(historyScaled.rowHeight == 48 and historyScaled.visibleRows == 3 and historyScaled.scrolls == false)
-end
-
-function T.statTilesFollowTheSnapshot()
-    Locale.init({})
-    Locale.resolve("en")
-    local tiles = ReportWindow.statTiles({ stats = { combatDps = 45.66, critRate = 0.293, negativeCritRate = 0, avgAttack = 279.849, avgHitzone = 77.7, attribute = 0 } })
-    assert(#tiles == 4)
-    assert(tiles[1].label == "Combat DPS" and tiles[1].value == "45.7")
-    assert(tiles[2].label == "Crit" and tiles[2].value == "29.3%")
-    assert(tiles[3].label == "Avg attack" and tiles[3].value == "279.8", tiles[3].value)
-    assert(tiles[4].label == "Avg hitzone" and tiles[4].value == "77.7")
-    local withNegative = ReportWindow.statTiles({ stats = { combatDps = 45.66, critRate = 0.293, negativeCritRate = 0.045, avgAttack = 279.849, avgHitzone = 77.7, attribute = 0 } })
-    assert(#withNegative == 5)
-    assert(withNegative[2].label == "Crit" and withNegative[3].label == "Neg. crit" and withNegative[3].value == "4.5%")
-    assert(withNegative[4].label == "Avg attack" and withNegative[5].label == "Avg hitzone")
-    local rare = ReportWindow.statTiles({ stats = { negativeCritRate = 0.0001 } })
-    assert(#rare == 5 and rare[3].label == "Neg. crit" and rare[3].value == "<0.1%")
-    local withElement = ReportWindow.statTiles({ stats = { attribute = 1, avgAttributeHitzone = 29.2 } })
-    assert(#withElement == 5 and withElement[5].value == "29.2" and withElement[1].value == "-")
-    assert(withElement[3].label == "Avg attack" and withElement[3].value == "-")
-    assert(withElement[5].label == "Fire hitzone", withElement[5].label)
-    local training = ReportWindow.statTiles({ quest = { result = "training" }, stats = { combatDps = 45.66, critRate = 0.293, avgAttack = 260, attribute = 0 } })
-    assert(#training == 3 and training[1].label == "Crit" and training[1].value == "29.3%")
-    assert(training[2].label == "Avg attack" and training[2].value == "260.0")
-    assert(training[3].label == "Avg hitzone")
-    assert(ReportWindow.statTiles({ stats = { attribute = 4, avgAttributeHitzone = 10 } })[5].label == "Ice hitzone")
-    assert(ReportWindow.statTiles({ stats = { attribute = 9, avgAttributeHitzone = 10 } })[5].label == "Avg elem. hitzone")
-    Locale.resolve("ko")
-    assert(ReportWindow.statTiles({ stats = { combatDps = 45.66 } })[1].label == "전투 DPS")
-    assert(ReportWindow.statTiles({ stats = { combatDps = 45.66 } })[3].label == "평균 공격력")
-    assert(ReportWindow.statTiles({ stats = { negativeCritRate = 0.1 } })[3].label == "역회심")
-    Locale.resolve("en")
 end
 
 function T.renderedReportHasNoRowBarsHitsFightingTimeOrMonsterShare()
@@ -1548,16 +1332,6 @@ function T.historyButtonStrideMatchesRowAreaLayout()
     History.readAll, imgui, settings.fontSize = readAll, originalImgui, fontSize
     ReportWindow.hide()
     if not ok then error(err, 0) end
-end
-
-function T.placementCentersUntilAPositionIsSaved()
-    local display = { x = 1920, y = 1080 }
-    assert(ReportWindow.placement({ windowX = -1, windowY = -1 }, display).centered == true)
-    assert(ReportWindow.placement({ windowX = 100, windowY = -1 }, display).centered == true)
-    local placed = ReportWindow.placement({ windowX = 100, windowY = 200 }, display)
-    assert(placed.centered == false and placed.x == 100 and placed.y == 200)
-    local clamped = ReportWindow.placement({ windowX = 5000, windowY = 3000 }, display)
-    assert(clamped.x == 1920 - 64 and clamped.y == 1080 - 64, tostring(clamped.x) .. "," .. tostring(clamped.y))
 end
 
 function T.settledPositionPersistsWithoutClosing()
@@ -1789,53 +1563,6 @@ function T.historyClearedPreservesOpenSnapshotsAndReturnState()
     end)
 end
 
-function T.elementTilesUseListOrderAndSuppressLegacyTileWhenListExists()
-    Locale.init({})
-    Locale.resolve("en")
-    local stats = { attribute = 1, avgAttributeHitzone = 99, attributeHitzones = {
-        { attribute = 3, avgHitzone = 22.26, hits = 3 },
-        { attribute = 1, avgHitzone = 15.75, hits = 2 },
-    } }
-    local tiles = ReportWindow.statTiles({ stats = stats })
-    assert(#tiles == 6)
-    assert(tiles[5].label == "Thunder hitzone" and tiles[5].value == "22.3")
-    assert(tiles[6].label == "Fire hitzone" and tiles[6].value == "15.8")
-    stats.attributeHitzones = {}
-    assert(#ReportWindow.statTiles({ stats = stats }) == 4)
-    stats.attributeHitzones = nil
-    tiles = ReportWindow.statTiles({ stats = stats })
-    assert(#tiles == 5 and tiles[5].label == "Fire hitzone" and tiles[5].value == "99.0")
-end
-
-function T.tileLayoutUsesEqualColumnsAndGridWrap()
-    local cases = {
-        { { 100, 100, 100 }, 600, 20, { { 1, 0 }, { 1, 200 }, { 1, 400 } } },
-        { { 200, 200, 200, 200 }, 600, 20, { { 1, 0 }, { 1, 300 }, { 2, 0 }, { 2, 300 } } },
-        { { 700 }, 600, 20, { { 1, 0 } } },
-        { { 0, 0, 0, 0 }, 680, 0, { { 1, 0 }, { 1, 170 }, { 1, 340 }, { 1, 510 } } },
-        { {}, 600, 20, {} },
-        { { 98, 82, 82, 82, 82, 82, 82 }, 720, 16, { { 1, 0 }, { 1, 120 }, { 1, 240 }, { 1, 360 }, { 1, 480 }, { 1, 600 }, { 2, 0 } } },
-        { { 132, 100, 100, 100, 100, 100 }, 720, 16, { { 1, 0 }, { 1, 180 }, { 1, 360 }, { 1, 540 }, { 2, 0 }, { 2, 180 } } },
-        { { 100, 100, 550, 100 }, 720, 16, { { 1, 0 }, { 2, 0 }, { 3, 0 }, { 4, 0 } } },
-    }
-    local columnWidths = { 200, 300, 600, 170, 0, 120, 180, 720 }
-    for index, case in ipairs(cases) do
-        local layout = ReportWindow.tileLayout(case[1], case[2], case[3])
-        assert(#layout == #case[4], "case " .. index)
-        local rowCounts = {}
-        for _, position in ipairs(layout) do
-            rowCounts[position.row] = (rowCounts[position.row] or 0) + 1
-        end
-        for tile, expected in ipairs(case[4]) do
-            assert(layout[tile].row == expected[1] and layout[tile].x == expected[2], "case " .. index .. " tile " .. tile)
-            assert(math.type(layout[tile].x) == "integer")
-            assert(layout[tile].x % columnWidths[index] == 0, "case " .. index .. " tile " .. tile .. " is off grid")
-            assert(rowCounts[layout[tile].row] == 1 or layout[tile].x + case[1][tile] <= case[2],
-                "case " .. index .. " tile " .. tile .. " exceeds row width")
-        end
-    end
-end
-
 local function checkStatTileDrawing(failMeasurement)
     local Fonts = require("MyHuntReport.Fonts")
     local small, header = Fonts.small, Fonts.header
@@ -1926,24 +1653,6 @@ local function checkStatTileDrawing(failMeasurement)
     end)
     Fonts.small, Fonts.header = small, header
     if not ok then error(err, 0) end
-end
-
-function T.wrapBreaksStartANewLineOnlyWhenTheNextItemOverflows()
-    local cases = {
-        { { 100, 100, 100 }, 340, 20, { false, false, false } },
-        { { 100, 100, 100 }, 339, 20, { false, false, true } },
-        { { 300, 300, 300 }, 400, 20, { false, true, true } },
-        { { 900, 100, 100 }, 400, 20, { false, true, false } },
-        { { 100, 900, 100 }, 400, 20, { false, true, true } },
-        { {}, 400, 20, {} },
-    }
-    for index, case in ipairs(cases) do
-        local breaks = ReportWindow.wrapBreaks(case[1], case[2], case[3])
-        assert(#breaks == #case[4], "case " .. index)
-        for item, expected in ipairs(case[4]) do
-            assert(breaks[item] == expected, "case " .. index .. " item " .. item)
-        end
-    end
 end
 
 local function skillDamageLineStarts(nameWidth)
@@ -2971,31 +2680,6 @@ function T.forwardRelabelsThePastReportItReopens()
     end)
 end
 
-function T.versionTextShowsStoredVersion()
-    local label = Locale.text("mod_version")
-    assert(ReportWindow.versionText({ modVersion = "1.15.0" }) == string.format(label, "1.15.0"))
-    assert(ReportWindow.versionText({ modVersion = "1.16.2" }) == string.format(label, "1.16.2"))
-end
-
-function T.versionTextLabelsEntriesWithoutVersionAsLegacy()
-    local Version = require("MyHuntReport.Version")
-    local legacy = string.format(Locale.text("mod_version"), string.format(Locale.text("mod_version_legacy"), Version.LAST_UNRECORDED))
-    assert(ReportWindow.versionText({}) == legacy, ReportWindow.versionText({}))
-    assert(ReportWindow.versionText({ modVersion = "" }) == legacy)
-    assert(ReportWindow.versionText(nil) == legacy)
-end
-
-function T.versionTextIsLocalized()
-    Locale.init({ gameLanguage = function() return "en" end })
-    Locale.resolve("en")
-    assert(ReportWindow.versionText({ modVersion = "1.15.0" }) == "Mod version: 1.15.0", ReportWindow.versionText({ modVersion = "1.15.0" }))
-    assert(ReportWindow.versionText({}) == "Mod version: 1.14.1 or earlier", ReportWindow.versionText({}))
-    Locale.resolve("ko")
-    assert(ReportWindow.versionText({ modVersion = "1.15.0" }) == "모드 버전: 1.15.0", ReportWindow.versionText({ modVersion = "1.15.0" }))
-    assert(ReportWindow.versionText({}) == "모드 버전: 1.14.1 이하", ReportWindow.versionText({}))
-    Locale.resolve("en")
-end
-
 function T.reportDrawsVersionBetweenMetaAndStats()
     withNavigation(function(ui)
         local shown = snapshot("clear")
@@ -3112,6 +2796,256 @@ function T.sourceHistoryRoundTripKeepsSharesAndLabelsWithoutDiagnostics()
         assert(texts:find("Switch Axe: Phial Explosion|20.0%", 1, true), texts)
     end)
     History.resetForTests()
+end
+
+function T.reportWindowForwardsLayoutCalculations()
+    local ReportLayout = require("MyHuntReport.ReportLayout")
+    for _, name in ipairs({ "placement", "rowAreaLayout", "barSegments", "historyColumns", "tileLayout", "wrapBreaks" }) do
+        assert(type(ReportLayout[name]) == "function" and ReportWindow[name] == ReportLayout[name], name)
+    end
+end
+
+function T.reportWindowForwardsReportText()
+    local ReportText = require("MyHuntReport.ReportText")
+    for _, name in ipairs({ "statTiles", "resultText", "outcomeText", "headerWeaponText", "metaText", "versionText", "historyRow", "shareText", "skillDamageName" }) do
+        assert(type(ReportText[name]) == "function" and ReportWindow[name] == ReportText[name], name)
+    end
+end
+
+function T.historyFilterWindowClipsLongLabelsWithoutAClipCallback()
+    local Window = require("MyHuntReport.HistoryFilterWindow")
+    local original = imgui
+    local labels = {}
+    local ok, err = pcall(function()
+        imgui = setmetatable({
+            ImGuiStyleVar = { ItemSpacing = 14, ButtonTextAlign = 23, FrameRounding = 12, FrameBorderSize = 13 },
+            begin_window = function() return true end,
+            calc_text_size = function(text) return { x = utf8.len(text) * 10, y = 18 } end,
+            checkbox = function(label) labels[#labels + 1] = label return false, false end,
+            button = function() return false end,
+        }, { __index = original })
+        local ctx = { fonts = {}, sizes = { body = 18, small = 18 }, scale = 1 }
+        local options = { weapons = { 1 }, levels = {}, species = {}, variants = {} }
+        local names = { weapons = { [1] = string.rep("가", 40) }, levels = {}, species = {}, variants = {} }
+        local selection = { weapons = {}, levels = {}, species = {}, variants = {} }
+        local opened = Window.draw(ctx, options, names, selection, function() end, nil)
+        assert(opened == true)
+        assert(#labels == 1, #labels)
+        local text = labels[1]:match("^(.-)##")
+        assert(text:sub(-3) == "…" and utf8.len(text) < 40, labels[1])
+    end)
+    imgui = original
+    if not ok then error(err, 0) end
+end
+
+local function countHistoryRows(callback)
+    local ReportText = require("MyHuntReport.ReportText")
+    local historyRow = ReportText.historyRow
+    local calls = 0
+    ReportText.historyRow = function(entry)
+        calls = calls + 1
+        return historyRow(entry)
+    end
+    local ok, err = pcall(callback, function() return calls end)
+    ReportText.historyRow = historyRow
+    if not ok then error(err, 0) end
+end
+
+function T.historyRowsAreFormattedOncePerEntryAcrossFrames()
+    countHistoryRows(function(calls)
+        withNavigation(function(ui)
+            ui.entries = { snapshot("clear"), snapshot("fail") }
+            ReportWindow.showHistory()
+            ui.draw()
+            assert(calls() == 2, calls())
+            ui.draw()
+            ui.draw()
+            assert(calls() == 2, calls())
+        end)
+    end)
+end
+
+function T.historyRowCacheIsDroppedOnLanguageReloadAndClear()
+    countHistoryRows(function(calls)
+        withNavigation(function(ui)
+            ui.entries = { snapshot("clear") }
+            ReportWindow.showHistory()
+            ui.draw()
+            assert(calls() == 1, calls())
+            ReportWindow.onLanguageChanged()
+            ui.draw()
+            assert(calls() == 2, calls())
+            ReportWindow.onHistoryCleared()
+            ui.draw()
+            assert(calls() == 3, calls())
+            Locale.resolve("en")
+            ui.draw()
+            assert(calls() == 4, calls())
+        end)
+    end)
+end
+
+function T.historyRowCacheIsDroppedWhenTheFilterChanges()
+    countHistoryRows(function(calls)
+        withHistoryFilters(function(ui)
+            ui.entries = { filterRecord(10, 5, 32, 0), filterRecord(3, 10, 33, 2) }
+            ui.openFilters()
+            local before = calls()
+            ui.draw()
+            assert(calls() == before, calls())
+            ui.check("weapons", 10, true)
+            ui.draw()
+            assert(calls() == before + 1, calls())
+        end)
+    end)
+end
+
+function T.historyRowCacheIsDroppedWhenFontSizeOrDisplayChanges()
+    countHistoryRows(function(calls)
+        withNavigation(function(ui)
+            local Settings = require("MyHuntReport.Settings")
+            ui.entries = { snapshot("clear") }
+            ReportWindow.showHistory()
+            ui.draw()
+            assert(calls() == 1, calls())
+            Settings.get().fontSize = 20
+            ui.draw()
+            assert(calls() == 2, calls())
+            imgui.get_display_size = function() return { x = 2560, y = 1440 } end
+            ui.draw()
+            assert(calls() == 3, calls())
+            ui.draw()
+            assert(calls() == 3, calls())
+        end)
+    end)
+end
+
+function T.reportMeasuresUnchangedRowTextOnceAcrossFrames()
+    withNavigation(function(ui)
+        local measured = {}
+        imgui.calc_text_size = function(text)
+            measured[text] = (measured[text] or 0) + 1
+            return { x = #text * 8, y = 18 }
+        end
+        local shown = snapshot("clear")
+        shown.skills = { { name = "Agitator", share = 0.5 } }
+        ReportWindow.show(shown)
+        ui.draw()
+        ui.draw()
+        ui.draw()
+        assert(measured["Agitator"] == 1, tostring(measured["Agitator"]))
+        assert(measured["50.0%"] == 1, tostring(measured["50.0%"]))
+        ReportWindow.show(shown)
+        ui.draw()
+        assert(measured["Agitator"] == 2, tostring(measured["Agitator"]))
+    end)
+end
+
+local function countReportText(callback)
+    local ReportText = require("MyHuntReport.ReportText")
+    local statTiles = ReportText.statTiles
+    local calls = 0
+    ReportText.statTiles = function(value)
+        calls = calls + 1
+        return statTiles(value)
+    end
+    local ok, err = pcall(callback, function() return calls end)
+    ReportText.statTiles = statTiles
+    if not ok then error(err, 0) end
+end
+
+function T.reportTextIsBuiltOncePerSnapshotAcrossFrames()
+    countReportText(function(calls)
+        withNavigation(function(ui)
+            ReportWindow.show(snapshot("clear"))
+            ui.draw()
+            ui.draw()
+            ui.draw()
+            assert(calls() == 1, calls())
+        end)
+    end)
+end
+
+function T.liveRefreshRebuildsReportTextEvenForTheSameObject()
+    local Game = require("MyHuntReport.Game")
+    local uptime = Game.uptime
+    local now = 10
+    local ok, err = pcall(countReportText, function(calls)
+        withNavigation(function(ui)
+            Game.uptime = function() return now end
+            local live = snapshot("running")
+            ReportWindow.setSnapshotProvider(function() return live end)
+            ReportWindow.show(live)
+            ui.draw()
+            assert(calls() == 1, calls())
+            ui.draw()
+            assert(calls() == 1, calls())
+            now = 10.5
+            ui.draw()
+            assert(calls() == 2, calls())
+        end)
+    end)
+    Game.uptime = uptime
+    ReportWindow.setSnapshotProvider(nil)
+    if not ok then error(err, 0) end
+end
+
+function T.mutatedResultSnapshotRedrawsItsMetaAfterNotification()
+    withNavigation(function(ui)
+        Locale.resolve("en")
+        local shown = snapshot("unknown")
+        shown.quest.elapsedSeconds = 10
+        local function hasText(value)
+            for _, event in ipairs(ui.events) do
+                if event.kind == "text" and event.value == value then return true end
+            end
+            return false
+        end
+        ReportWindow.show(shown)
+        ui.draw()
+        assert(hasText("0:10"))
+        shown.quest.elapsedSeconds = 754
+        ui.draw()
+        assert(hasText("0:10") and not hasText("12:34"))
+        ReportWindow.onSnapshotMutated()
+        ui.draw()
+        assert(hasText("12:34") and not hasText("0:10"))
+    end)
+end
+
+function T.historyFilterWindowBalancesFontsWhenAxisTitleMeasurementFails()
+    local Window = require("MyHuntReport.HistoryFilterWindow")
+    local Fonts = require("MyHuntReport.Fonts")
+    local original = imgui
+    local pushes, pops, titleMeasurements = 0, 0, 0
+    local ok, err = pcall(function()
+        imgui = setmetatable({
+            ImGuiStyleVar = { ItemSpacing = 14, ButtonTextAlign = 23, FrameRounding = 12, FrameBorderSize = 13 },
+            begin_window = function() return true end,
+            calc_text_size = function(text)
+                if text == Locale.text("history_filter_weapons") then
+                    titleMeasurements = titleMeasurements + 1
+                    error("axis title measurement failed")
+                end
+                return { x = utf8.len(text) * 10, y = 18 }
+            end,
+            push_font_size = function() pushes = pushes + 1 end,
+            pop_font_size = function() pops = pops + 1 end,
+            button = function() return false end,
+        }, { __index = original })
+        local ctx = { fonts = { small = { size = 18 } }, sizes = { body = 18, small = 18 }, scale = 1 }
+        local options = { weapons = { 1 }, levels = {}, species = {}, variants = {} }
+        local names = { weapons = { [1] = "Weapon" }, levels = {}, species = {}, variants = {} }
+        local selection = { weapons = { [1] = true }, levels = {}, species = {}, variants = {} }
+        local opened = Window.draw(ctx, options, names, selection, function() end, nil)
+        assert(titleMeasurements == 1, titleMeasurements)
+        assert(opened == false)
+        assert(pushes > 0, pushes)
+        assert(pushes == pops, string.format("font size pushes=%d pops=%d", pushes, pops))
+        assert(Fonts.context() == "base", Fonts.context())
+    end)
+    imgui = original
+    if not ok then error(err, 0) end
 end
 
 return T

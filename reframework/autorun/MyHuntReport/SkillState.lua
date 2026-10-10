@@ -337,7 +337,9 @@ local function burstState(info)
         return burst._Timer, burst._HitCount
     end)
     if not ok or timer == nil then return nil end
-    Log.debug(string.format("burst timer=%s hits=%s", tostring(timer), tostring(hitCount)), "skillstate:burst")
+    if Log.isDeveloperMode() then
+        Log.debug(string.format("burst timer=%s hits=%s", tostring(timer), tostring(hitCount)), "skillstate:burst")
+    end
     return SkillState.burstLevel(timer, hitCount)
 end
 
@@ -463,30 +465,38 @@ function SkillState.skillName(skillId)
     return text
 end
 
-function SkillState.equippedTracked()
-    local rows = {}
+local function trackedOrder(a, b)
+    local aId = type(a) == "number" and a or (a == WEX_WOUND and WEAKNESS_EXPLOIT_ID or BURST_SKILL)
+    local bId = type(b) == "number" and b or (b == WEX_WOUND and WEAKNESS_EXPLOIT_ID or BURST_SKILL)
+    if aId ~= bId then return aId < bId end
+    return tostring(a) < tostring(b)
+end
+
+function SkillState.trackedIds()
+    local ids = {}
     local seen = {}
     for rawId in pairs(equippedSet()) do
         local id = SkillState.displayId(rawId)
         if not seen[id] then
             seen[id] = true
             if id == BURST_SKILL then
-                rows[#rows + 1] = { id = BURST_LV1, name = SkillState.skillName(BURST_LV1) }
-                rows[#rows + 1] = { id = BURST_LV2, name = SkillState.skillName(BURST_LV2) }
+                ids[#ids + 1] = BURST_LV1
+                ids[#ids + 1] = BURST_LV2
             else
-                rows[#rows + 1] = { id = id, name = SkillState.skillName(id) }
-                if id == WEAKNESS_EXPLOIT_ID then
-                    rows[#rows + 1] = { id = WEX_WOUND, name = SkillState.skillName(WEX_WOUND) }
-                end
+                ids[#ids + 1] = id
+                if id == WEAKNESS_EXPLOIT_ID then ids[#ids + 1] = WEX_WOUND end
             end
         end
     end
-    table.sort(rows, function(a, b)
-        local aId = type(a.id) == "number" and a.id or (a.id == WEX_WOUND and WEAKNESS_EXPLOIT_ID or BURST_SKILL)
-        local bId = type(b.id) == "number" and b.id or (b.id == WEX_WOUND and WEAKNESS_EXPLOIT_ID or BURST_SKILL)
-        if aId ~= bId then return aId < bId end
-        return tostring(a.id) < tostring(b.id)
-    end)
+    table.sort(ids, trackedOrder)
+    return ids
+end
+
+function SkillState.equippedTracked()
+    local rows = {}
+    for index, id in ipairs(SkillState.trackedIds()) do
+        rows[index] = { id = id, name = SkillState.skillName(id) }
+    end
     return rows
 end
 

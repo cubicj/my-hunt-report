@@ -79,9 +79,20 @@ function Fonts.mode()
 end
 
 local function roleFont(role)
+    local descriptors = {}
     return function(base)
+        local cached = descriptors[base]
+        if cached then return cached end
         local size = Fonts.size(role, base)
-        return { handle = load(FILES[ROLES[role].file], size), size = size }
+        local path = FILES[ROLES[role].file]
+        local desc = {
+            handle = load(path, size),
+            size = size,
+            fontContext = "font:" .. path .. ":" .. size,
+            sizeContext = "size:" .. size,
+        }
+        descriptors[base] = desc
+        return desc
     end
 end
 
@@ -94,15 +105,26 @@ function Fonts.preload(base)
     for _, role in ipairs(ROLE_ORDER) do Fonts[role](base) end
 end
 
+local contexts = {}
+
+local function enter(desc, token)
+    if token == "font" then
+        contexts[#contexts + 1] = desc.fontContext or ("font:" .. tostring(desc.handle) .. ":" .. tostring(desc.size))
+    else
+        contexts[#contexts + 1] = (contexts[#contexts] or "base") .. "+" .. (desc.sizeContext or ("size:" .. tostring(desc.size)))
+    end
+    return token
+end
+
 function Fonts.push(desc)
     if type(desc) ~= "table" then return false end
     if bundled and desc.handle ~= nil then
         local ok = pcall(imgui.push_font, desc.handle)
-        if ok then return "font" end
+        if ok then return enter(desc, "font") end
     end
     if type(imgui.push_font_size) ~= "function" or type(desc.size) ~= "number" then return false end
     local ok = pcall(imgui.push_font_size, desc.size)
-    if ok then return "size" end
+    if ok then return enter(desc, "size") end
     return false
 end
 
@@ -111,7 +133,14 @@ function Fonts.pop(token)
         pcall(imgui.pop_font)
     elseif token == "size" then
         pcall(imgui.pop_font_size)
+    else
+        return
     end
+    contexts[#contexts] = nil
+end
+
+function Fonts.context()
+    return contexts[#contexts] or "base"
 end
 
 function Fonts.status()

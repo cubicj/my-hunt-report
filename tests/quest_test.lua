@@ -524,12 +524,12 @@ end
 
 function T.snapshotOptionsCarryOnlyEquippedSkillIds()
     local SkillState = require("MyHuntReport.SkillState")
-    local snapshot, equipped = Session.snapshot, SkillState.equippedTracked
+    local snapshot, tracked = Session.snapshot, SkillState.trackedIds
     local calls = 0
     local ok, err = pcall(function()
         Quest.resetForTests()
         ReportWindow.hide()
-        SkillState.equippedTracked = function() return { { id = "burst:stage2", name = "old" } } end
+        SkillState.trackedIds = function() return { "burst:stage2" } end
         Session.snapshot = function(options)
             calls = calls + 1
             assert(options.resolveName == Names.resolve)
@@ -540,7 +540,7 @@ function T.snapshotOptionsCarryOnlyEquippedSkillIds()
         Quest.handleResultStart()
         assert(calls == 2)
     end)
-    Session.snapshot, SkillState.equippedTracked = snapshot, equipped
+    Session.snapshot, SkillState.trackedIds = snapshot, tracked
     if not ok then error(err, 0) end
 end
 
@@ -696,6 +696,29 @@ function T.resultStartLogsThePalicoSummaryForTheFinalSnapshot()
     Palico.logSummary = logSummary
     Quest.resetForTests()
     History.resetForTests()
+    ReportWindow.hide()
+    if not ok then error(err, 0) end
+end
+
+function T.resultInfoNotifiesTheReportAfterMutatingTheShownSnapshot()
+    local notify = ReportWindow.onSnapshotMutated
+    local seen = {}
+    local ok, err = pcall(function()
+        playQuestWithOneHit()
+        Quest.handleResultStart()
+        local shown = ReportWindow.debugState().snapshot
+        assert(shown ~= nil)
+        ReportWindow.onSnapshotMutated = function()
+            seen[#seen + 1] = { result = shown.quest.result, elapsed = shown.quest.elapsedSeconds }
+            notify()
+        end
+        local fields = { endType = 2, failedType = 0, clearTimeMs = 27430, mainWeaponType = 13, joinMemberNum = 1 }
+        Quest.handleResultInfo(fields, 161)
+        assert(#seen == 1 and seen[1].result == "clear" and seen[1].elapsed == 27)
+        Quest.handleResultInfo(fields, 168)
+        assert(#seen == 1)
+    end)
+    ReportWindow.onSnapshotMutated = notify
     ReportWindow.hide()
     if not ok then error(err, 0) end
 end

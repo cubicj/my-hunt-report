@@ -6,11 +6,9 @@ local STRINGS = {
     en = {
         report_title = "My Hunt Report",
         weapon_unknown = "Unknown weapon",
-        monsters = "Monsters",
         monster_tempered = "Tempered ",
         monster_arch_tempered = "Arch-tempered ",
         monster_frenzied = "Frenzied ",
-        elapsed = "Time",
         combat_dps = "Combat DPS",
         burst_stage = "%s Stage %d",
         wex_wound = "%s · Wound",
@@ -131,11 +129,9 @@ local STRINGS = {
     ko = {
         report_title = "My Hunt Report",
         weapon_unknown = "알 수 없는 무기",
-        monsters = "몬스터",
         monster_tempered = "역전 ",
         monster_arch_tempered = "역전왕 ",
         monster_frenzied = "광룡화 ",
-        elapsed = "시간",
         combat_dps = "전투 DPS",
         burst_stage = "%s %d단계",
         wex_wound = "%s · 상처",
@@ -281,7 +277,9 @@ local function adopt(detected, detectedRaw)
     effectiveRaw = detectedRaw
     if detected == "ko" then active = "ko" else active = "en" end
     effectiveCode = active
-    Log.debug("language auto raw=" .. tostring(detectedRaw) .. " -> " .. active, "locale:auto:" .. tostring(detectedRaw))
+    if Log.isDeveloperMode() then
+        Log.debug("language auto raw=" .. tostring(detectedRaw) .. " -> " .. active, "locale:auto:" .. tostring(detectedRaw))
+    end
     return active
 end
 
@@ -307,7 +305,9 @@ function Locale.resolve(setting_)
     local now = clock()
     if pendingRaw ~= detectedRaw then
         pendingRaw, pendingSince = detectedRaw, now
-        Log.debug("text language pending raw=" .. tostring(effectiveRaw) .. " -> " .. tostring(detectedRaw), "locale:pending:" .. tostring(detectedRaw))
+        if Log.isDeveloperMode() then
+            Log.debug("text language pending raw=" .. tostring(effectiveRaw) .. " -> " .. tostring(detectedRaw), "locale:pending:" .. tostring(detectedRaw))
+        end
     end
     local ready = true
     if textReady then
@@ -320,7 +320,9 @@ function Locale.resolve(setting_)
         active = effectiveCode
         return active
     end
-    Log.debug("text language switched raw=" .. tostring(effectiveRaw) .. " -> " .. tostring(detectedRaw) .. " after " .. tostring(waited) .. "s " .. (ready and "ready" or "timeout"), "locale:switch:" .. tostring(detectedRaw))
+    if Log.isDeveloperMode() then
+        Log.debug("text language switched raw=" .. tostring(effectiveRaw) .. " -> " .. tostring(detectedRaw) .. " after " .. tostring(waited) .. "s " .. (ready and "ready" or "timeout"), "locale:switch:" .. tostring(detectedRaw))
+    end
     pendingRaw, pendingSince = nil, nil
     return adopt(detected, detectedRaw)
 end

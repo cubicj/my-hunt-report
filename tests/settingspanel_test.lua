@@ -621,4 +621,37 @@ function T.settingsPanelHoverCursorFollowsCloseOnResultCloseAndSaves()
     end)
 end
 
+function T.settingsPanelHintTextFailuresLogUnderThePanelKeyAndBalanceColors()
+    local SettingsPanel = require("MyHuntReport.SettingsPanel")
+    local Settings = require("MyHuntReport.Settings")
+    local Log = require("MyHuntReport.Log")
+    local onDraw, originalImgui = re.on_draw_ui, imgui
+    local draw, colors = nil, 0
+    Settings.load()
+    Locale.resolve("en")
+    Log.resetCounts()
+    local ok, err = pcall(function()
+        re.on_draw_ui = function(callback) draw = callback end
+        imgui = setmetatable({
+            tree_node = function() return true end,
+            push_style_color = function() colors = colors + 1 end,
+            pop_style_color = function(count) colors = colors - count end,
+            text = function(value)
+                if value == Locale.text("settings_skill_proc_crash_hint") then error("hint broke") end
+            end,
+        }, { __index = originalImgui })
+        SettingsPanel.register({})
+        draw()
+        assert(colors == 0, colors)
+        assert(Log.count("panel:crash") == 1, Log.count("panel:crash"))
+        local logged = false
+        for _, line in ipairs(stubs.logLines) do
+            if line:find("crash hint text failed: ", 1, true) and line:find("hint broke", 1, true) then logged = true end
+        end
+        assert(logged)
+    end)
+    re.on_draw_ui, imgui = onDraw, originalImgui
+    if not ok then error(err, 0) end
+end
+
 return T

@@ -48,7 +48,7 @@ end
 
 local function equippedSkills()
     local list = {}
-    for index, entry in ipairs(SkillState.equippedTracked()) do list[index] = { id = entry.id } end
+    for index, id in ipairs(SkillState.trackedIds()) do list[index] = { id = id } end
     return list
 end
 
@@ -190,6 +190,7 @@ function Quest.handleResultInfo(fields, now)
     end
     snapshot.quest.playerCount = fields.joinMemberNum
     Session.relabel(snapshot, Names.resolve)
+    ReportWindow.onSnapshotMutated()
     if Session.hasData() then
         local ok = History.append(snapshot)
         ReportWindow.setNotSaved(not ok)

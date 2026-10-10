@@ -777,4 +777,58 @@ function T.weaponStateNamesComeFromLocale()
     assert(SkillState.skillName(4031) == "Red Spirit Gauge", SkillState.skillName(4031))
 end
 
+function T.burstDiagnosticIsFormattedOnlyInDeveloperMode()
+    local format = string.format
+    local developerMode = Log.isDeveloperMode()
+    local formatted = 0
+    string.format = function(pattern, ...)
+        if pattern == "burst timer=%s hits=%s" then formatted = formatted + 1 end
+        return format(pattern, ...)
+    end
+    local ok, err = pcall(function()
+        Log.resetCounts()
+        withHunter(fakeInfo({}, { _Timer = 3, _HitCount = 5 }), {}, function()
+            Log.setDeveloperMode(false)
+            assert(SkillState.activeSet()["burst:stage2"] == true)
+            assert(formatted == 0 and Log.count("skillstate:burst") == 0, formatted)
+            Log.setDeveloperMode(true)
+            assert(SkillState.activeSet()["burst:stage2"] == true)
+            assert(formatted == 1 and Log.count("skillstate:burst") == 1, formatted)
+            local logged = false
+            for _, line in ipairs(stubs.logLines) do
+                if line == "[MyHuntReport] burst timer=3 hits=5" then logged = true end
+            end
+            assert(logged)
+        end)
+    end)
+    string.format = format
+    Log.setDeveloperMode(developerMode)
+    if not ok then error(err, 0) end
+end
+
+function T.trackedIdsMatchTheNamedRowsWithoutResolvingNames()
+    local ids = { 19, 56, 59, 60, 63, "wex:wound", 65, 101, 111, "burst:stage1", "burst:stage2", 194 }
+    local equipped = { [115] = true }
+    for _, id in ipairs(ids) do equipped[id] = true end
+    withHunter(fakeInfo({ _Counter = { _Skill = 111, _Timer = 0 }, _BurstSlot = { _Skill = 115, _Timer = 0 } }), equipped, function()
+        local skillName = SkillState.skillName
+        local named = 0
+        SkillState.skillName = function(id)
+            named = named + 1
+            return skillName(id)
+        end
+        local ok, err = pcall(function()
+            local tracked = SkillState.trackedIds()
+            assert(named == 0, named)
+            assert(#tracked == #ids, tostring(#tracked))
+            for index, id in ipairs(ids) do assert(tracked[index] == id, index) end
+            local rows = SkillState.equippedTracked()
+            assert(#rows == #ids and named > 0)
+            for index, id in ipairs(ids) do assert(rows[index].id == id and rows[index].name == skillName(id)) end
+        end)
+        SkillState.skillName = skillName
+        if not ok then error(err, 0) end
+    end)
+end
+
 return T

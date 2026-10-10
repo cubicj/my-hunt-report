@@ -27,7 +27,9 @@ function SkillExtras.record(kind, damage)
     local amount = tonumber(damage) or 0
     if not (amount > 0) then return false end
     pendingByKind[kind] = amount
-    Log.debug("skill extra " .. tostring(kind) .. " value=" .. tostring(amount), "extra:" .. tostring(kind))
+    if Log.isDeveloperMode() then
+        Log.debug("skill extra " .. tostring(kind) .. " value=" .. tostring(amount), "extra:" .. tostring(kind))
+    end
     return true
 end
 
