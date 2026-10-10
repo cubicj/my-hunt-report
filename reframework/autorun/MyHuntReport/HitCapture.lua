@@ -204,10 +204,13 @@ function HitCapture.handleStockDamageDetail(hitInfo)
     local motionKey, motionLabel, audit = motionFor(hitInfo, weaponType)
     audit.weaponType = weaponType
     local source = Sources.classify(audit)
-    local okIndex, attackIndex = pcall(function() return hitInfo:get_AttackIndex() end)
-    if not okIndex then attackIndex = nil end
-    local okResource, resource = pcall(function() return attackIndex._Resource end)
-    local okAttackIndex, index = pcall(function() return attackIndex._Index end)
+    local okResource, resource, okAttackIndex, index
+    if Log.isDeveloperMode() then
+        local okIndex, attackIndex = pcall(function() return hitInfo:get_AttackIndex() end)
+        if not okIndex then attackIndex = nil end
+        okResource, resource = pcall(function() return attackIndex._Resource end)
+        okAttackIndex, index = pcall(function() return attackIndex._Index end)
+    end
     if pending[uniqueIndex] then Session.noteDroppedPending() end
     pending[uniqueIndex] = {
         hitAddress = hitAddress,

@@ -1646,6 +1646,30 @@ function T.sourceShellPendingRetainsClassificationRootAndAttackKeyUntilCompletio
     end)
 end
 
+function T.sourceShellClassificationSkipsDiagnosticReadsOutsideDeveloperMode()
+    withSourceLaunch("cShoot", { kind = "motion", className = "cShoot", guideId = 100, weaponType = 7 }, nil, 543483591, function()
+        withAuditCapture(function(state, hits, object)
+            local Log = require("MyHuntReport.Log")
+            Log.setDeveloperMode(false)
+            state.object = "Wp07Shell"
+            local reads = { getter = 0, _Resource = 0, _Index = 0 }
+            local info = hitInfo(1, 1, {}, nil, object)
+            info.get_AttackIndex = function()
+                reads.getter = reads.getter + 1
+                return setmetatable({}, { __index = function(_, field)
+                    reads[field] = reads[field] + 1
+                    return field == "_Resource" and 0 or 6
+                end })
+            end
+            HitCapture.handleStockDamageDetail(info)
+            complete(info)
+            assert(#hits == 1 and hits[1].source == "shelling")
+            assert(reads.getter == 0 and reads._Resource == 0 and reads._Index == 0,
+                string.format("diagnostic reads: getter=%d resource=%d index=%d", reads.getter, reads._Resource, reads._Index))
+        end)
+    end)
+end
+
 function T.sourceKinsectPendingKeepsMinusOneWeaponAndNoRoot()
     withAuditCapture(function(state, hits, object)
         state.object = "it1003_test"
