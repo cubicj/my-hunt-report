@@ -7,6 +7,7 @@ local KinsectTracker = require("MyHuntReport.KinsectTracker")
 local SkillExtras = require("MyHuntReport.SkillExtras")
 local MotionNames = require("MyHuntReport.MotionNames")
 local Names = require("MyHuntReport.Names")
+local Sources = require("MyHuntReport.Sources")
 
 local HitCapture = {}
 
@@ -141,12 +142,16 @@ local function actionMotion(attackObj, name, weaponType, hitTime, audit)
 end
 
 local function motionFor(hitInfo, weaponType)
-    local key, label, hitTime = nil, nil, nil
+    local key, label, hitTime, rootHash = nil, nil, nil, nil
     local okObj, attackObj = pcall(function() return hitInfo:get_AttackObj() end)
-    if okObj and attackObj then key, label, hitTime = ShellTracker.nameForAttackObject(attackObj) end
+    if okObj and attackObj then key, label, hitTime, rootHash = ShellTracker.nameForAttackObject(attackObj) end
     local okName, name = pcall(function() return attackObj:get_Name() end)
     if not okName then name = nil end
-    local audit = { objectName = type(name) == "string" and name or nil }
+    local audit = {
+        objectName = type(name) == "string" and name or nil,
+        shell = key ~= nil or hitTime == true,
+        rootHash = rootHash,
+    }
     sampleActionControllers(audit)
     if key then
         if label.kind == "slinger" then
@@ -197,6 +202,12 @@ function HitCapture.handleStockDamageDetail(hitInfo)
         lastWeaponType = weaponType
     end
     local motionKey, motionLabel, audit = motionFor(hitInfo, weaponType)
+    audit.weaponType = weaponType
+    local source = Sources.classify(audit)
+    local okIndex, attackIndex = pcall(function() return hitInfo:get_AttackIndex() end)
+    if not okIndex then attackIndex = nil end
+    local okResource, resource = pcall(function() return attackIndex._Resource end)
+    local okAttackIndex, index = pcall(function() return attackIndex._Index end)
     if pending[uniqueIndex] then Session.noteDroppedPending() end
     pending[uniqueIndex] = {
         hitAddress = hitAddress,
@@ -208,6 +219,11 @@ function HitCapture.handleStockDamageDetail(hitInfo)
         motionKey = motionKey,
         motionLabel = motionLabel,
         path = audit.path,
+        source = source,
+        rootHash = audit.rootHash,
+        shell = audit.shell,
+        attackResource = okResource and resource or nil,
+        attackIndex = okAttackIndex and index or nil,
         objectName = audit.objectName,
         baseClass = audit.baseClass,
         baseGuideId = audit.baseGuideId,
@@ -385,11 +401,13 @@ local function traceHit(hit, finalDamage, physical, element)
         local _, nameSource = MotionNames.nameFor(hit.motionLabel.className, hit.motionLabel.guideId)
         source = nameSource
     end
-    Log.trace(string.format("hit #%d dmg=%s(%s/%s) wp=%s act=%s mv=%s obj=%s base=%s/%s sub=%s row=%s via=%s name=%s mon=%s atk=%s",
+    Log.trace(string.format("hit #%d dmg=%s(%s/%s) wp=%s act=%s mv=%s obj=%s base=%s/%s sub=%s row=%s via=%s name=%s mon=%s src=%s root=%s key=%s:%s:%s atk=%s",
         Session.hitCount() + 1, tostring(finalDamage), tostring(physical), tostring(element),
         tostring(hit.weaponType), tostring(hit.actionType), tostring(hit.motionValue), hit.objectName or "-",
         hit.baseClass or "-", tostring(hit.baseGuideId or -1), hit.subClass or "-", name,
-        hit.path, source, tostring(hit.monsterLabel.emId), tostring(hit.attackPower)))
+        hit.path, source, tostring(hit.monsterLabel.emId), hit.source or "-",
+        tostring(hit.rootHash or (hit.shell and "?" or "-")), tostring(hit.weaponType or "?"),
+        tostring(hit.attackResource or "?"), tostring(hit.attackIndex or "?"), tostring(hit.attackPower)))
 end
 
 function HitCapture.handlePlayHitMarkEffect(calc, hitInfo)
@@ -429,6 +447,7 @@ function HitCapture.handlePlayHitMarkEffect(calc, hitInfo)
     traceHit(hit, finalDamage, physical, element)
     Session.addHit({
         attribution = hit.path,
+        source = hit.source,
         monsterId = hit.monsterId,
         monsterLabel = hit.monsterLabel,
         weaponType = hit.weaponType,
