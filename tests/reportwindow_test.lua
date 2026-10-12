@@ -429,7 +429,7 @@ function T.historyNavigationHasBackFilterAndClose()
     end)
 end
 
-function T.selectedHistoryReportNavigationHasBackAndCloseOnly()
+function T.selectedHistoryReportNavigationHasBackDeleteAndClose()
     withNavigation(function(ui)
         ui.entries = { snapshot("clear") }
         ReportWindow.show(snapshot("running"))
@@ -438,7 +438,7 @@ function T.selectedHistoryReportNavigationHasBackAndCloseOnly()
         ui.draw("##history1")
         assert(ReportWindow.debugState().fromHistory)
         ui.draw()
-        assertNavigation(ui, "<##back|X##close")
+        assertNavigation(ui, "<##back|삭제##delete|X##close")
     end)
 end
 
@@ -469,6 +469,338 @@ function T.topBarButtonsNavigateAndCloseEveryView()
         end
     end)
 end
+
+local function deleteRecord(endedAt)
+    local record = snapshot("clear")
+    record.quest.endedAt = endedAt
+    return record
+end
+
+local function withHistoryDelete(callback)
+    local History = require("MyHuntReport.History")
+    local Game = require("MyHuntReport.Game")
+    local remove, uptime = History.remove, Game.uptime
+    local ok, err = pcall(withNavigation, function(ui)
+        ui.now, ui.removals, ui.removeResult = 100, {}, { true }
+        ui.entries = { deleteRecord(100), deleteRecord(200), deleteRecord(300) }
+        ui.lines = { 1, 3, 4 }
+        Game.uptime = function() return ui.now end
+        History.readAll = function() return ui.entries, 0, ui.lines end
+        History.remove = function(line, endedAt)
+            ui.removals[#ui.removals + 1] = { line = line, endedAt = endedAt }
+            if ui.removeResult[1] then
+                for index, entryLine in ipairs(ui.lines) do
+                    if entryLine == line then
+                        table.remove(ui.entries, index)
+                        table.remove(ui.lines, index)
+                        break
+                    end
+                end
+            end
+            return table.unpack(ui.removeResult)
+        end
+        function ui.openNewest()
+            ReportWindow.showHistory()
+            ui.draw()
+            ui.draw("##history1")
+            ui.draw()
+            assert(ReportWindow.screen() == "past")
+        end
+        function ui.textEvent(text)
+            for _, event in ipairs(ui.events) do
+                if event.kind == "text" and event.value == text then return event end
+            end
+        end
+        function ui.buttonEvent(label)
+            for _, event in ipairs(ui.events) do
+                if event.kind == "button" and event.value == label then return event end
+            end
+        end
+        callback(ui)
+    end)
+    History.remove, Game.uptime = remove, uptime
+    if not ok then error(err, 0) end
+end
+
+local function withFreshHistoryDelete(callback)
+    withHistoryDelete(function(ui)
+        local History = require("MyHuntReport.History")
+        local storedEndedAts = { 100, false, 200, 300 }
+        ui.reads = 0
+        History.readAll = function()
+            ui.reads = ui.reads + 1
+            local entries, lines, skipped = {}, {}, 0
+            for line, endedAt in ipairs(storedEndedAts) do
+                if endedAt then
+                    entries[#entries + 1] = deleteRecord(endedAt)
+                    lines[#entries] = line
+                else
+                    skipped = skipped + 1
+                end
+            end
+            ui.entries, ui.lines = entries, lines
+            return entries, skipped, lines
+        end
+        History.remove = function(line, endedAt)
+            ui.removals[#ui.removals + 1] = { line = line, endedAt = endedAt }
+            if line == nil or storedEndedAts[line] == nil then return false, "missing" end
+            if not storedEndedAts[line] or storedEndedAts[line] ~= endedAt then return false, "mismatch" end
+            table.remove(storedEndedAts, line)
+            return true
+        end
+        callback(ui)
+    end)
+end
+
+function T.historyDeletePreservesLineAfterForwardReloadsFreshEntries()
+    withFreshHistoryDelete(function(ui)
+        ReportWindow.show(snapshot("clear"))
+        ui.openNewest()
+        local opened = ReportWindow.debugState().snapshot
+        assert(opened.quest.endedAt == 300 and ui.reads == 1)
+        assert(ReportWindow.back() and ReportWindow.screen() == "history")
+        assert(ReportWindow.back() and ReportWindow.screen() == "live")
+        assert(ReportWindow.forward() and ReportWindow.screen() == "history")
+        ui.draw()
+        assert(ui.reads == 2 and ui.entries[3] ~= opened)
+        assert(ui.entries[3].quest.endedAt == opened.quest.endedAt)
+        assert(ReportWindow.forward() and ReportWindow.screen() == "past")
+        assert(ReportWindow.debugState().snapshot == opened)
+        ui.draw("삭제##delete")
+        assert(#ui.removals == 0)
+        ui.draw("삭제##delete")
+        assert(#ui.removals == 1)
+        assert(ui.removals[1].line == 4, "expected line=4, got " .. tostring(ui.removals[1].line))
+        assert(ui.removals[1].endedAt == 300)
+        assert(ReportWindow.screen() == "history" and ui.reads == 3)
+        assert(#ui.entries == 2 and ReportWindow.debugState().forwardSnapshot == nil)
+    end)
+end
+
+function T.historyDeleteUsesShiftedLineAfterDeletingAnOlderEntry()
+    withFreshHistoryDelete(function(ui)
+        ui.openNewest()
+        local newest = ReportWindow.debugState().snapshot
+        assert(ReportWindow.back())
+        ui.draw("##history3")
+        assert(ReportWindow.debugState().snapshot.quest.endedAt == 100)
+        ui.draw("삭제##delete")
+        ui.draw("삭제##delete")
+        assert(#ui.removals == 1 and ui.removals[1].line == 1 and ui.removals[1].endedAt == 100)
+        assert(ReportWindow.screen() == "history" and ui.reads == 2)
+        assert(ui.lines[1] == 2 and ui.lines[2] == 3)
+        ui.draw("##history1")
+        local survivor = ReportWindow.debugState().snapshot
+        assert(survivor ~= newest and survivor.quest.endedAt == 300)
+        ui.draw("삭제##delete")
+        assert(#ui.removals == 1)
+        ui.draw("삭제##delete")
+        assert(#ui.removals == 2 and ui.removals[2].line == 3 and ui.removals[2].endedAt == 300)
+        assert(ReportWindow.screen() == "history" and ui.reads == 3)
+        assert(#ui.entries == 1 and ui.entries[1].quest.endedAt == 200)
+    end)
+end
+
+function T.historyDeleteButtonAppearsOnlyOnAReportOpenedFromHistory()
+    withHistoryDelete(function(ui)
+        ReportWindow.show(snapshot("clear"))
+        ui.draw()
+        assertNavigation(ui, "기록|X##close")
+        ReportWindow.showHistory()
+        ui.draw()
+        assertNavigation(ui, "<##back|필터|X##close")
+        ui.draw("##history1")
+        ui.draw()
+        assertNavigation(ui, "<##back|삭제##delete|X##close")
+        Locale.resolve("en")
+        ui.draw()
+        assertNavigation(ui, "<##back|Delete##delete|X##close")
+    end)
+end
+
+function T.historyDeleteArmsThenDeletesTheOpenedEntryAndReturnsToTheList()
+    local Theme = require("MyHuntReport.Theme")
+    withHistoryDelete(function(ui)
+        imgui.calc_text_size = function() return { x = 100, y = 18 } end
+        ui.openNewest()
+        assert(not ui.textEvent("한 번 더 누르면 삭제"))
+        assert(ui.buttonEvent("삭제##delete").textColor == Theme.colors.textMuted)
+        ui.draw("삭제##delete")
+        assert(#ui.removals == 0 and ReportWindow.screen() == "past")
+        ui.draw()
+        local text = ui.textEvent("한 번 더 누르면 삭제")
+        local button = ui.buttonEvent("삭제##delete")
+        assert(text and text.textColor == Theme.colors.warning)
+        assert(button.textColor == Theme.colors.warning)
+        local textPos, buttonPos = ui.positions[text.positionCount], ui.positions[button.positionCount]
+        assert(textPos[1] == buttonPos[1] - Theme.metrics.historyGap - 100)
+        assert(textPos[2] == 20 + (Theme.metrics.iconButton - 18) / 2 and buttonPos[2] == 20)
+        ui.now = 102.9
+        ui.draw("삭제##delete")
+        assert(#ui.removals == 1 and ui.removals[1].line == 4 and ui.removals[1].endedAt == 300)
+        local state = ReportWindow.debugState()
+        assert(state.view == "history" and not state.fromHistory)
+        ui.draw()
+        local rows = {}
+        for _, label in ipairs(ui.buttons) do
+            if label:find("^##history%d") then rows[#rows + 1] = label end
+        end
+        assert(table.concat(rows, "|") == "##history1|##history2")
+        ui.draw("##history1")
+        assert(ReportWindow.debugState().snapshot.quest.endedAt == 200)
+        ui.draw()
+        assert(not ui.textEvent("한 번 더 누르면 삭제"))
+        ui.draw("삭제##delete")
+        ui.draw("삭제##delete")
+        assert(#ui.removals == 2 and ui.removals[2].line == 3 and ui.removals[2].endedAt == 200)
+    end)
+end
+
+function T.historyDeleteArmExpiresAfterThreeSeconds()
+    withHistoryDelete(function(ui)
+        ui.openNewest()
+        ui.draw("삭제##delete")
+        ui.now = 102.9
+        ui.draw()
+        assert(ui.textEvent("한 번 더 누르면 삭제"))
+        ui.now = 103
+        ui.draw()
+        assert(not ui.textEvent("한 번 더 누르면 삭제"))
+        ui.draw("삭제##delete")
+        assert(#ui.removals == 0)
+        ui.draw()
+        assert(ui.textEvent("한 번 더 누르면 삭제"))
+        ui.now = 104
+        ui.draw("삭제##delete")
+        assert(#ui.removals == 1)
+    end)
+end
+
+function T.historyDeleteDisarmsWhenLeavingTheReport()
+    withHistoryDelete(function(ui)
+        local leaves = {
+            function() ui.draw("<##back") ui.draw() ui.draw("##history1") end,
+            function() ui.draw("<##back") assert(ReportWindow.forward()) end,
+            function() ui.draw("X##close") ui.openNewest() end,
+            function() ReportWindow.hide() ui.openNewest() end,
+            function() ReportWindow.showHistory() ui.draw() ui.draw("##history1") end,
+            function() ReportWindow.onHistoryCleared() end,
+        }
+        for index, leave in ipairs(leaves) do
+            ui.openNewest()
+            ui.draw("삭제##delete")
+            ui.draw()
+            assert(ui.textEvent("한 번 더 누르면 삭제"), index)
+            leave()
+            ui.draw()
+            assert(not ui.textEvent("한 번 더 누르면 삭제"), index)
+            if ReportWindow.screen() == "past" then
+                ui.draw("삭제##delete")
+                assert(#ui.removals == 0, index)
+            end
+        end
+    end)
+end
+
+function T.historyDeleteFailureShowsTextStaysAndLogs()
+    local Theme = require("MyHuntReport.Theme")
+    withHistoryDelete(function(ui)
+        ui.removeResult = { false, "mismatch" }
+        ui.openNewest()
+        ui.draw("삭제##delete")
+        ui.draw("삭제##delete")
+        assert(#ui.removals == 1 and ReportWindow.screen() == "past")
+        ui.draw()
+        local failed = ui.textEvent("삭제에 실패했습니다.")
+        assert(failed and failed.textColor == Theme.colors.warning)
+        assert(not ui.textEvent("한 번 더 누르면 삭제"))
+        assert(ui.buttonEvent("삭제##delete").textColor == Theme.colors.textMuted)
+        local logged = false
+        for _, line in ipairs(stubs.logLines) do
+            if line:find("history remove failed line=4 endedAt=300 reason=mismatch", 1, true) then logged = true end
+        end
+        assert(logged)
+        ui.now = 102.9
+        ui.draw()
+        assert(ui.textEvent("삭제에 실패했습니다."))
+        ui.now = 103
+        ui.draw()
+        assert(not ui.textEvent("삭제에 실패했습니다."))
+        ui.draw("삭제##delete")
+        ui.draw()
+        assert(ui.textEvent("한 번 더 누르면 삭제") and not ui.textEvent("삭제에 실패했습니다."))
+    end)
+end
+
+function T.historyDeleteWithoutALineNumberFailsAsMissing()
+    withHistoryDelete(function(ui)
+        local History = require("MyHuntReport.History")
+        History.remove = function(line, endedAt)
+            ui.removals[#ui.removals + 1] = { line = line, endedAt = endedAt }
+            return false, "missing"
+        end
+        ui.lines = {}
+        ui.openNewest()
+        ui.draw("삭제##delete")
+        ui.draw("삭제##delete")
+        assert(#ui.removals == 1 and ui.removals[1].line == nil and ui.removals[1].endedAt == 300)
+        assert(ReportWindow.screen() == "past")
+    end)
+end
+
+function T.historyDeleteLogsTheRemainingCountInDeveloperModeOnly()
+    withHistoryDelete(function(ui)
+        local Log = require("MyHuntReport.Log")
+        local function count(fragment)
+            local found = 0
+            for _, line in ipairs(stubs.logLines) do
+                if line:find(fragment, 1, true) then found = found + 1 end
+            end
+            return found
+        end
+        ui.openNewest()
+        ui.draw("삭제##delete")
+        ui.draw("삭제##delete")
+        assert(count("history remove line=") == 0)
+        Log.setDeveloperMode(true)
+        ui.draw()
+        ui.draw("##history1")
+        ui.draw()
+        ui.draw("삭제##delete")
+        ui.draw("삭제##delete")
+        assert(count("history remove line=3 endedAt=200 remaining=1") == 1)
+    end)
+end
+
+function T.historyDeleteIconUsesMutedHoverAndWarningColors()
+    local Theme = require("MyHuntReport.Theme")
+    local Game = require("MyHuntReport.Game")
+    local uptime = Game.uptime
+    local ok, err = pcall(withIconNavigation, function(ui, list)
+        Game.uptime = function() return 100 end
+        ui.entries = { snapshot("clear") }
+        ReportWindow.showHistory()
+        ui.draw()
+        ui.draw("##history1")
+        local function trashColor(hovered, click)
+            imgui.is_item_hovered = function() return ui.buttons[#ui.buttons] == hovered end
+            for index = #list.calls, 1, -1 do list.calls[index] = nil end
+            ui.draw(click)
+            assertNavigation(ui, "##back|##delete|##close")
+            local color = list.calls[3][3]
+            for index = 3, 11 do assert(list.calls[index][3] == color) end
+            return color
+        end
+        assert(trashColor(nil) == Theme.colors.textMuted)
+        assert(trashColor("##delete") == Theme.colors.text)
+        trashColor(nil, "##delete")
+        assert(trashColor(nil) == Theme.colors.warning)
+        assert(trashColor("##delete") == Theme.colors.warning)
+    end)
+    Game.uptime = uptime
+    if not ok then error(err, 0) end
+end
+
 
 function T.noDataDrawsHistoryAndCloseBeforeTitleAndMessage()
     withNavigation(function(ui)
@@ -2423,7 +2755,7 @@ function T.historyFilterEmptyHistoryHasNoChipsOrOptionsAndMutedIcon()
             if item.window == FILTER_WINDOW and item.text == "-" then dashes = dashes + 1 end
             if item.text == Locale.text("history_empty") then empty = true end
         end
-        assert(dashes == 4 and empty)
+        assert(dashes == 5 and empty)
     end)
 end
 
@@ -2541,6 +2873,75 @@ function T.historyFilterNamesFallBackToIdentifiers()
     end)
 end
 
+function T.historyFilterPlayersAxisLabelsChecksAndChips()
+    withHistoryFilters(function(ui)
+        local records = { filterRecord(10, 5, 32, 0), filterRecord(3, 5, 33, 2), filterRecord(3, 10, 34, 0), filterRecord(10, 10, 35, 0) }
+        records[1].quest.playerCount, records[2].quest.playerCount, records[3].quest.playerCount = 4, 1, 4.0
+        ui.entries = records
+        ui.openFilters()
+        local titled = false
+        for _, item in ipairs(ui.texts) do
+            if item.text == Locale.text("history_filter_players") then titled = true end
+        end
+        assert(titled)
+        local players = {}
+        for _, item in ipairs(ui.checkboxes) do
+            if item.id:find("##filterplayers:", 1, true) then players[#players + 1] = item end
+        end
+        assert(#players == 2)
+        assert(players[1].id == "##filterplayers:1" and players[1].text:find("솔로", 1, true) == 1)
+        assert(players[2].id == "##filterplayers:4" and players[2].text:find("4인", 1, true) == 1)
+        ui.check("players", 4, true)
+        ui.draw()
+        assert(ui.rows() == 2)
+        local chips = ui.chips()
+        assert(#chips == 1 and chips[1].id == "##historyChipplayers:4" and chips[1].text:find("4인 ×", 1, true) == 1)
+        ui.check("variants", "arch", true)
+        ui.draw()
+        chips = ui.chips()
+        assert(#chips == 2 and chips[1].id == "##historyChipvariants:arch" and chips[2].id == "##historyChipplayers:4")
+        assert(ui.rows() == 0)
+        ui.draw("##historyChipplayers:4")
+        assert(not ui.checkbox("players", 4).checked)
+    end)
+end
+
+function T.historyDeletePrunesTheChipOfTheLastDeletedValue()
+    withHistoryFilters(function(ui)
+        local History = require("MyHuntReport.History")
+        local Game = require("MyHuntReport.Game")
+        local readAll, remove, uptime = History.readAll, History.remove, Game.uptime
+        local ok, err = pcall(function()
+            Game.uptime = function() return 100 end
+            local solo, party = filterRecord(10, 5, 32, 0), filterRecord(3, 5, 33, 0)
+            solo.quest.playerCount, solo.quest.endedAt = 1, 100
+            party.quest.playerCount, party.quest.endedAt = 4, 200
+            local lines = { 1, 2 }
+            ui.entries = { solo, party }
+            History.readAll = function() return ui.entries, 0, lines end
+            History.remove = function(line, endedAt)
+                assert(line == 1 and endedAt == 100)
+                ui.entries, lines = { party }, { 1 }
+                return true
+            end
+            ui.openFilters()
+            ui.check("players", 1, true)
+            ui.draw()
+            assert(#ui.chips() == 1 and ui.chips()[1].id == "##historyChipplayers:1" and ui.rows() == 1)
+            ui.draw("##history1")
+            ui.draw()
+            ui.draw("##delete")
+            ui.draw("##delete")
+            ui.draw()
+            assert(ReportWindow.screen() == "history")
+            assert(#ui.chips() == 0 and ui.rows() == 1)
+        end)
+        History.readAll, History.remove, Game.uptime = readAll, remove, uptime
+        if not ok then error(err, 0) end
+    end)
+end
+
+
 function T.historyFilterCachesOptionsNamesChipsAndMatchesBetweenChanges()
     withHistoryFilters(function(ui)
         local Filter = require("MyHuntReport.HistoryFilter")
@@ -2588,14 +2989,14 @@ function T.historyFilterDiagnosticsReportSetsOncePerChangeWithoutSuppression()
             ui.check("weapons", 10, index % 2 == 0)
             assert(#lines() == index)
         end
-        assert(lines()[12]:find("weapons=[10] levels=[] species=[] variants=[] shown=1/2", 1, true))
+        assert(lines()[12]:find("weapons=[10] levels=[] species=[] variants=[] players=[] shown=1/2", 1, true))
         ui.draw()
         assert(#lines() == 12)
         ui.entries = { ui.entries[2] }
         ReportWindow.showHistory()
         ui.draw()
         assert(#lines() == 13)
-        assert(lines()[13]:find("weapons=[] levels=[] species=[] variants=[] shown=1/1", 1, true))
+        assert(lines()[13]:find("weapons=[] levels=[] species=[] variants=[] players=[] shown=1/1", 1, true))
     end)
 end
 
@@ -2630,13 +3031,14 @@ function T.historyFilterGridsUseFixedColumnsAndChipsWrapAtBothFontSizes()
             return label.kind == "weapon" and "Weapon number " .. label.type or "Monster number " .. label.emId
         end)
         for index = 1, 7 do ui.entries[index] = filterRecord(index, index, index, index % 3) end
+        for index = 1, 7 do ui.entries[index].quest.playerCount = (index - 1) % 4 + 1 end
         ui.entries[1].monsters[1].label.roleId = 3
         for _, fontSize in ipairs({ 18, 24 }) do
             Settings.get().fontSize = fontSize
             ReportWindow.hide()
             ui.openFilters()
             local contentWidth = math.floor(480 * fontSize / 18)
-            for axis, columns in pairs({ weapons = 3, levels = 5, species = 3, variants = 4 }) do
+            for axis, columns in pairs({ weapons = 3, levels = 5, species = 3, variants = 4, players = 4 }) do
                 local items = {}
                 for _, item in ipairs(ui.checkboxes) do if item.id:find("##filter" .. axis .. ":", 1, true) then items[#items + 1] = item end end
                 assert(#items >= columns)
@@ -2950,9 +3352,9 @@ function T.historyFilterWindowClipsLongLabelsWithoutAClipCallback()
             button = function() return false end,
         }, { __index = original })
         local ctx = { fonts = {}, sizes = { body = 18, small = 18 }, scale = 1 }
-        local options = { weapons = { 1 }, levels = {}, species = {}, variants = {} }
-        local names = { weapons = { [1] = string.rep("가", 40) }, levels = {}, species = {}, variants = {} }
-        local selection = { weapons = {}, levels = {}, species = {}, variants = {} }
+        local options = { weapons = { 1 }, levels = {}, species = {}, variants = {}, players = {} }
+        local names = { weapons = { [1] = string.rep("가", 40) }, levels = {}, species = {}, variants = {}, players = {} }
+        local selection = { weapons = {}, levels = {}, species = {}, variants = {}, players = {} }
         local opened = Window.draw(ctx, options, names, selection, function() end, nil)
         assert(opened == true)
         assert(#labels == 1, #labels)

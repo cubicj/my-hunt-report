@@ -98,6 +98,29 @@ function T.metaTextJoinsMonstersAndTime()
     assert(ReportText.metaText({}) == "0:00")
 end
 
+function T.metaTextAppendsThePartySizeInBothLanguages()
+    local language = Locale.current()
+    local expected = {
+        ko = { "솔로", "2인", "3인", "4인" },
+        en = { "Solo", "2P", "3P", "4P" },
+    }
+    for code, labels in pairs(expected) do
+        Locale.resolve(code)
+        for size, label in ipairs(labels) do
+            assert(ReportText.partyText(size) == label)
+            assert(ReportText.metaText({ monsters = { { name = "조 시아" } }, quest = { elapsedSeconds = 754, playerCount = size } }) == "조 시아 · 12:34 · " .. label)
+            assert(ReportText.metaText({ monsters = {}, quest = { elapsedSeconds = 754, playerCount = size } }) == "12:34 · " .. label)
+        end
+        assert(ReportText.metaText({ monsters = {}, quest = { elapsedSeconds = 754, playerCount = 4.0 } }) == "12:34 · " .. labels[4])
+        for _, invalid in ipairs({ 0, 5, 2.5, "4", false }) do
+            assert(ReportText.metaText({ monsters = { { name = "조 시아" } }, quest = { elapsedSeconds = 754, playerCount = invalid } }) == "조 시아 · 12:34")
+            assert(ReportText.metaText({ monsters = {}, quest = { elapsedSeconds = 754, playerCount = invalid } }) == "12:34")
+        end
+        assert(ReportText.metaText({ monsters = { { name = "조 시아" } }, quest = { elapsedSeconds = 754 } }) == "조 시아 · 12:34")
+    end
+    Locale.resolve(language)
+end
+
 function T.historyRowCarriesTheOutcome()
     local Theme = require("MyHuntReport.Theme")
     Locale.resolve("ko")

@@ -1,7 +1,7 @@
 local HistoryFilter = {}
 
 local VARIANTS = { "normal", "tempered", "arch", "frenzied" }
-local AXES = { "weapons", "levels", "species", "variants" }
+local AXES = { "weapons", "levels", "species", "variants", "players" }
 
 local function weaponTypes(quest)
     local types = {}
@@ -29,9 +29,15 @@ local function contains(values, value)
     return false
 end
 
+function HistoryFilter.partySize(quest)
+    local count = type(quest) == "table" and quest.playerCount or nil
+    if type(count) ~= "number" or not (count >= 1 and count <= 4) or count % 1 ~= 0 then return nil end
+    return math.tointeger(count)
+end
+
 function HistoryFilter.options(entries)
-    local options = { weapons = {}, levels = {}, species = {}, variants = {} }
-    local seen = { weapons = {}, levels = {}, species = {}, variants = {} }
+    local options = { weapons = {}, levels = {}, species = {}, variants = {}, players = {} }
+    local seen = { weapons = {}, levels = {}, species = {}, variants = {}, players = {} }
     local function add(axis, value)
         if seen[axis][value] then return end
         seen[axis][value] = true
@@ -41,6 +47,8 @@ function HistoryFilter.options(entries)
         local quest = entry.quest or {}
         for _, weaponType in ipairs(weaponTypes(quest)) do add("weapons", weaponType) end
         if type(quest.level) == "number" and quest.level > 0 then add("levels", quest.level) end
+        local size = HistoryFilter.partySize(quest)
+        if size then add("players", size) end
         for _, monster in ipairs(entry.monsters or {}) do
             local label = monster.label
             if type(label) == "table" and type(label.emId) == "number" then
@@ -53,6 +61,7 @@ function HistoryFilter.options(entries)
     end
     table.sort(options.weapons)
     table.sort(options.levels, function(a, b) return a > b end)
+    table.sort(options.players)
     for _, variant in ipairs(VARIANTS) do
         if seen.variants[variant] then options.variants[#options.variants + 1] = variant end
     end
@@ -71,6 +80,11 @@ function HistoryFilter.matches(entry, selection)
         if not found then return false end
     end
     if next(levels) and (type(quest.level) ~= "number" or quest.level <= 0 or not levels[quest.level]) then return false end
+    local players = selection.players or {}
+    if next(players) then
+        local size = HistoryFilter.partySize(quest)
+        if not size or not players[size] then return false end
+    end
     if next(species) or next(variants) then
         for _, monster in ipairs(entry.monsters or {}) do
             local label = monster.label

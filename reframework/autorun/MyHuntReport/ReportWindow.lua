@@ -36,6 +36,7 @@ local WINDOW_ID = "##MyHuntReportWindow"
 local COND_APPEARING = 8
 local REFRESH_INTERVAL = 0.25
 local POSITION_SETTLE_SECONDS = 1.0
+local DELETE_CONFIRM_SECONDS = 3
 
 local state = {
     open = false,
@@ -51,7 +52,7 @@ local state = {
     provider = nil,
     relabeler = nil,
     nameResolver = nil,
-    historySelection = { weapons = {}, levels = {}, species = {}, variants = {} },
+    historySelection = { weapons = {}, levels = {}, species = {}, variants = {}, players = {} },
     historyOptions = nil,
     historyLabels = nil,
     historyChips = {},
@@ -61,6 +62,8 @@ local state = {
     filteredEntries = nil,
     filterChangeCount = 0,
     pendingAction = nil,
+    deleteArmedAt = nil,
+    deleteFailedUntil = nil,
     liveRefreshAt = nil,
     bounds = nil,
     livePosition = nil,
@@ -73,6 +76,7 @@ local function L(key)
 end
 
 local historyRows = {}
+local entryLines = setmetatable({}, { __mode = "k" })
 local historyOutcome = nil
 local reportText = nil
 local frameFonts = nil
@@ -194,7 +198,12 @@ local function clearForward()
     state.forwardHistory, state.forwardSnapshot = false, nil
 end
 
+local function disarmDelete()
+    state.deleteArmedAt, state.deleteFailedUntil = nil, nil
+end
+
 local function close()
+    disarmDelete()
     state.filterOpen, state.filterBounds = false, nil
     clearForward()
     invalidatePresentation()
@@ -478,6 +487,7 @@ local function drawBody(snapshot, ctx, text)
 end
 
 local function returnFromHistory()
+    disarmDelete()
     state.filterOpen, state.filterBounds = false, nil
     invalidatePresentation()
     if state.view == "history" then
@@ -495,6 +505,8 @@ local function returnFromHistory()
         state.fromHistory = false
     end
 end
+
+local pressDelete
 
 function ReportWindow.drawTopBar(ctx)
     local top = imgui.get_cursor_pos()
@@ -534,6 +546,35 @@ function ReportWindow.drawTopBar(ctx)
                     screen.y + (m.iconButton - ctx.sizes.body) / 2 - Fonts.centerNudge(ctx.sizes.body), color, label)
                 Fonts.pop(fontPushed)
             end
+        end
+        if state.fromHistory then
+            local now = Game.uptime()
+            if state.deleteArmedAt and now - state.deleteArmedAt >= DELETE_CONFIRM_SECONDS then state.deleteArmedAt = nil end
+            if state.deleteFailedUntil and now >= state.deleteFailedUntil then state.deleteFailedUntil = nil end
+            local armed = state.deleteArmedAt ~= nil
+            local x = m.padding + ctx.width - m.iconButton * 2 - 8
+            local message = armed and L("history_delete_confirm") or state.deleteFailedUntil and L("history_delete_failed") or nil
+            if message then
+                local fontPushed = Fonts.push(ctx.fonts.body)
+                local width = UiText.width(message) or 0
+                Fonts.pop(fontPushed)
+                imgui.set_cursor_pos({ x - m.historyGap - width, top.y + (m.iconButton - ctx.sizes.body) / 2 })
+                UiText.inFont(ctx.fonts.body, message, Theme.colors.warning)
+            end
+            imgui.set_cursor_pos({ x, top.y })
+            local screen = imgui.get_cursor_screen_pos()
+            local active = Draw.active()
+            local colored = armed and pcall(imgui.push_style_color, 0, Theme.colors.warning)
+            local okButton, clicked = pcall(imgui.button, active and "##delete" or L("history_delete") .. "##delete", { m.iconButton, m.iconButton })
+            if colored then pcall(imgui.pop_style_color, 1) end
+            if not okButton then error(clicked, 0) end
+            if active then
+                local okHover, hovered = pcall(imgui.is_item_hovered)
+                local color = armed and Theme.colors.warning or okHover and hovered and Theme.colors.text or Theme.colors.textMuted
+                local inset = (m.iconButton - m.iconSize) / 2
+                Draw.icon("delete", "trash", screen.x + inset, screen.y + inset, m.iconSize, color, m.iconStroke)
+            end
+            if clicked then action = function() pressDelete(now) end end
         end
         if state.view == "history" then
             imgui.set_cursor_pos({ m.padding + ctx.width - m.iconButton * 2 - 8, top.y })
@@ -605,7 +646,7 @@ local function relabelSnapshot(value)
     if not ok then Log.error("snapshot relabel failed: " .. tostring(err), "report:relabel") end
 end
 
-local FILTER_AXES = { "weapons", "levels", "species", "variants" }
+local FILTER_AXES = { "weapons", "levels", "species", "variants", "players" }
 
 local function updateFilteredHistory(changed)
     invalidatePresentation()
@@ -648,11 +689,12 @@ end
 local function rebuildHistoryFilters()
     if state.entries == nil then return end
     local options = HistoryFilter.options(state.entries)
-    local names = { weapons = {}, levels = {}, species = {}, variants = {} }
+    local names = { weapons = {}, levels = {}, species = {}, variants = {}, players = {} }
     for _, id in ipairs(options.weapons) do names.weapons[id] = filterName({ kind = "weapon", type = id }, id) end
     for _, id in ipairs(options.species) do names.species[id] = filterName({ kind = "monster", emId = id }, id) end
     for _, level in ipairs(options.levels) do names.levels[level] = "★" .. level end
     for _, variant in ipairs(options.variants) do names.variants[variant] = L("history_variant_" .. variant) end
+    for _, size in ipairs(options.players) do names.players[size] = ReportText.partyText(size) end
     table.sort(options.species, function(a, b)
         if names.species[a] == names.species[b] then return a < b end
         return names.species[a] < names.species[b]
@@ -690,15 +732,43 @@ end
 
 local function loadHistory()
     if state.entries ~= nil then return end
-    local entries = History.readAll()
+    local entries, _, lines = History.readAll()
     state.entries = {}
     for index = #entries, 1, -1 do
         local entry = entries[index]
         relabelSnapshot(entry)
         state.entries[#state.entries + 1] = entry
+        entryLines[entry] = lines and lines[index]
     end
     rebuildHistoryFilters()
 end
+
+function pressDelete(now)
+    if not state.fromHistory then return end
+    if not state.deleteArmedAt then
+        state.deleteArmedAt, state.deleteFailedUntil = now, nil
+        return
+    end
+    state.deleteArmedAt = nil
+    local entry = state.snapshot
+    local quest = type(entry) == "table" and entry.quest or nil
+    local line = entry ~= nil and entryLines[entry] or nil
+    local endedAt = type(quest) == "table" and quest.endedAt or nil
+    local ok, reason = History.remove(line, endedAt)
+    if not ok then
+        state.deleteFailedUntil = now + DELETE_CONFIRM_SECONDS
+        Log.error(string.format("history remove failed line=%s endedAt=%s reason=%s", tostring(line), tostring(endedAt), tostring(reason)))
+        return
+    end
+    state.filterOpen, state.filterBounds = false, nil
+    state.forwardSnapshot = nil
+    state.view = "history"
+    state.fromHistory = false
+    state.entries = nil
+    loadHistory()
+    Log.debug(string.format("history remove line=%s endedAt=%s remaining=%d", tostring(line), tostring(endedAt), #state.entries))
+end
+
 
 local OUTCOME_LABELS = { "result_clear", "result_fail", "result_abandon" }
 
@@ -825,6 +895,7 @@ function ReportWindow.refreshLive(now)
 end
 
 function ReportWindow.show(snapshot)
+    disarmDelete()
     state.filterOpen, state.filterBounds = false, nil
     clearForward()
     invalidatePresentation()
@@ -863,6 +934,7 @@ function ReportWindow.onSnapshotMutated()
 end
 
 local function enterHistory()
+    disarmDelete()
     if state.view ~= "history" and not state.fromHistory then
         state.liveSnapshot = state.snapshot
         state.liveNotSaved = state.notSaved
@@ -880,6 +952,7 @@ function ReportWindow.showHistory()
 end
 
 function ReportWindow.onHistoryCleared()
+    disarmDelete()
     state.entries = nil
     invalidatePresentation()
     clearForward()

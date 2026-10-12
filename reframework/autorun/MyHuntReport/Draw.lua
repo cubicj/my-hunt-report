@@ -123,6 +123,16 @@ function Draw.icon(id, name, x, y, size, color, stroke)
         elseif name == "close" then
             list:add_line(point(18, 6), point(6, 18), color, stroke)
             list:add_line(point(6, 6), point(18, 18), color, stroke)
+        elseif name == "trash" then
+            list:add_line(point(4, 7), point(20, 7), color, stroke)
+            list:add_line(point(9, 7), point(9, 4), color, stroke)
+            list:add_line(point(9, 4), point(15, 4), color, stroke)
+            list:add_line(point(15, 4), point(15, 7), color, stroke)
+            list:add_line(point(6, 7), point(7, 20), color, stroke)
+            list:add_line(point(7, 20), point(17, 20), color, stroke)
+            list:add_line(point(17, 20), point(18, 7), color, stroke)
+            list:add_line(point(10, 11), point(10, 16), color, stroke)
+            list:add_line(point(14, 11), point(14, 16), color, stroke)
         end
     end)
 end

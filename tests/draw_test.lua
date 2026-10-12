@@ -100,7 +100,7 @@ function T.iconsReturnFalseWithoutDrawingInFallback()
             button = function() buttons = buttons + 1 end,
         }, function()
             Draw.setForced(forced)
-            for _, name in ipairs({ "back", "close", "filter" }) do
+            for _, name in ipairs({ "back", "close", "filter", "trash" }) do
                 assert(Draw.icon("icon", name, 0, 0, 16, Theme.colors.text, 2) == false)
             end
             assert(#list.calls == 0 and buttons == 0)
@@ -311,6 +311,27 @@ function T.filterIconDrawsAClosedScaledFunnelWithSixStrokes()
                     assert(call[1][coord] == offset + points[index][coord] * size / 24)
                     assert(call[2][coord] == offset + points[index + 1][coord] * size / 24)
                 end
+            end
+        end)
+    end
+end
+
+function T.trashIconDrawsNineScaledStrokes()
+    for _, size in ipairs({ 20, 32 }) do
+        local list = stubs.drawList()
+        withImgui({ get_window_draw_list = function() return list end }, function()
+            assert(Draw.icon("delete", "trash", 30, 40, size, Theme.colors.warning, 2))
+            local segments = {
+                { 4, 7, 20, 7 }, { 9, 7, 9, 4 }, { 9, 4, 15, 4 }, { 15, 4, 15, 7 },
+                { 6, 7, 7, 20 }, { 7, 20, 17, 20 }, { 17, 20, 18, 7 },
+                { 10, 11, 10, 16 }, { 14, 11, 14, 16 },
+            }
+            assert(#list.calls == #segments)
+            for index, call in ipairs(list.calls) do
+                local points = segments[index]
+                assert(call.name == "add_line" and call[3] == Theme.colors.warning and call[4] == 2)
+                assert(call[1][1] == 30 + points[1] * size / 24 and call[1][2] == 40 + points[2] * size / 24)
+                assert(call[2][1] == 30 + points[3] * size / 24 and call[2][2] == 40 + points[4] * size / 24)
             end
         end)
     end

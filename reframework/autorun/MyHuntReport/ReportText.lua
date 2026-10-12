@@ -2,6 +2,7 @@ local Theme = require("MyHuntReport.Theme")
 local Locale = require("MyHuntReport.Locale")
 local Format = require("MyHuntReport.Format")
 local Version = require("MyHuntReport.Version")
+local HistoryFilter = require("MyHuntReport.HistoryFilter")
 
 local ReportText = {}
 
@@ -90,13 +91,21 @@ function ReportText.headerWeaponText(quest)
     return weaponNames(quest)
 end
 
+function ReportText.partyText(size)
+    if size == 1 then return L("party_solo") end
+    return string.format(L("party_count"), size)
+end
+
 function ReportText.metaText(snapshot)
     snapshot = snapshot or {}
     local quest = snapshot.quest or {}
-    local time = Format.duration(quest.elapsedSeconds or 0)
+    local parts = {}
     local monsters = monsterNames(snapshot.monsters)
-    if monsters == "" then return time end
-    return monsters .. " · " .. time
+    if monsters ~= "" then parts[#parts + 1] = monsters end
+    parts[#parts + 1] = Format.duration(quest.elapsedSeconds or 0)
+    local size = HistoryFilter.partySize(quest)
+    if size then parts[#parts + 1] = ReportText.partyText(size) end
+    return table.concat(parts, " · ")
 end
 
 function ReportText.versionText(snapshot)
