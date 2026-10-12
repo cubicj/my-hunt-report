@@ -12,6 +12,7 @@ local AXES = {
     { key = "levels", columns = 5 },
     { key = "species", columns = 3 },
     { key = "variants", columns = 4 },
+    { key = "players", columns = 4 },
 }
 
 function HistoryFilterWindow.placement(bounds, display, scale)

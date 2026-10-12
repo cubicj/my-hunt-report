@@ -2423,7 +2423,7 @@ function T.historyFilterEmptyHistoryHasNoChipsOrOptionsAndMutedIcon()
             if item.window == FILTER_WINDOW and item.text == "-" then dashes = dashes + 1 end
             if item.text == Locale.text("history_empty") then empty = true end
         end
-        assert(dashes == 4 and empty)
+        assert(dashes == 5 and empty)
     end)
 end
 
@@ -2541,6 +2541,39 @@ function T.historyFilterNamesFallBackToIdentifiers()
     end)
 end
 
+function T.historyFilterPlayersAxisLabelsChecksAndChips()
+    withHistoryFilters(function(ui)
+        local records = { filterRecord(10, 5, 32, 0), filterRecord(3, 5, 33, 2), filterRecord(3, 10, 34, 0), filterRecord(10, 10, 35, 0) }
+        records[1].quest.playerCount, records[2].quest.playerCount, records[3].quest.playerCount = 4, 1, 4.0
+        ui.entries = records
+        ui.openFilters()
+        local titled = false
+        for _, item in ipairs(ui.texts) do
+            if item.text == Locale.text("history_filter_players") then titled = true end
+        end
+        assert(titled)
+        local players = {}
+        for _, item in ipairs(ui.checkboxes) do
+            if item.id:find("##filterplayers:", 1, true) then players[#players + 1] = item end
+        end
+        assert(#players == 2)
+        assert(players[1].id == "##filterplayers:1" and players[1].text:find("솔로", 1, true) == 1)
+        assert(players[2].id == "##filterplayers:4" and players[2].text:find("4인", 1, true) == 1)
+        ui.check("players", 4, true)
+        ui.draw()
+        assert(ui.rows() == 2)
+        local chips = ui.chips()
+        assert(#chips == 1 and chips[1].id == "##historyChipplayers:4" and chips[1].text:find("4인 ×", 1, true) == 1)
+        ui.check("variants", "arch", true)
+        ui.draw()
+        chips = ui.chips()
+        assert(#chips == 2 and chips[1].id == "##historyChipvariants:arch" and chips[2].id == "##historyChipplayers:4")
+        assert(ui.rows() == 0)
+        ui.draw("##historyChipplayers:4")
+        assert(not ui.checkbox("players", 4).checked)
+    end)
+end
+
 function T.historyFilterCachesOptionsNamesChipsAndMatchesBetweenChanges()
     withHistoryFilters(function(ui)
         local Filter = require("MyHuntReport.HistoryFilter")
@@ -2588,14 +2621,14 @@ function T.historyFilterDiagnosticsReportSetsOncePerChangeWithoutSuppression()
             ui.check("weapons", 10, index % 2 == 0)
             assert(#lines() == index)
         end
-        assert(lines()[12]:find("weapons=[10] levels=[] species=[] variants=[] shown=1/2", 1, true))
+        assert(lines()[12]:find("weapons=[10] levels=[] species=[] variants=[] players=[] shown=1/2", 1, true))
         ui.draw()
         assert(#lines() == 12)
         ui.entries = { ui.entries[2] }
         ReportWindow.showHistory()
         ui.draw()
         assert(#lines() == 13)
-        assert(lines()[13]:find("weapons=[] levels=[] species=[] variants=[] shown=1/1", 1, true))
+        assert(lines()[13]:find("weapons=[] levels=[] species=[] variants=[] players=[] shown=1/1", 1, true))
     end)
 end
 
@@ -2630,13 +2663,14 @@ function T.historyFilterGridsUseFixedColumnsAndChipsWrapAtBothFontSizes()
             return label.kind == "weapon" and "Weapon number " .. label.type or "Monster number " .. label.emId
         end)
         for index = 1, 7 do ui.entries[index] = filterRecord(index, index, index, index % 3) end
+        for index = 1, 7 do ui.entries[index].quest.playerCount = (index - 1) % 4 + 1 end
         ui.entries[1].monsters[1].label.roleId = 3
         for _, fontSize in ipairs({ 18, 24 }) do
             Settings.get().fontSize = fontSize
             ReportWindow.hide()
             ui.openFilters()
             local contentWidth = math.floor(480 * fontSize / 18)
-            for axis, columns in pairs({ weapons = 3, levels = 5, species = 3, variants = 4 }) do
+            for axis, columns in pairs({ weapons = 3, levels = 5, species = 3, variants = 4, players = 4 }) do
                 local items = {}
                 for _, item in ipairs(ui.checkboxes) do if item.id:find("##filter" .. axis .. ":", 1, true) then items[#items + 1] = item end end
                 assert(#items >= columns)
@@ -2950,9 +2984,9 @@ function T.historyFilterWindowClipsLongLabelsWithoutAClipCallback()
             button = function() return false end,
         }, { __index = original })
         local ctx = { fonts = {}, sizes = { body = 18, small = 18 }, scale = 1 }
-        local options = { weapons = { 1 }, levels = {}, species = {}, variants = {} }
-        local names = { weapons = { [1] = string.rep("가", 40) }, levels = {}, species = {}, variants = {} }
-        local selection = { weapons = {}, levels = {}, species = {}, variants = {} }
+        local options = { weapons = { 1 }, levels = {}, species = {}, variants = {}, players = {} }
+        local names = { weapons = { [1] = string.rep("가", 40) }, levels = {}, species = {}, variants = {}, players = {} }
+        local selection = { weapons = {}, levels = {}, species = {}, variants = {}, players = {} }
         local opened = Window.draw(ctx, options, names, selection, function() end, nil)
         assert(opened == true)
         assert(#labels == 1, #labels)

@@ -51,7 +51,7 @@ local state = {
     provider = nil,
     relabeler = nil,
     nameResolver = nil,
-    historySelection = { weapons = {}, levels = {}, species = {}, variants = {} },
+    historySelection = { weapons = {}, levels = {}, species = {}, variants = {}, players = {} },
     historyOptions = nil,
     historyLabels = nil,
     historyChips = {},
@@ -605,7 +605,7 @@ local function relabelSnapshot(value)
     if not ok then Log.error("snapshot relabel failed: " .. tostring(err), "report:relabel") end
 end
 
-local FILTER_AXES = { "weapons", "levels", "species", "variants" }
+local FILTER_AXES = { "weapons", "levels", "species", "variants", "players" }
 
 local function updateFilteredHistory(changed)
     invalidatePresentation()
@@ -648,11 +648,12 @@ end
 local function rebuildHistoryFilters()
     if state.entries == nil then return end
     local options = HistoryFilter.options(state.entries)
-    local names = { weapons = {}, levels = {}, species = {}, variants = {} }
+    local names = { weapons = {}, levels = {}, species = {}, variants = {}, players = {} }
     for _, id in ipairs(options.weapons) do names.weapons[id] = filterName({ kind = "weapon", type = id }, id) end
     for _, id in ipairs(options.species) do names.species[id] = filterName({ kind = "monster", emId = id }, id) end
     for _, level in ipairs(options.levels) do names.levels[level] = "★" .. level end
     for _, variant in ipairs(options.variants) do names.variants[variant] = L("history_variant_" .. variant) end
+    for _, size in ipairs(options.players) do names.players[size] = ReportText.partyText(size) end
     table.sort(options.species, function(a, b)
         if names.species[a] == names.species[b] then return a < b end
         return names.species[a] < names.species[b]

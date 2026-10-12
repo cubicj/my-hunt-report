@@ -454,4 +454,17 @@ function T.skillGroupChildLabelsMatchTheDesign()
     Locale.resolve("en")
 end
 
+function T.partySizeStringsMatchTheDesign()
+    local expected = {
+        en = { party_solo = "Solo", party_count = "%dP", history_filter_players = "Party" },
+        ko = { party_solo = "솔로", party_count = "%d인", history_filter_players = "인원" },
+    }
+    local language = Locale.current()
+    for code, values in pairs(expected) do
+        Locale.resolve(code)
+        for key, value in pairs(values) do assert(Locale.text(key) == value, code .. ":" .. key) end
+    end
+    Locale.resolve(language)
+end
+
 return T
