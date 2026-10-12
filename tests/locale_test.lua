@@ -467,4 +467,17 @@ function T.partySizeStringsMatchTheDesign()
     Locale.resolve(language)
 end
 
+function T.historyDeleteStringsMatchTheDesign()
+    local expected = {
+        en = { history_delete = "Delete", history_delete_confirm = "Press again to delete", history_delete_failed = "Delete failed." },
+        ko = { history_delete = "삭제", history_delete_confirm = "한 번 더 누르면 삭제", history_delete_failed = "삭제에 실패했습니다." },
+    }
+    local language = Locale.current()
+    for code, values in pairs(expected) do
+        Locale.resolve(code)
+        for key, value in pairs(values) do assert(Locale.text(key) == value, code .. ":" .. key) end
+    end
+    Locale.resolve(language)
+end
+
 return T
