@@ -2,18 +2,18 @@ local HistoryFilter = require("MyHuntReport.HistoryFilter")
 
 local T = {}
 
-local function selection(weapons, levels, species, variants)
-    local result = { weapons = {}, levels = {}, species = {}, variants = {} }
-    for index, axis in ipairs({ "weapons", "levels", "species", "variants" }) do
-        for _, value in ipairs(({ weapons or {}, levels or {}, species or {}, variants or {} })[index]) do result[axis][value] = true end
+local function selection(weapons, levels, species, variants, players)
+    local result = { weapons = {}, levels = {}, species = {}, variants = {}, players = {} }
+    for index, axis in ipairs({ "weapons", "levels", "species", "variants", "players" }) do
+        for _, value in ipairs(({ weapons or {}, levels or {}, species or {}, variants or {}, players or {} })[index]) do result[axis][value] = true end
     end
     return result
 end
 
-local function entry(weapons, level, labels)
+local function entry(weapons, level, labels, players)
     local monsters = {}
     for _, label in ipairs(labels or {}) do monsters[#monsters + 1] = { label = label } end
-    return { quest = { weapons = weapons, level = level }, monsters = monsters }
+    return { quest = { weapons = weapons, level = level, playerCount = players }, monsters = monsters }
 end
 
 function T.optionsDeduplicateAndOrderWeaponsLevelsAndVariants()
@@ -195,6 +195,74 @@ function T.isActiveAndClearKeepTheSelectionAndSetsOwnedByTheCaller()
     assert(HistoryFilter.clear(chosen))
     assert(not HistoryFilter.isActive(chosen) and not HistoryFilter.clear(chosen))
     assert(chosen.weapons == weapons and chosen.levels == levels)
+end
+
+function T.partySizeAcceptsOnlyIntegersFromOneToFour()
+    for _, value in ipairs({ 1, 2, 3, 4 }) do
+        assert(HistoryFilter.partySize({ playerCount = value }) == value)
+    end
+    local normalized = HistoryFilter.partySize({ playerCount = 4.0 })
+    assert(normalized == 4 and math.type(normalized) == "integer")
+    for _, value in ipairs({ 0, 5, 2.5, -1, "3", true, 0 / 0, math.huge }) do
+        assert(HistoryFilter.partySize({ playerCount = value }) == nil, tostring(value))
+    end
+    assert(HistoryFilter.partySize({}) == nil)
+    assert(HistoryFilter.partySize(nil) == nil)
+    assert(HistoryFilter.partySize("quest") == nil)
+end
+
+function T.optionsCollectValidPartySizesAscending()
+    local records = {}
+    for _, value in ipairs({ 4, 1, 4, 2, 0, 5, 2.5, "3", 3.0 }) do records[#records + 1] = entry({}, 5, {}, value) end
+    records[#records + 1] = entry({}, 5)
+    local players = HistoryFilter.options(records).players
+    assert(#players == 4)
+    for index, value in ipairs({ 1, 2, 3, 4 }) do
+        assert(players[index] == value and math.type(players[index]) == "integer")
+    end
+    assert(#HistoryFilter.options({}).players == 0)
+end
+
+function T.playersAxisMatchesSelectedSizesWithOrInsideAndAndAcross()
+    local solo = entry({ { type = 10 } }, 5, {}, 1)
+    local duo = entry({ { type = 3 } }, 5, {}, 2)
+    local full = entry({ { type = 10 } }, 5, {}, 4)
+    assert(HistoryFilter.matches(solo, selection(nil, nil, nil, nil, { 1 })))
+    assert(not HistoryFilter.matches(duo, selection(nil, nil, nil, nil, { 1 })))
+    local multi = selection(nil, nil, nil, nil, { 2, 3, 4 })
+    assert(not HistoryFilter.matches(solo, multi) and HistoryFilter.matches(duo, multi) and HistoryFilter.matches(full, multi))
+    local combined = selection({ 10 }, nil, nil, nil, { 2, 4 })
+    assert(not HistoryFilter.matches(solo, combined) and not HistoryFilter.matches(duo, combined) and HistoryFilter.matches(full, combined))
+    local filtered = HistoryFilter.apply({ solo, duo, full }, multi)
+    assert(#filtered == 2 and filtered[1] == duo and filtered[2] == full)
+end
+
+function T.missingPartySizeDropsOutOnlyWhileThePlayersAxisIsActive()
+    local records = { entry({ { type = 10 } }, 5), entry({ { type = 10 } }, 5, {}, 0), entry({ { type = 10 } }, 5, {}, 2.5), {} }
+    for index, record in ipairs(records) do
+        assert(not HistoryFilter.matches(record, selection(nil, nil, nil, nil, { 1, 2, 3, 4 })))
+        if index < 4 then
+            assert(HistoryFilter.matches(record, selection({ 10 })))
+            assert(HistoryFilter.matches(record, selection(nil, { 5 })))
+        end
+        assert(HistoryFilter.matches(record, selection()))
+    end
+end
+
+function T.pruneIsActiveAndClearCoverThePlayersAxis()
+    local chosen = selection({ 10 }, nil, nil, nil, { 1, 4 })
+    assert(HistoryFilter.prune(chosen, { weapons = { 10 }, levels = {}, species = {}, variants = {}, players = { 4 } }))
+    assert(chosen.players[4] and not chosen.players[1] and chosen.weapons[10])
+    assert(HistoryFilter.prune(chosen, { weapons = { 10 }, levels = {}, species = {}, variants = {}, players = {} }))
+    assert(next(chosen.players) == nil)
+    chosen = selection(nil, nil, nil, nil, { 2 })
+    assert(HistoryFilter.isActive(chosen))
+    local players = chosen.players
+    assert(HistoryFilter.clear(chosen, "players"))
+    assert(chosen.players == players and next(players) == nil and not HistoryFilter.isActive(chosen))
+    chosen = selection({ 3 }, nil, nil, nil, { 2 })
+    assert(HistoryFilter.clear(chosen))
+    assert(not HistoryFilter.isActive(chosen))
 end
 
 return T
