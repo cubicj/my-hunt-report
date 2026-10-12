@@ -76,7 +76,7 @@ local function L(key)
 end
 
 local historyRows = {}
-local entryLines = {}
+local entryLines = setmetatable({}, { __mode = "k" })
 local historyOutcome = nil
 local reportText = nil
 local frameFonts = nil
@@ -734,7 +734,6 @@ local function loadHistory()
     if state.entries ~= nil then return end
     local entries, _, lines = History.readAll()
     state.entries = {}
-    entryLines = {}
     for index = #entries, 1, -1 do
         local entry = entries[index]
         relabelSnapshot(entry)

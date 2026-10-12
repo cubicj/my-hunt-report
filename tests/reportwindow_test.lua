@@ -522,6 +522,85 @@ local function withHistoryDelete(callback)
     if not ok then error(err, 0) end
 end
 
+local function withFreshHistoryDelete(callback)
+    withHistoryDelete(function(ui)
+        local History = require("MyHuntReport.History")
+        local storedEndedAts = { 100, false, 200, 300 }
+        ui.reads = 0
+        History.readAll = function()
+            ui.reads = ui.reads + 1
+            local entries, lines, skipped = {}, {}, 0
+            for line, endedAt in ipairs(storedEndedAts) do
+                if endedAt then
+                    entries[#entries + 1] = deleteRecord(endedAt)
+                    lines[#entries] = line
+                else
+                    skipped = skipped + 1
+                end
+            end
+            ui.entries, ui.lines = entries, lines
+            return entries, skipped, lines
+        end
+        History.remove = function(line, endedAt)
+            ui.removals[#ui.removals + 1] = { line = line, endedAt = endedAt }
+            if line == nil or storedEndedAts[line] == nil then return false, "missing" end
+            if not storedEndedAts[line] or storedEndedAts[line] ~= endedAt then return false, "mismatch" end
+            table.remove(storedEndedAts, line)
+            return true
+        end
+        callback(ui)
+    end)
+end
+
+function T.historyDeletePreservesLineAfterForwardReloadsFreshEntries()
+    withFreshHistoryDelete(function(ui)
+        ReportWindow.show(snapshot("clear"))
+        ui.openNewest()
+        local opened = ReportWindow.debugState().snapshot
+        assert(opened.quest.endedAt == 300 and ui.reads == 1)
+        assert(ReportWindow.back() and ReportWindow.screen() == "history")
+        assert(ReportWindow.back() and ReportWindow.screen() == "live")
+        assert(ReportWindow.forward() and ReportWindow.screen() == "history")
+        ui.draw()
+        assert(ui.reads == 2 and ui.entries[3] ~= opened)
+        assert(ui.entries[3].quest.endedAt == opened.quest.endedAt)
+        assert(ReportWindow.forward() and ReportWindow.screen() == "past")
+        assert(ReportWindow.debugState().snapshot == opened)
+        ui.draw("삭제##delete")
+        assert(#ui.removals == 0)
+        ui.draw("삭제##delete")
+        assert(#ui.removals == 1)
+        assert(ui.removals[1].line == 4, "expected line=4, got " .. tostring(ui.removals[1].line))
+        assert(ui.removals[1].endedAt == 300)
+        assert(ReportWindow.screen() == "history" and ui.reads == 3)
+        assert(#ui.entries == 2 and ReportWindow.debugState().forwardSnapshot == nil)
+    end)
+end
+
+function T.historyDeleteUsesShiftedLineAfterDeletingAnOlderEntry()
+    withFreshHistoryDelete(function(ui)
+        ui.openNewest()
+        local newest = ReportWindow.debugState().snapshot
+        assert(ReportWindow.back())
+        ui.draw("##history3")
+        assert(ReportWindow.debugState().snapshot.quest.endedAt == 100)
+        ui.draw("삭제##delete")
+        ui.draw("삭제##delete")
+        assert(#ui.removals == 1 and ui.removals[1].line == 1 and ui.removals[1].endedAt == 100)
+        assert(ReportWindow.screen() == "history" and ui.reads == 2)
+        assert(ui.lines[1] == 2 and ui.lines[2] == 3)
+        ui.draw("##history1")
+        local survivor = ReportWindow.debugState().snapshot
+        assert(survivor ~= newest and survivor.quest.endedAt == 300)
+        ui.draw("삭제##delete")
+        assert(#ui.removals == 1)
+        ui.draw("삭제##delete")
+        assert(#ui.removals == 2 and ui.removals[2].line == 3 and ui.removals[2].endedAt == 300)
+        assert(ReportWindow.screen() == "history" and ui.reads == 3)
+        assert(#ui.entries == 1 and ui.entries[1].quest.endedAt == 200)
+    end)
+end
+
 function T.historyDeleteButtonAppearsOnlyOnAReportOpenedFromHistory()
     withHistoryDelete(function(ui)
         ReportWindow.show(snapshot("clear"))
