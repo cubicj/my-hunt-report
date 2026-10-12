@@ -278,4 +278,70 @@ function T.appendOmitsDiagnosticsWithoutTouchingTheSnapshot()
     assert(entries[1].diagnostics == nil, "diagnostics must not be persisted")
 end
 
+function T.readAllReturnsLineNumbersCountingSkippedLines()
+    History.resetForTests()
+    stubs.files[History.FILE] = stubs.encode({ id = 1 }) .. "\n{broken\n   \n" .. stubs.encode({ id = 4 }) .. "\n\n\n" .. stubs.encode({ id = 5 }) .. "\n"
+    local entries, skipped, lines = History.readAll()
+    assert(#entries == 3 and skipped == 1)
+    assert(#lines == 3 and lines[1] == 1 and lines[2] == 4 and lines[3] == 5)
+    assert(entries[2].id == 4 and entries[3].id == 5)
+end
+
+function T.readAllWithoutFileReturnsEmptyLineNumbers()
+    History.resetForTests()
+    local entries, skipped, lines = History.readAll()
+    assert(#entries == 0 and skipped == 0 and type(lines) == "table" and #lines == 0)
+end
+
+local function removalFile()
+    return stubs.encode({ quest = { endedAt = 100 } }) .. "\n{broken\n   \n" .. stubs.encode({ quest = { endedAt = 200 } }) .. "\n" .. stubs.encode({ quest = { endedAt = 300 } }) .. "\n"
+end
+
+function T.removeDropsTheTargetLineAndKeepsTheOthersInOrder()
+    History.resetForTests()
+    stubs.files[History.FILE] = removalFile()
+    assert(History.remove(4, 200) == true)
+    assert(stubs.files[History.FILE] == stubs.encode({ quest = { endedAt = 100 } }) .. "\n{broken\n" .. stubs.encode({ quest = { endedAt = 300 } }) .. "\n")
+    local entries, skipped, lines = History.readAll()
+    assert(#entries == 2 and skipped == 1 and lines[1] == 1 and lines[2] == 3)
+    assert(History.remove(3, 300) == true)
+    assert(History.remove(1, 100) == true)
+    assert(stubs.files[History.FILE] == "{broken\n")
+end
+
+function T.removeRefusesMismatchesAndMissingLinesWithoutWriting()
+    History.resetForTests()
+    local original = removalFile()
+    stubs.files[History.FILE] = original
+    local cases = {
+        { 4, 999, "mismatch" }, { 4, nil, "mismatch" }, { 2, 200, "mismatch" }, { 3, 200, "mismatch" },
+        { 0, 100, "missing" }, { 6, 100, "missing" }, { nil, 100, "missing" }, { 1.5, 100, "missing" },
+    }
+    for _, case in ipairs(cases) do
+        local ok, reason = History.remove(case[1], case[2])
+        assert(ok == false and reason == case[3], tostring(case[1]) .. ":" .. tostring(reason))
+        assert(stubs.files[History.FILE] == original)
+    end
+    stubs.files[History.FILE] = stubs.encode({ quest = {} }) .. "\n" .. stubs.encode({ id = 2 }) .. "\n"
+    local ok, reason = History.remove(1, nil)
+    assert(ok == false and reason == "mismatch")
+    ok, reason = History.remove(2, nil)
+    assert(ok == false and reason == "mismatch")
+end
+
+function T.removeReportsReadAndWriteFailures()
+    History.resetForTests()
+    local ok, reason = History.remove(1, 100)
+    assert(ok == false and reason == "read")
+    stubs.files[History.FILE] = removalFile()
+    local write = fs.write
+    for _, failing in ipairs({ function() error("denied") end, function() return false end }) do
+        fs.write = failing
+        ok, reason = History.remove(1, 100)
+        assert(ok == false and reason == "write")
+    end
+    fs.write = write
+    assert(stubs.files[History.FILE] == removalFile())
+end
+
 return T

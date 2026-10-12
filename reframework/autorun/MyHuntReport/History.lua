@@ -97,15 +97,17 @@ end
 
 function History.readAll()
     local path = History.FILE
-    local entries = {}
+    local entries, lines = {}, {}
     local okRead, text = pcall(fs.read, path)
-    if not okRead or type(text) ~= "string" then return entries, 0 end
-    local skipped = 0
+    if not okRead or type(text) ~= "string" then return entries, 0, lines end
+    local skipped, number = 0, 0
     for line in text:gmatch("[^\n]+") do
+        number = number + 1
         if line:match("%S") then
             local okParse, value = pcall(json.load_string, line)
             if okParse and type(value) == "table" then
                 entries[#entries + 1] = value
+                lines[#entries] = number
             else
                 skipped = skipped + 1
             end
@@ -114,7 +116,28 @@ function History.readAll()
     if skipped > 0 then
         Log.error("history: skipped " .. skipped .. " unreadable lines", "history:skipped")
     end
-    return entries, skipped
+    return entries, skipped, lines
+end
+
+function History.remove(line, endedAt)
+    local okRead, text = pcall(fs.read, History.FILE)
+    if not okRead or type(text) ~= "string" then return false, "read" end
+    local kept, target, number = {}, nil, 0
+    for current in text:gmatch("[^\n]+") do
+        number = number + 1
+        if number == line then
+            target = current
+        elseif current:match("%S") then
+            kept[#kept + 1] = current .. "\n"
+        end
+    end
+    if target == nil then return false, "missing" end
+    local okParse, value = pcall(json.load_string, target)
+    local quest = okParse and type(value) == "table" and value.quest or nil
+    if type(quest) ~= "table" or quest.endedAt == nil or quest.endedAt ~= endedAt then return false, "mismatch" end
+    local okWrite, result = pcall(fs.write, History.FILE, table.concat(kept))
+    if not okWrite or result == false then return false, "write" end
+    return true
 end
 
 function History.appendMode()
