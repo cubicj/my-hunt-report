@@ -50,6 +50,12 @@ local BOOLEAN_FIELDS = {
     { id = 240, field = "_IsActiveChallengerAttr" },
 }
 local FRENZY_ID = 194
+local FRENZY_KEYS = { [0] = "frenzy:infect", [1] = "frenzy:outbreak", [2] = "frenzy:overcome" }
+local FRENZY_LABELS = {
+    ["frenzy:infect"] = "skill_frenzy_infect",
+    ["frenzy:outbreak"] = "skill_frenzy_outbreak",
+    ["frenzy:overcome"] = "skill_frenzy_overcome",
+}
 local WEAKNESS_EXPLOIT_ID = 63
 local WEX_WOUND = "wex:wound"
 local MINDS_EYE_ID = 19
@@ -60,6 +66,7 @@ local WEAK_HITZONE = 45
 local equipped = nil
 local lastEquippedPoll = nil
 local seenActive = {}
+local lastFrenzy = nil
 local openers = nil
 local installed = false
 
@@ -244,17 +251,28 @@ local function booleanSet(info, equippedSet)
     return set
 end
 
-local function frenzyActive(hunter)
-    local ok, active = pcall(function()
+local function frenzyState(hunter)
+    local ok, frenzy, active, state = pcall(function()
         local frenzy = hunter:get_HunterStatus()._BadConditions._Frenzy
-        return frenzy._IsActive == true and frenzy._State == 2
+        return frenzy, frenzy._IsActive, frenzy._State
     end)
     if not ok then
         Log.error("skill field unreadable _Frenzy", "skill:field:_Frenzy")
-        return false
+        return nil
     end
-    if active then noteActive(FRENZY_ID) end
-    return active == true
+    if not lastFrenzy or active ~= lastFrenzy.active or state ~= lastFrenzy.state then
+        if Log.isDeveloperMode() then
+            local prevActive = lastFrenzy and lastFrenzy.active
+            local prevState = lastFrenzy and lastFrenzy.state
+            local okTimer, timer = pcall(function() return frenzy._DurationTimer end)
+            if not okTimer then timer = nil end
+            Log.trace(string.format("frenzy state %s/%s -> %s/%s timer=%s",
+                tostring(prevActive), tostring(prevState), tostring(active), tostring(state), tostring(timer)))
+        end
+        lastFrenzy = { active = active, state = state }
+    end
+    if active == true then return FRENZY_KEYS[state] end
+    return nil
 end
 
 function SkillState.refreshEquipped()
@@ -320,6 +338,7 @@ function SkillState.reset()
     equipped = nil
     lastEquippedPoll = nil
     seenActive = {}
+    lastFrenzy = nil
 end
 
 function SkillState.burstLevel(timer, hitCount)
@@ -413,7 +432,7 @@ function SkillState.activeSet(context)
     local info = paramInfo()
     if info then
         eachInfo(info, function(skillId, timer)
-            if skillId ~= BURST_SKILL and timer > 0 then set[skillId] = true end
+            if skillId ~= BURST_SKILL and skillId ~= FRENZY_ID and timer > 0 then set[skillId] = true end
         end)
         local level = burstState(info)
         if level then set[level] = true end
@@ -424,7 +443,8 @@ function SkillState.activeSet(context)
     end
     if equippedIds[FRENZY_ID] then
         local hunter = Game.masterHunter()
-        if hunter and frenzyActive(hunter) then set[FRENZY_ID] = true end
+        local key = hunter and frenzyState(hunter)
+        if key then set[key] = true end
     end
     for id in pairs(SkillState.conditionSet(context, equippedIds)) do set[id] = true end
     for id in pairs(melodySet()) do set[id] = true end
@@ -439,6 +459,9 @@ function SkillState.skillName(skillId)
     if skillId == BURST_LV1 then return string.format(Locale.text("burst_stage"), SkillState.skillName(BURST_SKILL), 1) end
     if skillId == BURST_LV2 then return string.format(Locale.text("burst_stage"), SkillState.skillName(BURST_SKILL), 2) end
     if skillId == WEX_WOUND then return string.format(Locale.text("wex_wound"), SkillState.skillName(WEAKNESS_EXPLOIT_ID)) end
+    if FRENZY_LABELS[skillId] then
+        return string.format(Locale.text("frenzy_state"), SkillState.skillName(FRENZY_ID), Locale.text(FRENZY_LABELS[skillId]))
+    end
     local key = Locale.textKey() .. ":" .. tostring(skillId)
     local cached = names[key]
     if cached then return cached end
@@ -464,8 +487,8 @@ function SkillState.skillName(skillId)
 end
 
 local function trackedOrder(a, b)
-    local aId = type(a) == "number" and a or (a == WEX_WOUND and WEAKNESS_EXPLOIT_ID or BURST_SKILL)
-    local bId = type(b) == "number" and b or (b == WEX_WOUND and WEAKNESS_EXPLOIT_ID or BURST_SKILL)
+    local aId = type(a) == "number" and a or (a == WEX_WOUND and WEAKNESS_EXPLOIT_ID or (FRENZY_LABELS[a] and FRENZY_ID or BURST_SKILL))
+    local bId = type(b) == "number" and b or (b == WEX_WOUND and WEAKNESS_EXPLOIT_ID or (FRENZY_LABELS[b] and FRENZY_ID or BURST_SKILL))
     if aId ~= bId then return aId < bId end
     return tostring(a) < tostring(b)
 end
@@ -480,6 +503,8 @@ function SkillState.trackedIds()
             if id == BURST_SKILL then
                 ids[#ids + 1] = BURST_LV1
                 ids[#ids + 1] = BURST_LV2
+            elseif id == FRENZY_ID then
+                for state = 0, 2 do ids[#ids + 1] = FRENZY_KEYS[state] end
             else
                 ids[#ids + 1] = id
                 if id == WEAKNESS_EXPLOIT_ID then ids[#ids + 1] = WEX_WOUND end

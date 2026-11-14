@@ -360,4 +360,76 @@ function T.skillRowsChildNamesFollowTheLanguage()
     assert(shape(rows) == "약점 특효=0.625|>Weak point=0.375|>Wound=0.25|Burst=0.5|>Stage 1=0.25|>Stage 2=0.25", shape(rows))
 end
 
+local function frenzyName(id)
+    assert(id == 194 or id == 115, tostring(id))
+    return id == 194 and "Black Eclipse" or "Burst"
+end
+
+function T.skillRowsPlaceFrenzyByItsSummedShare()
+    Locale.resolve("en")
+    local rows = ReportText.skillRows({
+        { id = 12, name = "C", share = 0.5 },
+        { id = "frenzy:overcome", name = "Overcome", share = 0.375 },
+        { id = "frenzy:infect", name = "Infected", share = 0.25 },
+        { id = "burst:stage1", name = "Burst Stage 1", share = 0.125 },
+    }, frenzyName)
+    assert(shape(rows) == "Black Eclipse=0.625|>Overcome=0.375|>Infected=0.25|C=0.5|Burst=0.125|>Stage 1=0.125", shape(rows))
+    assert(rows[1].child == false and rows[1].valueKind == nil)
+end
+
+function T.skillRowsFrenzyIncludesOutbreakAndOrdersTies()
+    Locale.resolve("en")
+    local rows = ReportText.skillRows({
+        { id = "frenzy:infect", name = "Infected", share = 0.25 },
+        { id = "frenzy:outbreak", name = "Outbreak", share = 0.125 },
+    }, frenzyName)
+    assert(shape(rows) == "Black Eclipse=0.375|>Infected=0.25|>Outbreak=0.125", shape(rows))
+    rows = ReportText.skillRows({
+        { id = "frenzy:overcome", name = "Overcome", share = 0.125 },
+        { id = "frenzy:outbreak", name = "Outbreak", share = 0.125 },
+        { id = "frenzy:infect", name = "Infected", share = 0.125 },
+    }, frenzyName)
+    assert(shape(rows) == "Black Eclipse=0.375|>Infected=0.125|>Outbreak=0.125|>Overcome=0.125", shape(rows))
+end
+
+function T.skillRowsFrenzyHidesZeroChildrenAndKeepsZeroParent()
+    Locale.resolve("en")
+    local input = {
+        { id = "frenzy:infect", name = "Infected", share = 0 },
+        { id = "frenzy:outbreak", name = "Outbreak", share = 0.125 },
+        { id = "frenzy:overcome", name = "Overcome", share = 0 },
+    }
+    local rows = ReportText.skillRows(input, frenzyName)
+    assert(shape(rows) == "Black Eclipse=0.125|>Outbreak=0.125", shape(rows))
+    input[2].share = 0
+    rows = ReportText.skillRows(input, frenzyName)
+    assert(shape(rows) == "Black Eclipse=0", shape(rows))
+end
+
+function T.skillRowsLegacyFrenzyKeepsParentAndAddsOvercome()
+    Locale.resolve("en")
+    local input = {
+        { id = 194, name = "Stored Eclipse", share = 0.5, valueKind = "uptime" },
+        { id = 12, name = "C", share = 0.25 },
+    }
+    local rows = ReportText.skillRows(input, burstName)
+    assert(shape(rows) == "Stored Eclipse=0.5|>Overcome=0.5|C=0.25", shape(rows))
+    assert(rows[1].child == false and rows[1].valueKind == "uptime")
+    input[1].share = 0
+    rows = ReportText.skillRows(input, burstName)
+    assert(shape(rows) == "C=0.25|Stored Eclipse=0", shape(rows))
+    assert(rows[2].valueKind == "uptime")
+end
+
+function T.skillRowsFrenzyChildNamesFollowKoreanLanguage()
+    Locale.resolve("ko")
+    local rows = ReportText.skillRows({
+        { id = "frenzy:overcome", name = "Overcome", share = 0.375 },
+        { id = "frenzy:infect", name = "Infected", share = 0.25 },
+        { id = "frenzy:outbreak", name = "Outbreak", share = 0.125 },
+    }, frenzyName)
+    Locale.resolve("en")
+    assert(shape(rows) == "Black Eclipse=0.75|>극복=0.375|>감염=0.25|>극복 실패=0.125", shape(rows))
+end
+
 return T
