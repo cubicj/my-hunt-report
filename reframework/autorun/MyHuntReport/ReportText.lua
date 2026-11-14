@@ -133,6 +133,8 @@ end
 
 local BURST_SKILL_ID = 115
 local BURST_STAGE1, BURST_STAGE2 = "burst:stage1", "burst:stage2"
+local FRENZY_SKILL_ID = 194
+local FRENZY_INFECT, FRENZY_OUTBREAK, FRENZY_OVERCOME = "frenzy:infect", "frenzy:outbreak", "frenzy:overcome"
 local WEAKNESS_EXPLOIT_ID = 63
 local WEX_WOUND = "wex:wound"
 
@@ -174,7 +176,7 @@ function ReportText.skillRows(rows, skillName)
     local function addGroup(parent, children)
         groups[#groups + 1] = { parent = parent, children = children or {} }
     end
-    local burstShown = false
+    local burstShown, frenzyShown = false, false
     for _, row in ipairs(rows or {}) do
         local id = row.id
         if row.label and row.label.kind == "heal" then
@@ -188,6 +190,22 @@ function ReportText.skillRows(rows, skillName)
                     { key = "skill_burst_stage2", share = stage2 },
                 }))
             end
+        elseif id == FRENZY_INFECT or id == FRENZY_OUTBREAK or id == FRENZY_OVERCOME then
+            if not frenzyShown then
+                frenzyShown = true
+                local infect = shareOf(byId[FRENZY_INFECT])
+                local outbreak = shareOf(byId[FRENZY_OUTBREAK])
+                local overcome = shareOf(byId[FRENZY_OVERCOME])
+                addGroup(displayRow(skillName(FRENZY_SKILL_ID), infect + outbreak + overcome, nil, false), childRows({
+                    { key = "skill_frenzy_infect", share = infect },
+                    { key = "skill_frenzy_outbreak", share = outbreak },
+                    { key = "skill_frenzy_overcome", share = overcome },
+                }))
+            end
+        elseif id == FRENZY_SKILL_ID then
+            addGroup(displayRow(row.name, row.share, row.valueKind, false), childRows({
+                { key = "skill_frenzy_overcome", share = shareOf(row) },
+            }))
         elseif id == WEAKNESS_EXPLOIT_ID then
             local wound = shareOf(byId[WEX_WOUND])
             addGroup(displayRow(row.name, row.share, row.valueKind, false), childRows({
