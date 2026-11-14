@@ -454,6 +454,26 @@ function T.skillGroupChildLabelsMatchTheDesign()
     Locale.resolve("en")
 end
 
+function T.frenzyStringsMatchTheDesign()
+    local expected = {
+        en = { frenzy_state = "%s · %s", skill_frenzy_infect = "Infected", skill_frenzy_outbreak = "Outbreak", skill_frenzy_overcome = "Overcome" },
+        ko = { frenzy_state = "%s · %s", skill_frenzy_infect = "감염", skill_frenzy_outbreak = "극복 실패", skill_frenzy_overcome = "극복" },
+    }
+    local language = Locale.current()
+    local ok, err = pcall(function()
+        for code, values in pairs(expected) do
+            Locale.resolve(code)
+            local present = {}
+            for _, key in ipairs(Locale.keys(code)) do present[key] = true end
+            for key, value in pairs(values) do
+                assert(present[key] and Locale.text(key) == value, code .. ":" .. key)
+            end
+        end
+    end)
+    Locale.resolve(language)
+    if not ok then error(err, 0) end
+end
+
 function T.partySizeStringsMatchTheDesign()
     local expected = {
         en = { party_solo = "Solo", party_count = "%dP", history_filter_players = "Party" },

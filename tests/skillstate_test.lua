@@ -217,31 +217,68 @@ function T.activeSetReadsBooleanFields()
 end
 
 function T.activeSetFrenzyRequiresActiveOvercome()
-    local frenzy = { _IsActive = true, _State = 2 }
-    withHunter(fakeInfo({}), { [194] = true }, function()
-        assert(SkillState.activeSet()[194] == true)
-        frenzy._IsActive = false
-        assert(SkillState.activeSet()[194] == nil)
-        frenzy._IsActive = true
-        frenzy._State = 1
-        assert(SkillState.activeSet()[194] == nil)
+    local frenzy = {}
+    local cases = {
+        { true, 0, "frenzy:infect" },
+        { true, 1, "frenzy:outbreak" },
+        { true, 2, "frenzy:overcome" },
+        { false, 0 }, { false, 1 }, { false, 2 }, { true, 3 }, { true },
+    }
+    withHunter(fakeInfo({ _FrenzySlot = { _Skill = 194, _Timer = 3 } }), { [194] = true }, function()
+        for _, case in ipairs(cases) do
+            frenzy._IsActive, frenzy._State = case[1], case[2]
+            local set = SkillState.activeSet()
+            local expected = case[3] and { [case[3]] = true } or {}
+            assert(set[194] == nil)
+            assert(stubs.encode(set) == stubs.encode(expected), tostring(case[1]) .. "/" .. tostring(case[2]))
+        end
     end, frenzy)
 end
 
+function T.activeSetFrenzyNamesAndEquippedRows()
+    local originalCall, originalText = Game.callStatic, Game.messageText
+    Game.callStatic = function(_, _, id) return "guid:" .. tostring(id) end
+    Game.messageText = function(guid)
+        if guid == "guid:194" then return Locale.current() == "ko" and "흑식룡의 힘" or "Black Eclipse" end
+    end
+    local ok, err = pcall(function()
+        withHunter(fakeInfo({}), { [194] = true }, function()
+            local keys = { "frenzy:infect", "frenzy:outbreak", "frenzy:overcome" }
+            local expected = {
+                en = { "Black Eclipse · Infected", "Black Eclipse · Outbreak", "Black Eclipse · Overcome" },
+                ko = { "흑식룡의 힘 · 감염", "흑식룡의 힘 · 극복 실패", "흑식룡의 힘 · 극복" },
+            }
+            for _, language in ipairs({ "en", "ko" }) do
+                Locale.resolve(language)
+                for index, key in ipairs(keys) do assert(SkillState.skillName(key) == expected[language][index], key) end
+                local rows = SkillState.equippedTracked()
+                assert(#rows == 3)
+                for index, key in ipairs(keys) do
+                    assert(rows[index].id == key and rows[index].name == expected[language][index])
+                end
+            end
+        end)
+    end)
+    Game.callStatic, Game.messageText = originalCall, originalText
+    Locale.resolve("en")
+    if not ok then error(err, 0) end
+end
+
 function T.activeSetGatesAllNewSkillsByEquipment()
-    local info = fakeInfo({})
+    local info = fakeInfo({ _FrenzySlot = { _Skill = 194, _Timer = 3 } })
     info._IsActiveChallenger = true
     info._IsActiveFullCharge = true
     info._IsActiveKonshin = true
     info._IsAdrenalineRush = true
     withHunter(info, {}, function()
         assert(next((SkillState.activeSet({ rawHitzone = 30, wounded = true, hien = true }))) == nil)
-    end, { _IsActive = true, _State = 2 })
+    end, { _IsActive = true, _State = 0 })
     withHunter(info, ALL, function()
         local active = SkillState.activeSet({ rawHitzone = 30, wounded = true, hien = true })
         assert(active[19] and active[56] and active[63] == nil and active["wex:wound"] == nil)
         assert(active[59] == nil and active[194] == nil)
-    end, { _IsActive = true, _State = 2 })
+        assert(active["frenzy:infect"] == nil and active["frenzy:outbreak"] == nil and active["frenzy:overcome"] == nil)
+    end, { _IsActive = true, _State = 0 })
 end
 
 function T.unreadableBooleanAndFrenzyAreIsolated()
@@ -254,6 +291,7 @@ function T.unreadableBooleanAndFrenzyAreIsolated()
         Log.resetCounts()
         local active = SkillState.activeSet({ hien = true })
         assert(active[59] == nil and active[194] == nil)
+        assert(active["frenzy:infect"] == nil and active["frenzy:outbreak"] == nil and active["frenzy:overcome"] == nil)
         assert(active[60] and active[56])
         assert(Log.count("skill:field:_IsActiveChallenger") == 1)
         assert(Log.count("skill:field:_Frenzy") == 1)
@@ -261,10 +299,10 @@ function T.unreadableBooleanAndFrenzyAreIsolated()
 end
 
 function T.equippedUnionIsSortedAndBurstExpanded()
-    local ids = { 19, 56, 59, 60, 63, "wex:wound", 65, 101, 111, "burst:stage1", "burst:stage2", 194 }
-    local equipped = { [115] = true }
+    local ids = { 19, 56, 59, 60, 63, "wex:wound", 65, 101, 111, "burst:stage1", "burst:stage2", 120, "frenzy:infect", "frenzy:outbreak", "frenzy:overcome", 240 }
+    local equipped = { [115] = true, [194] = true }
     for _, id in ipairs(ids) do equipped[id] = true end
-    withHunter(fakeInfo({ _Counter = { _Skill = 111, _Timer = 0 }, _BurstSlot = { _Skill = 115, _Timer = 0 } }), equipped, function()
+    withHunter(fakeInfo({ _Counter = { _Skill = 111, _Timer = 0 }, _BurstSlot = { _Skill = 115, _Timer = 0 }, _Other = { _Skill = 120, _Timer = 0 } }), equipped, function()
         local rows = SkillState.equippedTracked()
         assert(#rows == #ids, tostring(#rows))
         for index, id in ipairs(ids) do
@@ -806,11 +844,111 @@ function T.burstDiagnosticIsFormattedOnlyInDeveloperMode()
     if not ok then error(err, 0) end
 end
 
+local function frenzyLogLines()
+    local lines = {}
+    for _, line in ipairs(stubs.logLines) do
+        if line:find("frenzy state ", 1, true) or line:find("skill state 194 active", 1, true) then
+            lines[#lines + 1] = line
+        end
+    end
+    return lines
+end
+
+function T.frenzyTransitionsAreLoggedAndReset()
+    local developerMode = Log.isDeveloperMode()
+    local frenzy = { _IsActive = true, _State = 0, _DurationTimer = 118.5 }
+    local ok, err = pcall(function()
+        Log.setDeveloperMode(true)
+        withHunter(fakeInfo({}), { [194] = true }, function()
+            SkillState.refreshEquipped()
+            stubs.logLines = {}
+            SkillState.activeSet()
+            frenzy._DurationTimer = 118
+            SkillState.activeSet()
+            frenzy._State, frenzy._DurationTimer = 2, 60
+            SkillState.activeSet()
+            frenzy._IsActive = false
+            SkillState.activeSet()
+            assert(stubs.encode(frenzyLogLines()) == stubs.encode({
+                "[MyHuntReport] frenzy state nil/nil -> true/0 timer=118.5",
+                "[MyHuntReport] frenzy state true/0 -> true/2 timer=60",
+                "[MyHuntReport] frenzy state true/2 -> false/2 timer=60",
+            }))
+            SkillState.reset()
+            SkillState.refreshEquipped()
+            stubs.logLines = {}
+            SkillState.activeSet()
+            assert(stubs.encode(frenzyLogLines()) == stubs.encode({
+                "[MyHuntReport] frenzy state nil/nil -> false/2 timer=60",
+            }))
+        end, frenzy)
+    end)
+    Log.setDeveloperMode(developerMode)
+    if not ok then error(err, 0) end
+end
+
+function T.frenzyDiagnosticIsFormattedOnlyForDeveloperModeTransitions()
+    local format, developerMode = string.format, Log.isDeveloperMode()
+    local formatted, timerReads = 0, 0
+    local frenzy = setmetatable({ _IsActive = true, _State = 0 }, { __index = function(_, key)
+        if key == "_DurationTimer" then timerReads = timerReads + 1 return 60 end
+    end })
+    string.format = function(pattern, ...)
+        if pattern == "frenzy state %s/%s -> %s/%s timer=%s" then formatted = formatted + 1 end
+        return format(pattern, ...)
+    end
+    local ok, err = pcall(function()
+        Log.setDeveloperMode(false)
+        withHunter(fakeInfo({}), { [194] = true }, function()
+            SkillState.activeSet()
+            frenzy._State = 1
+            SkillState.activeSet()
+            assert(formatted == 0 and timerReads == 0 and #stubs.logLines == 0)
+            Log.setDeveloperMode(true)
+            SkillState.activeSet()
+            assert(formatted == 0 and timerReads == 0 and #frenzyLogLines() == 0)
+            frenzy._State = 2
+            SkillState.activeSet()
+            assert(formatted == 1 and timerReads == 1)
+            assert(stubs.encode(frenzyLogLines()) == stubs.encode({
+                "[MyHuntReport] frenzy state true/1 -> true/2 timer=60",
+            }))
+        end, frenzy)
+    end)
+    string.format = format
+    Log.setDeveloperMode(developerMode)
+    if not ok then error(err, 0) end
+end
+
+function T.frenzyTimerReadFailureDoesNotAffectCreditOrLimitTransitions()
+    local developerMode = Log.isDeveloperMode()
+    local frenzy = setmetatable({ _IsActive = true, _State = 0 }, { __index = function(_, key)
+        if key == "_DurationTimer" then error("unreadable timer") end
+    end })
+    local ok, err = pcall(function()
+        Log.setDeveloperMode(true)
+        withHunter(fakeInfo({}), { [194] = true }, function()
+            SkillState.refreshEquipped()
+            stubs.logLines = {}
+            for index = 1, 8 do
+                frenzy._State = (index - 1) % 3
+                local key = ({ "frenzy:infect", "frenzy:outbreak", "frenzy:overcome" })[frenzy._State + 1]
+                assert(SkillState.activeSet()[key] == true)
+                local lines = frenzyLogLines()
+                assert(lines[index] and lines[index]:sub(-9) == "timer=nil")
+            end
+            assert(#frenzyLogLines() == 8)
+        end, frenzy)
+    end)
+    Log.setDeveloperMode(developerMode)
+    if not ok then error(err, 0) end
+end
+
 function T.trackedIdsMatchTheNamedRowsWithoutResolvingNames()
-    local ids = { 19, 56, 59, 60, 63, "wex:wound", 65, 101, 111, "burst:stage1", "burst:stage2", 194 }
-    local equipped = { [115] = true }
+    local ids = { 19, 56, 59, 60, 63, "wex:wound", 65, 101, 111, "burst:stage1", "burst:stage2", 120, "frenzy:infect", "frenzy:outbreak", "frenzy:overcome", 240 }
+    local equipped = { [115] = true, [194] = true }
     for _, id in ipairs(ids) do equipped[id] = true end
-    withHunter(fakeInfo({ _Counter = { _Skill = 111, _Timer = 0 }, _BurstSlot = { _Skill = 115, _Timer = 0 } }), equipped, function()
+    withHunter(fakeInfo({ _Counter = { _Skill = 111, _Timer = 0 }, _BurstSlot = { _Skill = 115, _Timer = 0 }, _Other = { _Skill = 120, _Timer = 0 } }), equipped, function()
         local skillName = SkillState.skillName
         local named = 0
         SkillState.skillName = function(id)
