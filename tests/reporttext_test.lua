@@ -7,6 +7,14 @@ local function snapshot(result)
     return { version = 2, quest = { result = result }, damage = { total = 1, hits = 1 }, stats = {}, monsters = {}, skills = {}, motions = {}, procs = {}, skillDamage = {} }
 end
 
+local function withLanguage(code, check)
+    local language = Locale.current()
+    Locale.resolve(code)
+    local ok, err = pcall(check)
+    Locale.resolve(language)
+    if not ok then error(err, 0) end
+end
+
 function T.textModuleLoadsWithoutTheReportWindow()
     local required = {}
     local environment = setmetatable({
@@ -121,6 +129,44 @@ function T.metaTextAppendsThePartySizeInBothLanguages()
     Locale.resolve(language)
 end
 
+function T.metaTextShowsTheSavedSegmentRangeInBothLanguages()
+    local entry = {
+        monsters = { { name = "A" } },
+        quest = {
+            elapsedSeconds = 1600,
+            playerCount = 4,
+            segment = { index = 2, count = 2, startSeconds = 754, endSeconds = 1510 },
+        },
+    }
+    local expected = {
+        en = "A · 26:40 · Segment 2/2 (12:34 ~ 25:10) · 4P",
+        ko = "A · 26:40 · 구간 2/2 (12:34 ~ 25:10) · 4인",
+    }
+    for _, code in ipairs({ "en", "ko" }) do
+        withLanguage(code, function()
+            local text = ReportText.metaText(entry)
+            assert(text == expected[code], text)
+        end)
+    end
+end
+
+function T.metaTextShowsTheLiveSegmentStartInBothLanguages()
+    local entry = {
+        monsters = { { name = "A" } },
+        quest = { elapsedSeconds = 1600, playerCount = 4, segment = { index = 2, startSeconds = 754 } },
+    }
+    local expected = {
+        en = "A · 26:40 · Segment 2 · from 12:34 · 4P",
+        ko = "A · 26:40 · 구간 2 · 12:34부터 · 4인",
+    }
+    for _, code in ipairs({ "en", "ko" }) do
+        withLanguage(code, function()
+            local text = ReportText.metaText(entry)
+            assert(text == expected[code], text)
+        end)
+    end
+end
+
 function T.historyRowCarriesTheOutcome()
     local Theme = require("MyHuntReport.Theme")
     Locale.resolve("ko")
@@ -135,6 +181,41 @@ function T.historyRowCarriesTheOutcome()
     end
     Locale.resolve("en")
     assert(ReportText.historyRow(snapshot("abandon")).outcome == "Abandoned")
+end
+
+function T.historyRowAppendsTheSegmentToTheLocalizedOutcome()
+    local Theme = require("MyHuntReport.Theme")
+    local entry = snapshot("clear")
+    entry.quest.segment = { index = 1, count = 2, startSeconds = 0, endSeconds = 754 }
+    for _, code in ipairs({ "en", "ko" }) do
+        withLanguage(code, function()
+            local row = ReportText.historyRow(entry)
+            assert(row.outcome == Locale.text("result_clear") .. " 1/2", row.outcome)
+            assert(row.outcomeColor == Theme.colors.success)
+        end)
+    end
+end
+
+function T.historyRowShowsAMutedSegmentWithoutAKnownOutcome()
+    local Theme = require("MyHuntReport.Theme")
+    local entry = snapshot("unknown")
+    entry.quest.segment = { index = 1, count = 2, startSeconds = 0, endSeconds = 754 }
+    for _, code in ipairs({ "en", "ko" }) do
+        withLanguage(code, function()
+            local row = ReportText.historyRow(entry)
+            assert(row.outcome == "1/2", tostring(row.outcome))
+            assert(row.outcomeColor == Theme.colors.textMuted)
+        end)
+    end
+end
+
+function T.historyRowRequiresBothSegmentNumbers()
+    local entry = snapshot("unknown")
+    for _, segment in ipairs({ { index = 1 }, { count = 2 }, { index = "1", count = 2 }, { index = 1, count = "2" } }) do
+        entry.quest.segment = segment
+        local row = ReportText.historyRow(entry)
+        assert(row.outcome == nil and row.outcomeColor == nil)
+    end
 end
 
 function T.historyRowSplitsTimeStarsWeaponsMonsters()
@@ -197,6 +278,37 @@ function T.statTilesFollowTheSnapshot()
     assert(ReportText.statTiles({ stats = { combatDps = 45.66 } })[3].label == "평균 공격력")
     assert(ReportText.statTiles({ stats = { negativeCritRate = 0.1 } })[3].label == "역회심")
     Locale.resolve("en")
+end
+
+function T.totalDamageFollowsCombatDpsOnLegacyQuestRecords()
+    withLanguage("en", function()
+        local entry = snapshot("clear")
+        entry.damage.total = 123456
+        local tiles = ReportText.statTiles(entry)
+        assert(tiles[1].label == "Combat DPS", tiles[1].label)
+        assert(tiles[2].label == "Total damage", tiles[2].label)
+        assert(tiles[2].value == "123,456", tiles[2].value)
+    end)
+end
+
+function T.totalDamageIsTheFirstTrainingTile()
+    withLanguage("ko", function()
+        local entry = snapshot("training")
+        entry.damage.total = 123456
+        local tiles = ReportText.statTiles(entry)
+        assert(tiles[1].label == "총 데미지", tiles[1].label)
+        assert(tiles[1].value == "123,456", tiles[1].value)
+        assert(tiles[2].label == "회심", tiles[2].label)
+    end)
+end
+
+function T.totalDamageIsOmittedWithoutANumericTotal()
+    withLanguage("en", function()
+        for _, entry in ipairs({ {}, { damage = {} }, { damage = { total = "123456" } } }) do
+            local tiles = ReportText.statTiles(entry)
+            assert(#tiles == 4 and tiles[2].label == "Crit")
+        end
+    end)
 end
 
 function T.elementTilesUseListOrderAndSuppressLegacyTileWhenListExists()

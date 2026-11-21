@@ -21,6 +21,10 @@ function ReportText.statTiles(snapshot)
     if not (snapshot.quest and snapshot.quest.result == "training") then
         tiles[#tiles + 1] = { label = L("combat_dps"), value = Format.decimal(stats.combatDps, 1) }
     end
+    local total = type(snapshot.damage) == "table" and snapshot.damage.total
+    if type(total) == "number" then
+        tiles[#tiles + 1] = { label = L("total_damage"), value = Format.integer(total) }
+    end
     tiles[#tiles + 1] = { label = L("crit_rate"), value = Format.rate(stats.critRate) }
     if type(stats.negativeCritRate) == "number" and stats.negativeCritRate > 0 then
         tiles[#tiles + 1] = { label = L("negative_crit_rate"), value = Format.rate(stats.negativeCritRate) }
@@ -103,6 +107,15 @@ function ReportText.metaText(snapshot)
     local monsters = monsterNames(snapshot.monsters)
     if monsters ~= "" then parts[#parts + 1] = monsters end
     parts[#parts + 1] = Format.duration(quest.elapsedSeconds or 0)
+    local segment = quest.segment
+    if type(segment) == "table" then
+        local start = Format.duration(segment.startSeconds)
+        if segment.count then
+            parts[#parts + 1] = string.format(L("segment_range"), segment.index, segment.count, start, Format.duration(segment.endSeconds))
+        else
+            parts[#parts + 1] = string.format(L("segment_live"), segment.index, start)
+        end
+    end
     local size = HistoryFilter.partySize(quest)
     if size then parts[#parts + 1] = ReportText.partyText(size) end
     return table.concat(parts, " · ")
@@ -121,6 +134,12 @@ function ReportText.historyRow(entry)
     local quest = entry.quest or {}
     local _, _, stars = ReportText.resultText(quest)
     local outcome, outcomeColor = ReportText.outcomeText(quest)
+    local segment = quest.segment
+    if type(segment) == "table" and type(segment.index) == "number" and type(segment.count) == "number" then
+        local label = string.format("%d/%d", segment.index, segment.count)
+        outcome = outcome and (outcome .. " " .. label) or label
+        outcomeColor = outcomeColor or Theme.colors.textMuted
+    end
     return {
         time = Format.clock(quest.endedAt or 0),
         stars = stars,

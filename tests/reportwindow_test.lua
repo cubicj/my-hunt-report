@@ -399,6 +399,40 @@ function T.historyOutcomeWidthFallsBackWithoutCachingAFailedMeasurement()
     end)
 end
 
+function T.historyOutcomeWidthFitsTheWidestPlainOrSegmentLabelAfterReload()
+    withNavigation(function(ui)
+        Locale.resolve("en")
+        local widths = { Abandoned = 90, ["Clear 1/2"] = 123.5, ["11/12"] = 150.5 }
+        imgui.calc_text_size = function(value) return { x = widths[value] or utf8.len(value) * 8, y = 18 } end
+        local plain, clear, unknown = historyEntry("clear"), historyEntry("clear"), historyEntry("unknown")
+        clear.quest.segment = { index = 1, count = 2 }
+        unknown.quest.segment = { index = 11, count = 12 }
+
+        local function assertOutcome(index, label, width)
+            local outcome = historyRowTexts(ui, index)[5]
+            assert(outcome and outcome.value == label, label)
+            local columns = ReportWindow.historyColumns(720, 1, false, width)
+            assert(ui.positions[outcome.positionCount].x == 18 + columns.outcome.x, "outcome width for " .. label)
+        end
+
+        ui.entries = { plain }
+        ReportWindow.showHistory()
+        ui.draw()
+        assertOutcome(1, "Clear", 90)
+
+        ui.entries = { plain, clear }
+        ReportWindow.onHistoryCleared()
+        ui.draw()
+        assertOutcome(1, "Clear 1/2", 124)
+
+        ui.entries = { plain, clear, unknown }
+        ReportWindow.onHistoryCleared()
+        ui.draw()
+        assertOutcome(1, "11/12", 151)
+        assertOutcome(2, "Clear 1/2", 151)
+    end)
+end
+
 function T.reportNavigationPrecedesBodyRows()
     withNavigation(function(ui)
         local shown = snapshot("clear")
@@ -440,6 +474,35 @@ function T.selectedHistoryReportNavigationHasBackDeleteAndClose()
         ui.draw()
         assertNavigation(ui, "<##back|삭제##delete|X##close")
     end)
+end
+
+function T.resetButtonAppearsOnlyOnAnEligibleLiveReport()
+    local setResetHandler = assert(ReportWindow.setResetHandler, "missing reset handler registration")
+    local ok, err = pcall(withNavigation, function(ui)
+        ui.entries = { snapshot("clear") }
+        ReportWindow.show(snapshot("running"))
+        ui.draw()
+        assertNavigation(ui, "기록|X##close")
+
+        local phase = "playing"
+        setResetHandler(function() return phase == "playing" or phase == "training" end, function() error("unexpected reset") end)
+        for _, current in ipairs({ "playing", "training", "result", "idle" }) do
+            phase = current
+            ui.draw()
+            local expected = (phase == "playing" or phase == "training") and "초기화##reset|기록|X##close" or "기록|X##close"
+            assertNavigation(ui, expected)
+        end
+
+        phase = "playing"
+        ui.draw("기록")
+        ui.draw()
+        assertNavigation(ui, "<##back|필터|X##close")
+        ui.draw("##history1")
+        ui.draw()
+        assertNavigation(ui, "<##back|삭제##delete|X##close")
+    end)
+    setResetHandler(nil, nil)
+    if not ok then error(err, 0) end
 end
 
 function T.topBarButtonsNavigateAndCloseEveryView()
@@ -801,6 +864,194 @@ function T.historyDeleteIconUsesMutedHoverAndWarningColors()
     if not ok then error(err, 0) end
 end
 
+local function withResetNavigation(navigate, callback)
+    local Game = require("MyHuntReport.Game")
+    local uptime = Game.uptime
+    local ok, err = pcall(navigate, function(ui, list)
+        ui.now, ui.canReset, ui.resetCalls = 100, true, {}
+        Game.uptime = function() return ui.now end
+        ReportWindow.setResetHandler(function() return ui.canReset end, function(now)
+            ui.resetCalls[#ui.resetCalls + 1] = now
+            return ui.resetResult == true
+        end)
+        callback(ui, list)
+    end)
+    Game.uptime = uptime
+    ReportWindow.setSnapshotProvider(nil)
+    ReportWindow.setResetHandler(nil, nil)
+    if not ok then error(err, 0) end
+end
+
+function T.resetConfirmsAfterDrawingAndRefreshesImmediatelyOnlyOnSuccess()
+    withResetNavigation(withHistoryDelete, function(ui)
+        for _, success in ipairs({ true, false }) do
+            local before, after = snapshot("running"), snapshot("running")
+            after.damage.total = 0
+            ReportWindow.show(before)
+            ui.now = ui.now + 10
+            ui.resetCalls, ui.resetResult = {}, success
+            local providerCalls, resetsAtEnd = 0, nil
+            ReportWindow.setSnapshotProvider(function()
+                providerCalls = providerCalls + 1
+                return #ui.resetCalls == 0 and before or after
+            end)
+            imgui.end_window = function() resetsAtEnd = #ui.resetCalls end
+            ui.draw("초기화##reset")
+            assert(#ui.resetCalls == 0 and providerCalls == 1)
+            ui.now = ui.now + 0.1
+            ui.draw("초기화##reset")
+            assert(#ui.resetCalls == 1 and ui.resetCalls[1] == ui.now, "second press must reset once with the current uptime")
+            assert(resetsAtEnd == 0, "reset ran before the report window ended")
+            assert(ReportWindow.screen() == "live")
+            assert(ReportWindow.debugState().snapshot == (success and after or before))
+            assert(providerCalls == (success and 2 or 1))
+            ui.draw()
+            assert(not ui.textEvent("한 번 더 누르면 초기화"))
+        end
+    end)
+end
+
+function T.resetWarningExpiresAtThreeSecondsAndTheNextPressRearms()
+    local Theme = require("MyHuntReport.Theme")
+    withResetNavigation(withHistoryDelete, function(ui)
+        imgui.calc_text_size = function() return { x = 100, y = 18 } end
+        Locale.resolve("en")
+        ReportWindow.show(snapshot("running"))
+        ui.draw()
+        assert(ui.buttonEvent("Reset##reset").textColor == Theme.colors.textMuted)
+        assert(not ui.textEvent("Press again to reset"))
+        ui.draw("Reset##reset")
+        ui.now = 102.9
+        ui.draw()
+        local text = ui.textEvent("Press again to reset")
+        local button = ui.buttonEvent("Reset##reset")
+        assert(text and text.textColor == Theme.colors.warning, "armed reset must show the warning")
+        assert(button.textColor == Theme.colors.warning)
+        local textPos, buttonPos = ui.positions[text.positionCount], ui.positions[button.positionCount]
+        assert(textPos[1] == buttonPos[1] - Theme.metrics.historyGap - 100)
+        assert(textPos[2] == 20 + (Theme.metrics.iconButton - 18) / 2)
+        ui.now = 103
+        ui.draw("Reset##reset")
+        assert(not ui.textEvent("Press again to reset") and #ui.resetCalls == 0)
+        ui.draw()
+        assert(ui.textEvent("Press again to reset"))
+        ui.now = 104
+        ui.draw("Reset##reset")
+        assert(#ui.resetCalls == 1 and ui.resetCalls[1] == 104)
+    end)
+end
+
+function T.resetDisarmsWhenTheReportIsShownClosedOrBecomesIneligible()
+    withResetNavigation(withHistoryDelete, function(ui)
+        local shown = snapshot("running")
+        local cases = {
+            show = function() ReportWindow.show(shown) end,
+            close = function() ui.draw("X##close") ReportWindow.show(shown) end,
+            hide = function() ReportWindow.hide() ReportWindow.show(shown) end,
+            phase = function()
+                ui.canReset = false
+                ui.draw()
+                ui.canReset = true
+            end,
+            history = function()
+                ui.draw("기록")
+                ui.draw("##history1")
+                ui.draw("삭제##delete")
+                assert(#ui.removals == 0 and ReportWindow.screen() == "past")
+                ui.draw("<##back")
+                ui.draw("<##back")
+            end,
+        }
+        for name, leave in pairs(cases) do
+            ReportWindow.show(shown)
+            ui.draw("초기화##reset")
+            ui.draw()
+            assert(ui.textEvent("한 번 더 누르면 초기화"), "reset must arm before " .. name)
+            leave()
+            ui.draw("초기화##reset")
+            assert(#ui.resetCalls == 0, name .. " retained the previous arm")
+            ui.draw()
+            assert(ui.textEvent("한 번 더 누르면 초기화"), name)
+        end
+    end)
+end
+
+function T.sessionStartDisarmsResetWhenItReplacesTheLiveReport()
+    local Settings = require("MyHuntReport.Settings")
+    withResetNavigation(withHistoryDelete, function(ui)
+        ReportWindow.show(snapshot("running"))
+        ui.draw("초기화##reset")
+        local settings = Settings.get()
+        local closeOnQuestStart = settings.closeOnQuestStart
+        settings.closeOnQuestStart = false
+        local replaced = ReportWindow.onSessionStart(snapshot("running"))
+        settings.closeOnQuestStart = closeOnQuestStart
+        assert(replaced == true)
+        ui.now = 101
+        ui.draw("초기화##reset")
+        assert(#ui.resetCalls == 0, "the first press in a new session must only arm Reset")
+        ui.draw()
+        assert(ui.textEvent("한 번 더 누르면 초기화"))
+    end)
+end
+
+function T.resultRestoredFromHistoryCannotResetAPlayingQuest()
+    local Settings = require("MyHuntReport.Settings")
+    withResetNavigation(withHistoryDelete, function(ui)
+        local result = snapshot("clear")
+        ui.canReset = false
+        ReportWindow.show(result)
+        ui.draw("기록")
+        local settings = Settings.get()
+        local closeOnQuestStart = settings.closeOnQuestStart
+        settings.closeOnQuestStart = false
+        ui.canReset = true
+        ReportWindow.onSessionStart(snapshot("running"))
+        settings.closeOnQuestStart = closeOnQuestStart
+        ui.draw("<##back")
+        assert(ReportWindow.debugState().snapshot == result)
+        ui.draw()
+        assertNavigation(ui, "기록|X##close")
+    end)
+end
+
+function T.resetDrawListButtonUsesTheHistorySizeAndCentersItsWarningLabel()
+    local Theme = require("MyHuntReport.Theme")
+    withResetNavigation(withIconNavigation, function(ui, list)
+        local m = Theme.metrics
+        local cursor, buttons = nil, {}
+        imgui.begin_window = function()
+            cursor = { x = m.padding, y = 20 }
+            return true
+        end
+        imgui.set_cursor_pos = function(pos)
+            cursor = { x = pos[1] or pos.x, y = pos[2] or pos.y }
+        end
+        imgui.get_cursor_pos = function() return cursor end
+        imgui.get_cursor_screen_pos = function() return { x = cursor.x + 100, y = cursor.y + 200 } end
+        imgui.calc_text_size = function() return { x = 48, y = 18 } end
+        ui.onButton = function(label, size)
+            buttons[label] = { x = cursor.x, y = cursor.y, size = size }
+        end
+        local shown = snapshot("running")
+        shown.damage = { total = 0, hits = 0 }
+        ReportWindow.show(shown)
+        ui.draw("##reset")
+        assertNavigation(ui, "##reset|##history|##close")
+        local reset, history, close = buttons["##reset"], buttons["##history"], buttons["##close"]
+        assert(history.x == 608 and close.x == 708)
+        assert(reset.x + m.navButtonWidth + m.historyGap == history.x and reset.y == history.y)
+        assert(reset.size[1] == m.navButtonWidth and reset.size[2] == m.iconButton)
+        list.calls = {}
+        ui.draw()
+        local label = list.calls[1]
+        assert(label.name == "add_text" and label[3] == "초기화")
+        assert(label[1][1] == reset.x + 100 + (m.navButtonWidth - 48) / 2)
+        assert(label[1][2] == 220 + (m.iconButton - 18) / 2 - 1)
+        assert(label[2] == Theme.colors.warning, "armed draw-list label must use the warning color")
+    end)
+end
+
 
 function T.noDataDrawsHistoryAndCloseBeforeTitleAndMessage()
     withNavigation(function(ui)
@@ -814,6 +1065,31 @@ function T.noDataDrawsHistoryAndCloseBeforeTitleAndMessage()
             assert(ui.events[4].value == Locale.text("no_data"))
             assert(#ui.events == 4)
         end
+    end)
+end
+
+function T.noDataDrawsTheLiveSegmentMetaBetweenTitleAndMessage()
+    local Fonts = require("MyHuntReport.Fonts")
+    local Theme = require("MyHuntReport.Theme")
+    withNavigation(function(ui)
+        local shown = snapshot("running")
+        shown.damage = { total = 0, hits = 0 }
+        shown.quest.elapsedSeconds = 41
+        shown.quest.segment = { index = 2, startSeconds = 40 }
+        local contexts, drawText = {}, imgui.text
+        imgui.push_font, imgui.pop_font = function() end, function() end
+        imgui.push_font_size, imgui.pop_font_size = function() end, function() end
+        imgui.text = function(value)
+            contexts[value] = Fonts.context()
+            drawText(value)
+        end
+        ReportWindow.show(shown)
+        ui.draw()
+        local title, meta, noData = Locale.text("report_title"), ReportWindow.metaText(shown), Locale.text("no_data")
+        assert(ui.events[3].value == title and ui.events[4].value == meta
+            and ui.events[5].value == noData, "expected segment meta between the title and no-data message")
+        assert(ui.events[4].textColor == Theme.colors.textMuted)
+        assert(contexts[meta] == contexts[noData] and contexts[meta] ~= contexts[title])
     end)
 end
 

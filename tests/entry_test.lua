@@ -6,6 +6,37 @@ local function snapshot(result)
     return { version = 2, quest = { result = result }, damage = { total = 1, hits = 1 }, stats = {}, monsters = {}, skills = {}, motions = {}, procs = {}, skillDamage = {} }
 end
 
+function T.entryRegistersQuestResetHandlers()
+    local noop = function() end
+    local dummy = setmetatable({}, { __index = function() return noop end })
+    local quest = {
+        install = noop,
+        adoptCurrentState = noop,
+        canReset = function() return true end,
+        resetSegment = function() return true end,
+    }
+    local registrations = {}
+    local modules = {
+        ["MyHuntReport.Quest"] = quest,
+        ["MyHuntReport.ReportWindow"] = setmetatable({
+            setResetHandler = function(canReset, reset)
+                registrations[#registrations + 1] = { canReset, reset }
+            end,
+        }, getmetatable(dummy)),
+        ["MyHuntReport.Settings"] = {
+            load = noop,
+            get = function() return { language = "en", fontSize = 18, skillProcCapture = false } end,
+        },
+    }
+    local environment = setmetatable({
+        require = function(name) return modules[name] or dummy end,
+        re = { on_draw_ui = noop, on_frame = noop, on_config_save = noop },
+    }, { __index = _G })
+    assert(loadfile("reframework/autorun/my_hunt_report.lua", "t", environment))()
+    assert(#registrations == 1, "entry must register the reset handlers once")
+    assert(registrations[1][1] == quest.canReset and registrations[1][2] == quest.resetSegment)
+end
+
 function T.entryRegistersSessionNamesRelabeler()
     local Session = require("MyHuntReport.Session")
     local Names = require("MyHuntReport.Names")
@@ -38,6 +69,7 @@ function T.entryRegistersSessionNamesRelabeler()
     Names.resolve = original
     ReportWindow.setRelabeler(nil)
     ReportWindow.setSnapshotProvider(nil)
+    ReportWindow.setResetHandler(nil, nil)
     ReportWindow.hide()
     if not ok then error(err, 0) end
 end
@@ -78,6 +110,7 @@ function T.entryInstallsSkillProcHooksOnlyWhenTheSettingIsOn()
     end)
     ReportWindow.setRelabeler(nil)
     ReportWindow.setSnapshotProvider(nil)
+    ReportWindow.setResetHandler(nil, nil)
     ReportWindow.hide()
     if not ok then error(err, 0) end
 end
@@ -108,6 +141,7 @@ function T.entryInstallsTheHealTracker()
     end)
     ReportWindow.setRelabeler(nil)
     ReportWindow.setSnapshotProvider(nil)
+    ReportWindow.setResetHandler(nil, nil)
     ReportWindow.hide()
     if not ok then error(err, 0) end
 end
@@ -142,6 +176,7 @@ function T.entryDoesNotLoadTheAttackProbe()
     end)
     ReportWindow.setRelabeler(nil)
     ReportWindow.setSnapshotProvider(nil)
+    ReportWindow.setResetHandler(nil, nil)
     ReportWindow.hide()
     if not ok then error(err, 0) end
 end
@@ -218,6 +253,7 @@ function T.entryInstallsThePalicoCaptureAfterHitCaptureAndNotTheRetiredProbe()
     end)
     ReportWindow.setRelabeler(nil)
     ReportWindow.setSnapshotProvider(nil)
+    ReportWindow.setResetHandler(nil, nil)
     ReportWindow.hide()
     if not ok then error(err, 0) end
 end

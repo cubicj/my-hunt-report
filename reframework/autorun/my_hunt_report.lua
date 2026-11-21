@@ -75,6 +75,7 @@ ReportWindow.setNameResolver(Names.resolve)
 ReportWindow.setSnapshotProvider(function()
     return Quest.currentSnapshot(Game.uptime())
 end)
+ReportWindow.setResetHandler(Quest.canReset, Quest.resetSegment)
 
 SettingsPanel.register({ quest = Quest })
 

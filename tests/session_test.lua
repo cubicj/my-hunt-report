@@ -29,6 +29,19 @@ function T.resetClearsEverything()
     assert(Session.hasData() == false)
 end
 
+function T.lastDamageTimeTracksAcceptedHitsAndProcsUntilReset()
+    Session.reset(0)
+    Session.addHit(hit())
+    assert(Session.lastDamageTime() == 10)
+    Session.addProc({ kind = "woundBreak", damage = 5, time = 15 })
+    assert(Session.lastDamageTime() == 15)
+    Session.addHit(hit({ time = 12 }))
+    assert(Session.addProc({ kind = "blast", damage = 0, time = 20 }) == false)
+    assert(Session.lastDamageTime() == 15 and Session.lastHitTime() == 12)
+    Session.reset(30)
+    assert(Session.lastDamageTime() == nil)
+end
+
 function T.totalsSplitPhysicalElementAndStatus()
     Session.reset(0)
     Session.addHit(hit({ finalDamage = 100, physical = 80, element = 20 }))
