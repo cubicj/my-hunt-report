@@ -23,6 +23,11 @@ local phase = "idle"
 local trainingSession = false
 local trainingEndTime = nil
 local questLevel = nil
+local questStartTime = 0
+local closedSegments = {}
+local segmentStartSeconds = 0
+local hadSegmentReset = false
+local discardedSegmentCount = 0
 local endedElapsed = nil
 local saved = false
 local pendingSnapshot = nil
@@ -52,12 +57,29 @@ local function equippedSkills()
     return list
 end
 
+local function sessionSnapshot(result, elapsedSeconds)
+    return Session.snapshot({
+        questLevel = questLevel,
+        result = result,
+        elapsedSeconds = elapsedSeconds,
+        endedAt = os.time(),
+        weapon = Quest.weaponInfo(HitCapture.lastWeaponType()),
+        weapons = usedWeapons(),
+        equippedSkills = equippedSkills(),
+        resolveName = Names.resolve,
+    })
+end
+
 function Quest.state()
     return { phase = phase, saved = saved }
 end
 
 function Quest.phase()
     return phase
+end
+
+function Quest.canReset()
+    return phase == "playing" or phase == "training"
 end
 
 function Quest.handleTrainingEnter(now)
@@ -109,6 +131,14 @@ local function flushUnsaved()
     if not ok then Log.error("history append failed for an unfinished quest", "quest:flush") end
 end
 
+local function resetSegmentState(now)
+    questStartTime = tonumber(now) or 0
+    closedSegments = {}
+    segmentStartSeconds = 0
+    hadSegmentReset = false
+    discardedSegmentCount = 0
+end
+
 function Quest.handleQuestStart(now)
     Locale.refresh()
     if not pendingSnapshot and Session.hasData() then
@@ -116,6 +146,7 @@ function Quest.handleQuestStart(now)
     end
     flushUnsaved()
     finalSnapshot = nil
+    resetSegmentState(now)
     Session.reset(now)
     questLevel = Quest.readQuestLevel()
     HitCapture.reset()
@@ -141,7 +172,33 @@ local function playingElapsed(now)
     if endedElapsed then return endedElapsed end
     local clock = Quest.questElapsedSeconds()
     if clock then return clock end
-    return math.max(0, (tonumber(now) or 0) - Session.startTime())
+    return math.max(0, (tonumber(now) or 0) - questStartTime)
+end
+
+function Quest.resetSegment(now)
+    if not Quest.canReset() then return false end
+    local snapshot
+    local segmentText = ""
+    if phase == "playing" then
+        local seconds = math.floor(playingElapsed(now) + 0.5)
+        snapshot = sessionSnapshot("unknown", seconds)
+        snapshot.quest.segment = { startSeconds = segmentStartSeconds, endSeconds = seconds }
+        local index = #closedSegments + 1
+        segmentText = " segment=" .. index
+        if Session.snapshotHasData(snapshot) then
+            closedSegments[index] = snapshot
+        else
+            discardedSegmentCount = discardedSegmentCount + 1
+        end
+        segmentStartSeconds = seconds
+        hadSegmentReset = true
+    else
+        snapshot = Quest.currentSnapshot(now)
+    end
+    Session.reset(now)
+    Log.debug(string.format("segment reset phase=%s%s uptime=%s elapsedSeconds=%.3f hits=%d totalDamage=%.3f fightingSeconds=%.3f",
+        phase, segmentText, tostring(now), snapshot.quest.elapsedSeconds, snapshot.damage.hits, snapshot.damage.total, snapshot.stats.fightingSeconds))
+    return true
 end
 
 function Quest.handleQuestEnd(now)
@@ -151,16 +208,7 @@ function Quest.handleQuestEnd(now)
 end
 
 function Quest.handleResultStart()
-    pendingSnapshot = Session.snapshot({
-        questLevel = questLevel,
-        result = "unknown",
-        elapsedSeconds = endedElapsed,
-        endedAt = os.time(),
-        weapon = Quest.weaponInfo(HitCapture.lastWeaponType()),
-        weapons = usedWeapons(),
-        equippedSkills = equippedSkills(),
-        resolveName = Names.resolve,
-    })
+    pendingSnapshot = sessionSnapshot("unknown", endedElapsed)
     finalSnapshot = pendingSnapshot
     phase = "result"
     resultClosed = false
@@ -216,18 +264,12 @@ function Quest.currentSnapshot(now)
     if phase == "training" or (phase == "idle" and trainingSession) then result = "training" end
     local endTime = tonumber(now) or 0
     if phase == "idle" and trainingEndTime then endTime = trainingEndTime end
-    local elapsed = math.max(0, endTime - Session.startTime())
-    if phase == "playing" then elapsed = playingElapsed(now) end
-    return Session.snapshot({
-        questLevel = questLevel,
-        result = result,
-        elapsedSeconds = elapsed,
-        endedAt = os.time(),
-        weapon = Quest.weaponInfo(HitCapture.lastWeaponType()),
-        weapons = usedWeapons(),
-        equippedSkills = equippedSkills(),
-        resolveName = Names.resolve,
-    })
+    local elapsed = phase == "playing" and playingElapsed(now) or math.max(0, endTime - Session.startTime())
+    local snapshot = sessionSnapshot(result, elapsed)
+    if phase == "playing" and hadSegmentReset then
+        snapshot.quest.segment = { index = #closedSegments + 1, startSeconds = segmentStartSeconds }
+    end
+    return snapshot
 end
 
 local function readResultFields(info)
@@ -348,6 +390,7 @@ function Quest.resetForTests()
     endedElapsed = nil
     saved = false
     pendingSnapshot = nil
+    resetSegmentState(0)
     Session.reset(0)
     finalSnapshot = nil
     resultClosed = false
