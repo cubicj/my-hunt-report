@@ -50,6 +50,8 @@ local state = {
     forwardHistory = false,
     forwardSnapshot = nil,
     provider = nil,
+    canReset = nil,
+    reset = nil,
     relabeler = nil,
     nameResolver = nil,
     historySelection = { weapons = {}, levels = {}, species = {}, variants = {}, players = {} },
@@ -64,6 +66,7 @@ local state = {
     pendingAction = nil,
     deleteArmedAt = nil,
     deleteFailedUntil = nil,
+    resetArmedAt = nil,
     liveRefreshAt = nil,
     bounds = nil,
     livePosition = nil,
@@ -204,6 +207,7 @@ end
 
 local function close()
     disarmDelete()
+    state.resetArmedAt = nil
     state.filterOpen, state.filterBounds = false, nil
     clearForward()
     invalidatePresentation()
@@ -508,6 +512,49 @@ end
 
 local pressDelete
 
+local function updateLiveSnapshot(now)
+    state.liveRefreshAt = now
+    local ok, produced = pcall(state.provider)
+    if not ok then
+        Log.error("snapshot provider failed: " .. tostring(produced), "report:provider")
+        return false
+    end
+    if produced then
+        state.snapshot = produced
+        dropReportText()
+    end
+    return true
+end
+
+local function pressReset(now)
+    if not state.resetArmedAt then
+        state.resetArmedAt = now
+        return
+    end
+    state.resetArmedAt = nil
+    if state.reset(now) and state.provider then updateLiveSnapshot(now) end
+end
+
+local function drawNavButton(ctx, id, label, fallbackLabel, armed)
+    local m = Theme.metrics
+    local screen = imgui.get_cursor_screen_pos()
+    local active = Draw.active()
+    local colored = armed and pcall(imgui.push_style_color, 0, Theme.colors.warning)
+    local ok, clicked = pcall(imgui.button, active and "##" .. id or fallbackLabel, { m.navButtonWidth, m.iconButton })
+    if colored then pcall(imgui.pop_style_color, 1) end
+    if not ok then error(clicked, 0) end
+    if active then
+        local okHover, hovered = pcall(imgui.is_item_hovered)
+        local color = armed and Theme.colors.warning or okHover and hovered and Theme.colors.text or Theme.colors.textMuted
+        local fontPushed = Fonts.push(ctx.fonts.body)
+        local width = UiText.width(label) or 0
+        Draw.text(id, screen.x + (m.navButtonWidth - width) / 2,
+            screen.y + (m.iconButton - ctx.sizes.body) / 2 - Fonts.centerNudge(ctx.sizes.body), color, label)
+        Fonts.pop(fontPushed)
+    end
+    return clicked
+end
+
 function ReportWindow.drawTopBar(ctx)
     local top = imgui.get_cursor_pos()
     local m = Theme.metrics
@@ -531,21 +578,32 @@ function ReportWindow.drawTopBar(ctx)
     local showHistory = state.view == "report" and not state.fromHistory
     local pushed = pcall(imgui.push_style_color, 0, Theme.colors.textMuted)
     local ok, err = pcall(function()
-        if showHistory then
-            imgui.set_cursor_pos({ m.padding + ctx.width - m.iconButton - 8 - m.navButtonWidth, top.y })
-            local screen = imgui.get_cursor_screen_pos()
-            local active = Draw.active()
-            local label = L("history")
-            if imgui.button(active and "##history" or label, { m.navButtonWidth, m.iconButton }) then action = ReportWindow.showHistory end
-            if active then
-                local okHover, hovered = pcall(imgui.is_item_hovered)
-                local color = okHover and hovered and Theme.colors.text or Theme.colors.textMuted
+        local historyX = m.padding + ctx.width - m.iconButton - 8 - m.navButtonWidth
+        if showHistory and state.open and state.canReset and state.reset and state.canReset() then
+            local now = Game.uptime()
+            if state.resetArmedAt and now - state.resetArmedAt >= DELETE_CONFIRM_SECONDS then state.resetArmedAt = nil end
+            local armed = state.resetArmedAt ~= nil
+            local x = historyX - m.navButtonWidth - m.historyGap
+            if armed then
+                local message = L("report_reset_confirm")
                 local fontPushed = Fonts.push(ctx.fonts.body)
-                local width = UiText.width(label) or 0
-                Draw.text("history", screen.x + (m.navButtonWidth - width) / 2,
-                    screen.y + (m.iconButton - ctx.sizes.body) / 2 - Fonts.centerNudge(ctx.sizes.body), color, label)
+                local width = UiText.width(message) or 0
                 Fonts.pop(fontPushed)
+                imgui.set_cursor_pos({ x - m.historyGap - width, top.y + (m.iconButton - ctx.sizes.body) / 2 })
+                UiText.inFont(ctx.fonts.body, message, Theme.colors.warning)
             end
+            imgui.set_cursor_pos({ x, top.y })
+            local label = L("report_reset")
+            if drawNavButton(ctx, "reset", label, label .. "##reset", armed) then
+                action = function() pressReset(now) end
+            end
+        else
+            state.resetArmedAt = nil
+        end
+        if showHistory then
+            imgui.set_cursor_pos({ historyX, top.y })
+            local label = L("history")
+            if drawNavButton(ctx, "history", label, label) then action = ReportWindow.showHistory end
         end
         if state.fromHistory then
             local now = Game.uptime()
@@ -774,20 +832,36 @@ local OUTCOME_LABELS = { "result_clear", "result_fail", "result_abandon" }
 
 local function historyOutcomeWidth(ctx)
     local key = Locale.textKey() .. ":" .. tostring(ctx.sizes.body)
-    if historyOutcome and historyOutcome.key == key then return historyOutcome.width end
-    local widest = 0
-    local pushed = Fonts.push(ctx.fonts.body)
-    for _, labelKey in ipairs(OUTCOME_LABELS) do
-        local width = UiText.width(L(labelKey))
-        if width == nil then
-            widest = nil
-            break
-        end
-        widest = math.max(widest, width)
+    local entries = state.entries
+    if historyOutcome and historyOutcome.key == key and historyOutcome.entries == entries then
+        return historyOutcome.width
     end
+    local widest, complete = 0, true
+    local function measure(outcome)
+        local width = UiText.width(outcome)
+        if width == nil then
+            complete = false
+        else
+            widest = math.max(widest, width)
+        end
+    end
+    local pushed = Fonts.push(ctx.fonts.body)
+    local ok, err = pcall(function()
+        for _, labelKey in ipairs(OUTCOME_LABELS) do measure(L(labelKey)) end
+        for _, entry in ipairs(entries) do
+            local quest = entry.quest
+            if type(quest) == "table" and type(quest.segment) == "table" then
+                local outcome = historyRowFor(entry).outcome
+                if outcome then measure(outcome) end
+            end
+        end
+    end)
     Fonts.pop(pushed)
-    if widest == nil then return math.floor(Theme.metrics.historyOutcomeWidth * ctx.scale + 0.5) end
-    historyOutcome = { key = key, width = math.ceil(widest) }
+    if not ok then error(err, 0) end
+    if not complete then
+        return math.max(math.ceil(widest), math.floor(Theme.metrics.historyOutcomeWidth * ctx.scale + 0.5))
+    end
+    historyOutcome = { key = key, entries = entries, width = math.ceil(widest) }
     return historyOutcome.width
 end
 
@@ -881,21 +955,12 @@ function ReportWindow.refreshLive(now)
     if not state.open or state.view ~= "report" or state.fromHistory then return false end
     if not state.provider or not ReportWindow.isLiveSnapshot(state.snapshot) then return false end
     if state.liveRefreshAt and now - state.liveRefreshAt < REFRESH_INTERVAL then return false end
-    state.liveRefreshAt = now
-    local ok, produced = pcall(state.provider)
-    if not ok then
-        Log.error("snapshot provider failed: " .. tostring(produced), "report:provider")
-        return false
-    end
-    if produced then
-        state.snapshot = produced
-        dropReportText()
-    end
-    return true
+    return updateLiveSnapshot(now)
 end
 
 function ReportWindow.show(snapshot)
     disarmDelete()
+    state.resetArmedAt = nil
     state.filterOpen, state.filterBounds = false, nil
     clearForward()
     invalidatePresentation()
@@ -935,6 +1000,7 @@ end
 
 local function enterHistory()
     disarmDelete()
+    state.resetArmedAt = nil
     if state.view ~= "history" and not state.fromHistory then
         state.liveSnapshot = state.snapshot
         state.liveNotSaved = state.notSaved
@@ -1030,6 +1096,11 @@ end
 
 function ReportWindow.setSnapshotProvider(provider)
     state.provider = provider
+end
+
+function ReportWindow.setResetHandler(canReset, reset)
+    state.canReset, state.reset = canReset, reset
+    state.resetArmedAt = nil
 end
 
 function ReportWindow.hide()
