@@ -280,8 +280,8 @@ local function drawHeader(snapshot, ctx, text)
     if outcome then headerBodyText(ctx, outcome, outcomeColor) end
 end
 
-local function drawMeta(ctx, text)
-    UiText.inFont(ctx.fonts.meta, text.meta, Theme.colors.textMuted)
+local function drawMeta(ctx, meta)
+    UiText.inFont(ctx.fonts.meta, meta, Theme.colors.textMuted)
 end
 
 local function drawVersion(ctx, text)
@@ -579,7 +579,8 @@ function ReportWindow.drawTopBar(ctx)
     local pushed = pcall(imgui.push_style_color, 0, Theme.colors.textMuted)
     local ok, err = pcall(function()
         local historyX = m.padding + ctx.width - m.iconButton - 8 - m.navButtonWidth
-        if showHistory and state.open and state.canReset and state.reset and state.canReset() then
+        if showHistory and state.open and ReportWindow.isLiveSnapshot(state.snapshot)
+            and state.canReset and state.reset and state.canReset() then
             local now = Game.uptime()
             if state.resetArmedAt and now - state.resetArmedAt >= DELETE_CONFIRM_SECONDS then state.resetArmedAt = nil end
             local armed = state.resetArmedAt ~= nil
@@ -932,13 +933,16 @@ local function drawContents(settings, fonts, sizes)
     local snapshot = state.snapshot
     if not snapshot or not snapshot.damage or (snapshot.damage.total or 0) <= 0 then
         UiText.inFont(ctx.fonts.header, L("report_title"))
+        if snapshot and snapshot.quest and type(snapshot.quest.segment) == "table" then
+            drawMeta(ctx, ReportText.metaText(snapshot))
+        end
         UiText.inFont(ctx.fonts.meta, L("no_data"), Theme.colors.textMuted)
         drawFooter(snapshot, ctx)
         return
     end
     local text = presentation(snapshot)
     drawHeader(snapshot, ctx, text)
-    drawMeta(ctx, text)
+    drawMeta(ctx, text.meta)
     drawVersion(ctx, text)
     drawStats(ctx, text)
     drawDamage(snapshot, ctx, text)
@@ -978,6 +982,7 @@ function ReportWindow.show(snapshot)
 end
 
 function ReportWindow.onSessionStart(snapshot)
+    state.resetArmedAt = nil
     if state.open and Settings.get().closeOnQuestStart then
         close()
         return "closed"

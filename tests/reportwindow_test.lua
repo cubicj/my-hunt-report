@@ -976,6 +976,45 @@ function T.resetDisarmsWhenTheReportIsShownClosedOrBecomesIneligible()
     end)
 end
 
+function T.sessionStartDisarmsResetWhenItReplacesTheLiveReport()
+    local Settings = require("MyHuntReport.Settings")
+    withResetNavigation(withHistoryDelete, function(ui)
+        ReportWindow.show(snapshot("running"))
+        ui.draw("초기화##reset")
+        local settings = Settings.get()
+        local closeOnQuestStart = settings.closeOnQuestStart
+        settings.closeOnQuestStart = false
+        local replaced = ReportWindow.onSessionStart(snapshot("running"))
+        settings.closeOnQuestStart = closeOnQuestStart
+        assert(replaced == true)
+        ui.now = 101
+        ui.draw("초기화##reset")
+        assert(#ui.resetCalls == 0, "the first press in a new session must only arm Reset")
+        ui.draw()
+        assert(ui.textEvent("한 번 더 누르면 초기화"))
+    end)
+end
+
+function T.resultRestoredFromHistoryCannotResetAPlayingQuest()
+    local Settings = require("MyHuntReport.Settings")
+    withResetNavigation(withHistoryDelete, function(ui)
+        local result = snapshot("clear")
+        ui.canReset = false
+        ReportWindow.show(result)
+        ui.draw("기록")
+        local settings = Settings.get()
+        local closeOnQuestStart = settings.closeOnQuestStart
+        settings.closeOnQuestStart = false
+        ui.canReset = true
+        ReportWindow.onSessionStart(snapshot("running"))
+        settings.closeOnQuestStart = closeOnQuestStart
+        ui.draw("<##back")
+        assert(ReportWindow.debugState().snapshot == result)
+        ui.draw()
+        assertNavigation(ui, "기록|X##close")
+    end)
+end
+
 function T.resetDrawListButtonUsesTheHistorySizeAndCentersItsWarningLabel()
     local Theme = require("MyHuntReport.Theme")
     withResetNavigation(withIconNavigation, function(ui, list)
@@ -994,7 +1033,9 @@ function T.resetDrawListButtonUsesTheHistorySizeAndCentersItsWarningLabel()
         ui.onButton = function(label, size)
             buttons[label] = { x = cursor.x, y = cursor.y, size = size }
         end
-        ReportWindow.show(nil)
+        local shown = snapshot("running")
+        shown.damage = { total = 0, hits = 0 }
+        ReportWindow.show(shown)
         ui.draw("##reset")
         assertNavigation(ui, "##reset|##history|##close")
         local reset, history, close = buttons["##reset"], buttons["##history"], buttons["##close"]
@@ -1024,6 +1065,31 @@ function T.noDataDrawsHistoryAndCloseBeforeTitleAndMessage()
             assert(ui.events[4].value == Locale.text("no_data"))
             assert(#ui.events == 4)
         end
+    end)
+end
+
+function T.noDataDrawsTheLiveSegmentMetaBetweenTitleAndMessage()
+    local Fonts = require("MyHuntReport.Fonts")
+    local Theme = require("MyHuntReport.Theme")
+    withNavigation(function(ui)
+        local shown = snapshot("running")
+        shown.damage = { total = 0, hits = 0 }
+        shown.quest.elapsedSeconds = 41
+        shown.quest.segment = { index = 2, startSeconds = 40 }
+        local contexts, drawText = {}, imgui.text
+        imgui.push_font, imgui.pop_font = function() end, function() end
+        imgui.push_font_size, imgui.pop_font_size = function() end, function() end
+        imgui.text = function(value)
+            contexts[value] = Fonts.context()
+            drawText(value)
+        end
+        ReportWindow.show(shown)
+        ui.draw()
+        local title, meta, noData = Locale.text("report_title"), ReportWindow.metaText(shown), Locale.text("no_data")
+        assert(ui.events[3].value == title and ui.events[4].value == meta
+            and ui.events[5].value == noData, "expected segment meta between the title and no-data message")
+        assert(ui.events[4].textColor == Theme.colors.textMuted)
+        assert(contexts[meta] == contexts[noData] and contexts[meta] ~= contexts[title])
     end)
 end
 

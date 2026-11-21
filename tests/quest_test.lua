@@ -219,7 +219,8 @@ function T.abandonWithAnEmptyLastSegmentSavesTheEarlierSegment()
     Quest.resetSegment(400)
     Quest.handleResultStart()
     local result = Quest.currentSnapshot(410)
-    assert(result.damage.total == 0 and result.quest.elapsedSeconds == 300,
+    assert(result.damage.total == 10, "expected the earlier segment's 10 damage, got " .. result.damage.total)
+    assert(result.quest.elapsedSeconds == 300,
         "expected elapsed to reach the last reset, got " .. result.quest.elapsedSeconds)
     Quest.handleResultInfo({ endType = 1 }, 410)
     local entries = History.readAll()
@@ -228,7 +229,39 @@ function T.abandonWithAnEmptyLastSegmentSavesTheEarlierSegment()
     assert(entries[1].damage.total == 10)
 end
 
-function T.abandonAfterResetWithOnlyProcDamageEndsAtTheReset()
+function T.clearWithAnEmptyLastSegmentShowsAndSavesTheEarlierSegment()
+    playQuestWithOneHit()
+    Settings.set("autoPopup", true)
+    Quest.resetSegment(400)
+    Quest.handleQuestEnd(700)
+    Quest.handleResultStart()
+    assert(ReportWindow.isOpen(), "expected the result popup with a kept segment")
+    local shown = ReportWindow.debugState().snapshot
+    assert(shown.damage.total == 10 and Quest.currentSnapshot(710) == shown)
+
+    local relabel, relabels = Session.relabel, 0
+    Session.relabel = function(snapshot, resolve)
+        if snapshot == shown then relabels = relabels + 1 end
+        return relabel(snapshot, resolve)
+    end
+    local fields = { endType = 2, questLevel = 7, clearTimeMs = 605000, mainWeaponType = 3, joinMemberNum = 4 }
+    local ok, err = pcall(function()
+        Quest.handleResultInfo(fields, 710)
+        Quest.handleResultInfo(fields, 720)
+    end)
+    Session.relabel = relabel
+    if not ok then error(err, 0) end
+
+    assert(relabels == 1)
+    local entries = History.readAll()
+    assert(#entries == 1 and entries[1].damage.total == 10)
+    for _, quest in ipairs({ shown.quest, entries[1].quest }) do
+        assert(quest.result == "clear" and quest.level == 7 and quest.elapsedSeconds == 605)
+        assert(quest.weapon.type == 3 and quest.playerCount == 4)
+    end
+end
+
+function T.abandonAfterResetWithOnlyProcDamageEndsAtTheProc()
     playQuestWithOneHit()
     Quest.resetSegment(400)
     Session.addProc({ kind = "woundBreak", damage = 5, time = 450 })
@@ -236,8 +269,10 @@ function T.abandonAfterResetWithOnlyProcDamageEndsAtTheReset()
     Quest.handleResultInfo({ endType = 1 }, 460)
     local entries = History.readAll()
     assert(#entries == 2 and entries[2].damage.total == 5)
-    assert(stubs.encode(entries[2].quest.segment) == stubs.encode({ index = 2, count = 2, startSeconds = 300, endSeconds = 300 }))
-    assert(entries[1].quest.elapsedSeconds == 300 and entries[2].quest.elapsedSeconds == 300)
+    local segment = entries[2].quest.segment
+    assert(stubs.encode(segment) == stubs.encode({ index = 2, count = 2, startSeconds = 300, endSeconds = 350 }),
+        "expected proc at second 350 in the segment, got endSeconds=" .. segment.endSeconds)
+    assert(entries[1].quest.elapsedSeconds == 350 and entries[2].quest.elapsedSeconds == 350)
 end
 
 function T.resultSkipsEmptySegmentsBetweenResets()
@@ -455,6 +490,35 @@ function T.resetRoundsSegmentBoundaryFromGameClock()
         clock = 39.1
         local live = Quest.currentSnapshot(450)
         assert(live.quest.segment.startSeconds == 38 and live.quest.elapsedSeconds == 39.1)
+        clock = nil
+        assert(math.abs(Quest.currentSnapshot(460).quest.elapsedSeconds - 49.1) < 1e-6,
+            "fallback must use the most recent clock reading")
+    end)
+end
+
+function T.lateJoinRetainsTheHostClockAtQuestEndAfterReset()
+    withQuestDirector(function(director)
+        local clock = 170
+        director.get_QuestElapsedTime = function() return clock end
+        Quest.resetForTests()
+        History.resetForTests()
+        Settings.load()
+        Quest.handleQuestStart(1000)
+        assert(Quest.currentSnapshot(1000).quest.elapsedSeconds == 170)
+        addHit(1010)
+        clock = 190
+        assert(Quest.resetSegment(1020))
+        addHit(1040, 20)
+        clock = nil
+        Quest.handleQuestEnd(1041)
+        Quest.handleResultStart()
+        Quest.handleResultInfo({ endType = 3 }, 1042)
+        local entries = History.readAll()
+        assert(#entries == 2)
+        local quest = entries[2].quest
+        assert(quest.segment.startSeconds == 190)
+        assert(quest.segment.endSeconds == 211, "expected host quest second 211, got " .. quest.segment.endSeconds)
+        assert(quest.elapsedSeconds == 211)
     end)
 end
 
@@ -726,8 +790,10 @@ function T.adoptCurrentStateEntersTrainingOrQuestAtLoad()
         end
         assert(Quest.adoptCurrentState(900) == true)
         assert(Quest.phase() == "playing")
-        local s = Quest.currentSnapshot(910)
+        elapsed = nil
+        local s = Quest.currentSnapshot(900)
         assert(s.quest.result == "running" and s.quest.elapsedSeconds == 42, tostring(s.quest.elapsedSeconds))
+        elapsed = 52
         assert(Quest.resetSegment(910) == true)
         elapsed = nil
         assert(Quest.currentSnapshot(920).quest.elapsedSeconds == 62)
@@ -1059,7 +1125,7 @@ function T.questStartAndResetClearThePalicoCapture()
     if not ok then error(err, 0) end
 end
 
-function T.resultStartLogsThePalicoSummaryForTheFinalSnapshot()
+function T.resultStartLogsThePalicoSummaryForTheTailSnapshot()
     local Palico = require("MyHuntReport.Palico")
     local logSummary, logged = Palico.logSummary, {}
     Palico.logSummary = function(snapshot) logged[#logged + 1] = snapshot end
@@ -1069,6 +1135,12 @@ function T.resultStartLogsThePalicoSummaryForTheFinalSnapshot()
         Quest.handleResultStart()
         assert(#logged == 1)
         assert(logged[1].palico.damage == 10 and logged[1].palico.share == 0.5 and logged[1].damage.total == 10)
+
+        playQuestWithOneHit()
+        Quest.resetSegment(400)
+        Session.addPalicoHit(20)
+        Quest.handleResultStart()
+        assert(#logged == 2 and logged[2].palico.damage == 20 and logged[2].damage.total == 0)
     end)
     Palico.logSummary = logSummary
     Quest.resetForTests()

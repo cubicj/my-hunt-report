@@ -25,7 +25,7 @@ local trainingEndTime = nil
 local questLevel = nil
 local questStartTime = 0
 local closedSegments = {}
-local latestClosedHitTime = nil
+local latestClosedDamageTime = nil
 local segmentStartSeconds = 0
 local hadSegmentReset = false
 local discardedSegmentCount = 0
@@ -152,13 +152,13 @@ end
 local function resetSegmentState(now)
     questStartTime = tonumber(now) or 0
     closedSegments = {}
-    latestClosedHitTime = nil
+    latestClosedDamageTime = nil
     segmentStartSeconds = 0
     hadSegmentReset = false
     discardedSegmentCount = 0
 end
 
-function Quest.handleQuestStart(now)
+function Quest.handleQuestStart(now, adoptedElapsed)
     Locale.refresh()
     if phase ~= "result" and (#closedSegments > 0 or Session.hasData()) then
         Log.debug(string.format("quest session discarded without result, closed segments=%d questStart=%s",
@@ -166,8 +166,9 @@ function Quest.handleQuestStart(now)
     end
     flushUnsaved()
     finalSnapshot = nil
-    resetSegmentState(now)
-    Session.reset(now)
+    local startTime = adoptedElapsed and now - adoptedElapsed or now
+    resetSegmentState(startTime)
+    Session.reset(startTime)
     questLevel = Quest.readQuestLevel()
     HitCapture.reset()
     Palico.reset()
@@ -184,15 +185,19 @@ function Quest.handleQuestStart(now)
     trainingEndTime = nil
     endedElapsed = nil
     saved = false
-    Log.debug("quest start at " .. tostring(now))
+    Log.debug("quest start at " .. tostring(startTime))
     ReportWindow.onSessionStart(Quest.currentSnapshot(now))
 end
 
 local function playingElapsed(now)
     if endedElapsed then return endedElapsed end
+    now = tonumber(now) or 0
     local clock = Quest.questElapsedSeconds()
-    if clock then return clock end
-    return math.max(0, (tonumber(now) or 0) - questStartTime)
+    if clock then
+        questStartTime = now - clock
+        return clock
+    end
+    return math.max(0, now - questStartTime)
 end
 
 function Quest.resetSegment(now)
@@ -200,9 +205,9 @@ function Quest.resetSegment(now)
     local snapshot
     local segmentText = ""
     if phase == "playing" then
-        local lastHitTime = Session.lastHitTime()
-        if lastHitTime and (not latestClosedHitTime or lastHitTime > latestClosedHitTime) then
-            latestClosedHitTime = lastHitTime
+        local lastDamageTime = Session.lastDamageTime()
+        if lastDamageTime and (not latestClosedDamageTime or lastDamageTime > latestClosedDamageTime) then
+            latestClosedDamageTime = lastDamageTime
         end
         local seconds = math.floor(playingElapsed(now) + 0.5)
         snapshot = sessionSnapshot("unknown", seconds)
@@ -234,17 +239,17 @@ end
 function Quest.handleResultStart()
     local elapsed = endedElapsed
     if elapsed == nil and hadSegmentReset then
-        local lastHitTime = Session.lastHitTime() or latestClosedHitTime or questStartTime
-        elapsed = math.max(lastHitTime, latestClosedHitTime or lastHitTime) - questStartTime
+        local lastDamageTime = Session.lastDamageTime() or latestClosedDamageTime or questStartTime
+        elapsed = math.max(lastDamageTime, latestClosedDamageTime or lastDamageTime) - questStartTime
         elapsed = math.max(elapsed, segmentStartSeconds)
     end
-    finalSnapshot = sessionSnapshot("unknown", elapsed)
+    local tailSnapshot = sessionSnapshot("unknown", elapsed)
     local segments = table.move(closedSegments, 1, #closedSegments, 1, {})
-    if Session.snapshotHasData(finalSnapshot) then
+    if Session.snapshotHasData(tailSnapshot) then
         if hadSegmentReset then
-            finalSnapshot.quest.segment = { startSeconds = segmentStartSeconds, endSeconds = elapsed }
+            tailSnapshot.quest.segment = { startSeconds = segmentStartSeconds, endSeconds = elapsed }
         end
-        segments[#segments + 1] = finalSnapshot
+        segments[#segments + 1] = tailSnapshot
     end
     if hadSegmentReset then
         for index, snapshot in ipairs(segments) do
@@ -253,14 +258,15 @@ function Quest.handleResultStart()
             snapshot.quest.segment.count = #segments
         end
     end
+    finalSnapshot = segments[#segments] or tailSnapshot
     pendingSegments = segments
     phase = "result"
     resultClosed = false
-    if Settings.get().autoPopup and Session.hasData() then
+    if Settings.get().autoPopup and #segments > 0 then
         ReportWindow.show(finalSnapshot)
     end
     Log.debug("quest result start, hits=" .. tostring(Session.hitCount()))
-    Palico.logSummary(finalSnapshot)
+    Palico.logSummary(tailSnapshot)
 end
 
 local function applyResultInfo(snapshot, fields)
@@ -378,7 +384,7 @@ function Quest.adoptCurrentState(now)
     end
     if Quest.isPlayingQuest() then
         local elapsed = Quest.questElapsedSeconds() or 0
-        Quest.handleQuestStart(now - elapsed)
+        Quest.handleQuestStart(now, elapsed)
         Log.debug(string.format("quest adopted at load, elapsed=%.1f", elapsed))
         return true
     end

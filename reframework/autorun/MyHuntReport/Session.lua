@@ -29,6 +29,7 @@ function Session.reset(startTime)
     state = {
         startTime = tonumber(startTime) or 0,
         lastHitTime = nil,
+        lastDamageTime = nil,
         firstHitTime = nil,
         hits = 0,
         total = 0,
@@ -84,6 +85,12 @@ local function noteWeaponType(weaponType)
     end
 end
 
+local function noteDamageTime(time)
+    if time and (not state.lastDamageTime or time > state.lastDamageTime) then
+        state.lastDamageTime = time
+    end
+end
+
 local function addDamageStats(hit, physical, element)
     if hit.fixed then
         state.fixed = state.fixed + physical
@@ -94,6 +101,7 @@ local function addDamageStats(hit, physical, element)
     local time = tonumber(hit.time)
     if time then
         state.lastHitTime = time
+        noteDamageTime(time)
         if state.firstHitTime == nil then state.firstHitTime = time end
     end
     if hit.canCrit then
@@ -197,6 +205,7 @@ end
 function Session.addProc(proc)
     local damage = tonumber(proc.damage) or 0
     if damage <= 0 then return false end
+    noteDamageTime(tonumber(proc.time))
     if SKILL_PROC_KINDS[proc.kind] then
         state.total = state.total + damage
         state.fixed = state.fixed + damage
@@ -279,6 +288,10 @@ end
 
 function Session.lastHitTime()
     return state.lastHitTime
+end
+
+function Session.lastDamageTime()
+    return state.lastDamageTime
 end
 
 function Session.hasData()
