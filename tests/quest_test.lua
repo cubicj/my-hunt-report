@@ -10,8 +10,9 @@ local SkillState = require("MyHuntReport.SkillState")
 
 local T = {}
 
-local function addHit(time)
-    Session.addHit({ monsterId = 1, monsterLabel = { kind = "monster", emId = 26 }, finalDamage = 10, physical = 10, element = 0, weight = 1,
+local function addHit(time, damage)
+    damage = damage or 10
+    Session.addHit({ monsterId = 1, monsterLabel = { kind = "monster", emId = 26 }, finalDamage = damage, physical = damage, element = 0, weight = 1,
         motionKey = "7:x", motionLabel = { kind = "motion", className = "x", guideId = -1 }, activeSkills = {}, time = time })
 end
 
@@ -21,6 +22,14 @@ local function playQuestWithOneHit()
     Settings.load()
     Quest.handleQuestStart(100)
     addHit(130)
+end
+
+local function playQuestWithTwoSegments()
+    playQuestWithOneHit()
+    Quest.resetSegment(400)
+    addHit(450, 20)
+    Quest.handleQuestEnd(700)
+    Quest.handleResultStart()
 end
 
 local function withCapturedSnapshots(callback)
@@ -138,15 +147,126 @@ function T.clearSavesOnceDespiteTwoExecutes()
     assert(entries[1].quest.elapsedSeconds == 27)
     assert(entries[1].quest.weapon.type == 13)
     assert(entries[1].quest.playerCount == 1)
+    assert(entries[1].quest.segment == nil)
     assert(Quest.state().saved == true)
+end
+
+function T.resultSavesBothSegmentsWithTheSameQuestFields()
+    playQuestWithTwoSegments()
+    local resolve = Names.resolve
+    Names.resolve = function(label) return "result:" .. label.kind end
+    local fields = { endType = 2, questLevel = 7, clearTimeMs = 605000, mainWeaponType = 3, joinMemberNum = 4 }
+    local ok, err = pcall(function()
+        Quest.handleResultInfo(fields, 710)
+        Quest.handleResultInfo(fields, 720)
+    end)
+    Names.resolve = resolve
+    if not ok then error(err, 0) end
+
+    local entries, _, lines = History.readAll()
+    assert(#entries == 2, "expected two history lines, got " .. #entries)
+    for _, entry in ipairs(entries) do
+        local quest = entry.quest
+        assert(quest.result == "clear" and quest.level == 7 and quest.elapsedSeconds == 605)
+        assert(quest.weapon.type == 3 and quest.playerCount == 4)
+        assert(entry.monsters[1].name == "result:monster" and entry.motions[1].name == "result:motion")
+    end
+    assert(stubs.encode(entries[1].quest.segment) == stubs.encode({ index = 1, count = 2, startSeconds = 0, endSeconds = 300 }))
+    assert(stubs.encode(entries[2].quest.segment) == stubs.encode({ index = 2, count = 2, startSeconds = 300, endSeconds = 600 }))
+    assert(entries[1].damage.total == 10 and entries[2].damage.total == 20)
+    assert(History.remove(lines[1], entries[1].quest.endedAt) == true)
+    local remaining = History.readAll()
+    assert(#remaining == 1 and remaining[1].quest.segment.index == 2)
+end
+
+function T.resultStartCopiesWholeQuestElapsedToTheClosedSegment()
+    playQuestWithOneHit()
+    withCapturedSnapshots(function(snapshots)
+        Quest.resetSegment(400)
+        local closed = snapshots[1]
+        assert(closed.quest.elapsedSeconds == 300)
+        addHit(450, 20)
+        Quest.handleQuestEnd(700)
+        Quest.handleResultStart()
+        local last = Quest.currentSnapshot(710)
+        assert(closed.quest.elapsedSeconds == last.quest.elapsedSeconds and last.quest.elapsedSeconds == 600,
+            "closed segment still has elapsedSeconds=" .. closed.quest.elapsedSeconds)
+        assert(last.quest.segment.endSeconds == 600)
+    end)
 end
 
 function T.abandonIsSaved()
     playQuestWithOneHit()
     Quest.handleResultStart()
+    assert(Quest.currentSnapshot(160).quest.elapsedSeconds == 30)
     Quest.handleResultInfo({ endType = 1, failedType = 0, clearTimeMs = 27170, mainWeaponType = 13, joinMemberNum = 1 }, 161)
     local entries = History.readAll()
     assert(#entries == 1 and entries[1].quest.result == "abandon")
+end
+
+function T.abandonAfterResetUsesTheWholeQuestLastHit()
+    playQuestWithOneHit()
+    Quest.resetSegment(400)
+    addHit(450, 20)
+    Quest.handleResultStart()
+    local result = Quest.currentSnapshot(460)
+    assert(result.quest.elapsedSeconds == 350, "expected whole-quest elapsed, got " .. result.quest.elapsedSeconds)
+    assert(result.quest.segment.endSeconds == 350)
+end
+
+function T.abandonWithAnEmptyLastSegmentSavesTheEarlierSegment()
+    playQuestWithOneHit()
+    Quest.resetSegment(400)
+    Quest.handleResultStart()
+    local result = Quest.currentSnapshot(410)
+    assert(result.damage.total == 0 and result.quest.elapsedSeconds == 300,
+        "expected elapsed to reach the last reset, got " .. result.quest.elapsedSeconds)
+    Quest.handleResultInfo({ endType = 1 }, 410)
+    local entries = History.readAll()
+    assert(#entries == 1 and entries[1].quest.elapsedSeconds == 300)
+    assert(stubs.encode(entries[1].quest.segment) == stubs.encode({ index = 1, count = 1, startSeconds = 0, endSeconds = 300 }))
+    assert(entries[1].damage.total == 10)
+end
+
+function T.abandonAfterResetWithOnlyProcDamageEndsAtTheReset()
+    playQuestWithOneHit()
+    Quest.resetSegment(400)
+    Session.addProc({ kind = "woundBreak", damage = 5, time = 450 })
+    Quest.handleResultStart()
+    Quest.handleResultInfo({ endType = 1 }, 460)
+    local entries = History.readAll()
+    assert(#entries == 2 and entries[2].damage.total == 5)
+    assert(stubs.encode(entries[2].quest.segment) == stubs.encode({ index = 2, count = 2, startSeconds = 300, endSeconds = 300 }))
+    assert(entries[1].quest.elapsedSeconds == 300 and entries[2].quest.elapsedSeconds == 300)
+end
+
+function T.resultSkipsEmptySegmentsBetweenResets()
+    playQuestWithOneHit()
+    Quest.resetSegment(400)
+    Quest.resetSegment(500)
+    addHit(550, 20)
+    Quest.handleQuestEnd(700)
+    Quest.handleResultStart()
+    Quest.handleResultInfo({ endType = 2 }, 710)
+    local entries = History.readAll()
+    assert(#entries == 2)
+    assert(stubs.encode(entries[1].quest.segment) == stubs.encode({ index = 1, count = 2, startSeconds = 0, endSeconds = 300 }))
+    assert(stubs.encode(entries[2].quest.segment) == stubs.encode({ index = 2, count = 2, startSeconds = 400, endSeconds = 600 }))
+end
+
+function T.resultKeepsSegmentMetadataWhenTheFirstResetClosesNoHits()
+    Quest.resetForTests()
+    History.resetForTests()
+    Settings.load()
+    Quest.handleQuestStart(100)
+    Quest.resetSegment(400)
+    addHit(450, 20)
+    Quest.handleQuestEnd(700)
+    Quest.handleResultStart()
+    Quest.handleResultInfo({ endType = 2 }, 710)
+    local entries = History.readAll()
+    assert(#entries == 1)
+    assert(stubs.encode(entries[1].quest.segment) == stubs.encode({ index = 1, count = 1, startSeconds = 300, endSeconds = 600 }))
 end
 
 function T.emptySessionIsNotSavedOrShown()
@@ -169,6 +289,70 @@ function T.unsavedSnapshotIsFlushedAtNextQuestStart()
     assert(#entries == 1 and entries[1].quest.result == "unknown")
     assert(entries[1].quest.elapsedSeconds == 30)
     assert(Session.hitCount() == 0)
+end
+
+function T.nextQuestStartFlushesBothPendingSegments()
+    playQuestWithTwoSegments()
+    Quest.handleQuestStart(800)
+    local entries = History.readAll()
+    assert(#entries == 2, "expected two flushed history lines, got " .. #entries)
+    for _, entry in ipairs(entries) do
+        assert(entry.quest.result == "unknown" and entry.quest.elapsedSeconds == 600)
+    end
+    assert(stubs.encode(entries[1].quest.segment) == stubs.encode({ index = 1, count = 2, startSeconds = 0, endSeconds = 300 }))
+    assert(stubs.encode(entries[2].quest.segment) == stubs.encode({ index = 2, count = 2, startSeconds = 300, endSeconds = 600 }))
+    assert(entries[1].damage.total == 10 and entries[2].damage.total == 20)
+end
+
+function T.resultAttemptsTheRemainingSegmentsAfterAnAppendFails()
+    playQuestWithOneHit()
+    Quest.resetSegment(200)
+    addHit(230, 20)
+    Quest.resetSegment(300)
+    addHit(330, 30)
+    Quest.handleQuestEnd(400)
+    Quest.handleResultStart()
+    local append = History.append
+    local attempted = {}
+    History.append = function(snapshot)
+        attempted[#attempted + 1] = snapshot.quest.segment.index
+        if #attempted == 2 then return false end
+        return append(snapshot)
+    end
+    local fields = { endType = 2 }
+    local ok, err = pcall(function()
+        Quest.handleResultInfo(fields, 410)
+        Quest.handleResultInfo(fields, 420)
+    end)
+    History.append = append
+    if not ok then error(err, 0) end
+
+    assert(stubs.encode(attempted) == stubs.encode({ 1, 2, 3 }))
+    local entries = History.readAll()
+    assert(#entries == 2 and entries[1].quest.segment.index == 1 and entries[2].quest.segment.index == 3)
+    assert(ReportWindow.debugState().notSaved == true and Quest.state().saved == true)
+    Quest.handleQuestStart(500)
+    assert(#History.readAll() == 2)
+end
+
+function T.resultReportKeepsTheLastSegmentAndNotifiesOnce()
+    playQuestWithTwoSegments()
+    local shown = ReportWindow.debugState().snapshot
+    assert(shown == Quest.currentSnapshot(701) and shown.damage.total == 20)
+    local notify = ReportWindow.onSnapshotMutated
+    local notifications = 0
+    ReportWindow.onSnapshotMutated = function()
+        assert(shown.quest.result == "clear" and shown.quest.segment.index == 2 and shown.quest.segment.count == 2)
+        notifications = notifications + 1
+        notify()
+    end
+    local ok, err = pcall(function()
+        Quest.handleResultInfo({ endType = 2 }, 710)
+        Quest.handleResultInfo({ endType = 2 }, 720)
+    end)
+    ReportWindow.onSnapshotMutated = notify
+    if not ok then error(err, 0) end
+    assert(notifications == 1 and Quest.currentSnapshot(730) == shown)
 end
 
 function T.procOnlySessionIsSavedAndFlushed()

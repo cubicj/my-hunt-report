@@ -25,12 +25,13 @@ local trainingEndTime = nil
 local questLevel = nil
 local questStartTime = 0
 local closedSegments = {}
+local latestClosedHitTime = nil
 local segmentStartSeconds = 0
 local hadSegmentReset = false
 local discardedSegmentCount = 0
 local endedElapsed = nil
 local saved = false
-local pendingSnapshot = nil
+local pendingSegments = nil
 local finalSnapshot = nil
 local resultClosed = false
 local installed = false
@@ -118,22 +119,40 @@ end
 
 Quest.trainingHookIsMaster = trainingHookIsMaster
 
-local function flushUnsaved()
-    if not pendingSnapshot then return end
-    local snapshot = pendingSnapshot
-    pendingSnapshot = nil
-    if not Session.snapshotHasData(snapshot) then
-        Log.debug("quest discarded without hits")
-        return
+local function appendSegments(segments)
+    local kept = #segments
+    local dropped = discardedSegmentCount + #closedSegments + 1 - kept
+    Log.debug(string.format("quest segments kept=%d dropped=%d questStart=%s", kept, dropped, tostring(questStartTime)))
+    local allSaved = true
+    for index, snapshot in ipairs(segments) do
+        if History.append(snapshot) then
+            Log.debug(string.format("quest segment appended index=%d hits=%d questStart=%s",
+                index, snapshot.damage.hits, tostring(questStartTime)))
+        else
+            allSaved = false
+        end
     end
-    snapshot.quest.result = "unknown"
-    local ok = History.append(snapshot)
-    if not ok then Log.error("history append failed for an unfinished quest", "quest:flush") end
+    return allSaved
+end
+
+local function flushUnsaved()
+    if not pendingSegments then return end
+    local segments = pendingSegments
+    pendingSegments = nil
+    for _, snapshot in ipairs(segments) do
+        snapshot.quest.result = "unknown"
+    end
+    if not appendSegments(segments) then
+        Log.error("history append failed for an unfinished quest", "quest:flush")
+    elseif #segments == 0 then
+        Log.debug("quest discarded without hits")
+    end
 end
 
 local function resetSegmentState(now)
     questStartTime = tonumber(now) or 0
     closedSegments = {}
+    latestClosedHitTime = nil
     segmentStartSeconds = 0
     hadSegmentReset = false
     discardedSegmentCount = 0
@@ -141,8 +160,9 @@ end
 
 function Quest.handleQuestStart(now)
     Locale.refresh()
-    if not pendingSnapshot and Session.hasData() then
-        Log.debug("quest session discarded without result")
+    if phase ~= "result" and (#closedSegments > 0 or Session.hasData()) then
+        Log.debug(string.format("quest session discarded without result, closed segments=%d questStart=%s",
+            #closedSegments, tostring(questStartTime)))
     end
     flushUnsaved()
     finalSnapshot = nil
@@ -180,6 +200,10 @@ function Quest.resetSegment(now)
     local snapshot
     local segmentText = ""
     if phase == "playing" then
+        local lastHitTime = Session.lastHitTime()
+        if lastHitTime and (not latestClosedHitTime or lastHitTime > latestClosedHitTime) then
+            latestClosedHitTime = lastHitTime
+        end
         local seconds = math.floor(playingElapsed(now) + 0.5)
         snapshot = sessionSnapshot("unknown", seconds)
         snapshot.quest.segment = { startSeconds = segmentStartSeconds, endSeconds = seconds }
@@ -208,21 +232,38 @@ function Quest.handleQuestEnd(now)
 end
 
 function Quest.handleResultStart()
-    pendingSnapshot = sessionSnapshot("unknown", endedElapsed)
-    finalSnapshot = pendingSnapshot
+    local elapsed = endedElapsed
+    if elapsed == nil and hadSegmentReset then
+        local lastHitTime = Session.lastHitTime() or latestClosedHitTime or questStartTime
+        elapsed = math.max(lastHitTime, latestClosedHitTime or lastHitTime) - questStartTime
+        elapsed = math.max(elapsed, segmentStartSeconds)
+    end
+    finalSnapshot = sessionSnapshot("unknown", elapsed)
+    local segments = table.move(closedSegments, 1, #closedSegments, 1, {})
+    if Session.snapshotHasData(finalSnapshot) then
+        if hadSegmentReset then
+            finalSnapshot.quest.segment = { startSeconds = segmentStartSeconds, endSeconds = elapsed }
+        end
+        segments[#segments + 1] = finalSnapshot
+    end
+    if hadSegmentReset then
+        for index, snapshot in ipairs(segments) do
+            snapshot.quest.elapsedSeconds = elapsed
+            snapshot.quest.segment.index = index
+            snapshot.quest.segment.count = #segments
+        end
+    end
+    pendingSegments = segments
     phase = "result"
     resultClosed = false
     if Settings.get().autoPopup and Session.hasData() then
-        ReportWindow.show(pendingSnapshot)
+        ReportWindow.show(finalSnapshot)
     end
     Log.debug("quest result start, hits=" .. tostring(Session.hitCount()))
-    Palico.logSummary(pendingSnapshot)
+    Palico.logSummary(finalSnapshot)
 end
 
-function Quest.handleResultInfo(fields, now)
-    if type(fields) ~= "table" then return end
-    if saved or not pendingSnapshot then return end
-    local snapshot = pendingSnapshot
+local function applyResultInfo(snapshot, fields)
     snapshot.quest.result = Quest.resultFromEndType(fields.endType)
     if type(fields.questLevel) == "number" and fields.questLevel > 0 then
         snapshot.quest.level = fields.questLevel
@@ -238,16 +279,25 @@ function Quest.handleResultInfo(fields, now)
     end
     snapshot.quest.playerCount = fields.joinMemberNum
     Session.relabel(snapshot, Names.resolve)
+end
+
+function Quest.handleResultInfo(fields, now)
+    if type(fields) ~= "table" then return end
+    if saved or not pendingSegments then return end
+    applyResultInfo(finalSnapshot, fields)
+    for _, snapshot in ipairs(pendingSegments) do
+        if snapshot ~= finalSnapshot then applyResultInfo(snapshot, fields) end
+    end
     ReportWindow.onSnapshotMutated()
-    if Session.hasData() then
-        local ok = History.append(snapshot)
-        ReportWindow.setNotSaved(not ok)
+    local allSaved = appendSegments(pendingSegments)
+    if #pendingSegments > 0 then
+        ReportWindow.setNotSaved(not allSaved)
     else
         Log.debug("quest result without hits, not saved")
     end
     saved = true
-    pendingSnapshot = nil
-    Log.debug("quest result " .. snapshot.quest.result .. " at " .. tostring(now))
+    pendingSegments = nil
+    Log.debug("quest result " .. finalSnapshot.quest.result .. " at " .. tostring(now))
 end
 
 function Quest.handleResultClose(now)
@@ -389,7 +439,7 @@ function Quest.resetForTests()
     trainingEndTime = nil
     endedElapsed = nil
     saved = false
-    pendingSnapshot = nil
+    pendingSegments = nil
     resetSegmentState(0)
     Session.reset(0)
     finalSnapshot = nil
