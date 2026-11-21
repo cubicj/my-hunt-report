@@ -339,6 +339,21 @@ function T.nextQuestStartFlushesBothPendingSegments()
     assert(entries[1].damage.total == 10 and entries[2].damage.total == 20)
 end
 
+function T.repeatedResultStartDoesNotDuplicateSavedSegments()
+    playQuestWithTwoSegments()
+    Quest.handleResultInfo({ endType = 2 }, 710)
+    local shown = Quest.currentSnapshot(711)
+    Quest.handleResultStart()
+    assert(Quest.currentSnapshot(712) == shown)
+    Quest.handleQuestStart(800)
+    local entries = History.readAll()
+    assert(#entries == 2, "expected two history lines, got " .. #entries)
+    for index, entry in ipairs(entries) do
+        assert(entry.quest.result == "clear" and entry.quest.segment.index == index)
+    end
+    assert(entries[1].damage.total == 10 and entries[2].damage.total == 20)
+end
+
 function T.resultAttemptsTheRemainingSegmentsAfterAnAppendFails()
     playQuestWithOneHit()
     Quest.resetSegment(200)

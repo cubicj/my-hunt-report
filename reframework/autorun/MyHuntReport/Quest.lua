@@ -237,6 +237,10 @@ function Quest.handleQuestEnd(now)
 end
 
 function Quest.handleResultStart()
+    if phase == "result" then
+        Log.debug("quest result start repeated, saved=" .. tostring(saved), "quest:result-start-repeat")
+        return
+    end
     local elapsed = endedElapsed
     if elapsed == nil and hadSegmentReset then
         local lastDamageTime = Session.lastDamageTime() or latestClosedDamageTime or questStartTime
